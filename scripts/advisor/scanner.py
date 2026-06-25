@@ -82,17 +82,19 @@ class MarketScanner:
         n = len(candidates)
         if n == 0:
             print("  No candidates to score (stock pool may be empty or all filtered out). "
-                  "Use 'python scripts/run.py fetch pool' to refresh data.")
+                  "Use 'python scripts/run.py fetch pool' to refresh data.", flush=True)
             return []
 
-        # Score each stock (parallel)
+        print(f"  Scoring {n} candidates (cached data only, no API calls during scan)...", flush=True)
+
+        # Score each stock (parallel, cached-only for speed)
         results: List[Dict[str, Any]] = []
 
         def _score_one(stock: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             code = stock["code"]
             try:
                 analyzer = CompositeAnalyzer(code, market)
-                factor_result = analyzer.analyze()
+                factor_result = analyzer.analyze(cached_only=True)
                 score = factor_result.get("total_score", 0)
                 return {
                     "code": code,
@@ -113,15 +115,19 @@ class MarketScanner:
             futures = {pool.submit(_score_one, stock): stock for stock in candidates}
             for f in as_completed(futures):
                 done += 1
-                if done % 10 == 0 or done == n:
-                    print(f"  Scan progress: {done}/{n}")
+                if done % 25 == 0 or done == n:
+                    print(f"  Scan progress: {done}/{n}", flush=True)
+
                 result = f.result()
                 if result is not None:
                     results.append(result)
 
         if not results:
-            print("  All candidates scored 0 or failed (check data/cache). "
-                  "Try 'python scripts/run.py fetch pool' to refresh.")
+            print("  All candidates scored 0 (no cached data yet). "
+                  "Run 'python scripts/run.py diagnose' on individual stocks to build cache, "
+                  "or use 'python scripts/run.py alpha A --top 20' for full scoring.", flush=True)
+        else:
+            print(f"  Scored {len(results)} stocks successfully.", flush=True)
 
         # Sort by score descending
         results.sort(key=lambda x: x["total_score"], reverse=True)

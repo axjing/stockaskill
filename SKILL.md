@@ -2,21 +2,19 @@
 name: stockaskill
 description: >-
   Intelligent stock selection agent for A-share/HK/US markets and funds.
-  Compatible with Codex, OpenCode, ClaudeCode, OpenClaw, and other
-  SKILL.md-compatible agent frameworks. Uses AKShare as primary data source
-  with SQLite full caching. Supports multi-factor analysis
-  (value/quality/growth/momentum/low-vol/size), 5 quantitative strategies
-  (multi-factor/deep-value/GARP/ma-trend/contrarian), portfolio management
-  (Kelly/Risk Parity/backtest), sentiment aggregation, and smart advisory
-  (BUY/SELL/HOLD with scoring). Use when the user asks about stock analysis,
-  market scanning, portfolio construction, factor screening, quantitative
-  strategy signals, fund screening, or investment diagnosis for Chinese
-  A-shares, Hong Kong stocks, US stocks, or ETFs/mutual funds.
+  Supports multi-factor analysis (value/quality/growth/momentum/low-vol/size),
+  6 quantitative strategies, portfolio management, sentiment aggregation, and
+  smart advisory (BUY/SELL/HOLD with scoring). Uses AKShare with SQLite caching.
+  Use when the user asks about stock analysis, market scanning, portfolio
+  construction, factor screening, quantitative strategy signals, fund screening,
+  or investment diagnosis for Chinese A-shares, Hong Kong stocks, US stocks,
+  or ETFs/mutual funds.
 license: MIT
 compatibility: >-
-  Designed for Codex, OpenCode, ClaudeCode, OpenClaw, and other
-  SKILL.md-compatible agent frameworks. Requires Python 3.10+, pip,
-  and network access (AKShare data source).
+  Requires Python 3.10+, pip, network access (AKShare data source). Designed
+  for Codex, OpenCode, ClaudeCode, OpenClaw, and SKILL.md-compatible agents.
+metadata:
+  version: "1.0"
 ---
 
 # Smart Stock Selector
@@ -38,8 +36,11 @@ python scripts/run.py diagnose 601318 --market A
 # Alpha momentum scan (CAGR 14.27% optimized strategy)
 python scripts/run.py alpha A --top 10
 
-# Scan market top N (supports A/HK/US/FUND)
+# Quick scan (cached data only, no API calls)
 python scripts/run.py scan A --top 20
+
+# Full alpha momentum scan (makes API calls for fresh data, slower)
+python scripts/run.py alpha A --top 10
 
 # Build portfolio
 python scripts/run.py portfolio --codes 601318,000858,600036 --capital 1000000
@@ -248,8 +249,10 @@ scripts/
 | Issue | Solution |
 |-------|----------|
 | `ModuleNotFoundError: No module named 'config'` | Run from project root; `run.py` auto-fixes sys.path |
-| First run is slow | Building local cache; takes ~2-5 minutes |
-| API rate limited | System auto-degrades to cached data; retry next day |
+| Scan returns "No results returned" | Run `python scripts/run.py fetch pool` first; scan uses cached data only for speed |
+| Scan is slow or times out | First run fetches data via API; run `python scripts/run.py alpha A --top 10` for full scoring with API calls, or run individual `diagnose` to warm cache |
+| `EM pool failed, fallback to stock_info_a_code_name` | EastMoney API unavailable; auto-fallback provides code/name only, no market cap or sector data |
+| API rate limited | System auto-degrades to cached data; retry next day (daily limit: 500 calls per API) |
 | HK/US fundamentals missing | Partial data unavailable for some markets; graceful degradation |
 | `ImportError: No module named 'akshare'` | `pip install akshare efinance baostock` |
 

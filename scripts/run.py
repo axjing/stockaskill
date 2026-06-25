@@ -96,13 +96,13 @@ def cmd_scan(args: argparse.Namespace) -> None:
             print(f"  {f.get('code', '?')} {f.get('name', '?')}")
         return
 
-    print(f"Scanning {market} market for top {top_n}...")
+    print(f"Scanning {market} market for top {top_n}...", flush=True)
     try:
         from advisor.scanner import MarketScanner
         scanner = MarketScanner()
         results = scanner.scan_top(market, top_n, max_candidates=getattr(args, 'candidates', 0))
         if not results:
-            print("  No results returned (run 'python scripts/run.py fetch pool' to refresh data).")
+            print("  No results returned (run 'python scripts/run.py fetch pool' to refresh data).", flush=True)
         for i, r in enumerate(results, 1):
             score = r.get("total_score", 0)
             name = r.get("name", r["code"])

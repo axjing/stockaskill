@@ -253,6 +253,7 @@ def get_kline(
     days: int = 365,
     force_refresh: bool = False,
     full_history: bool = False,
+    cached_only: bool = False,
 ) -> List[Dict[str, Any]]:
     """Get K-line data with incremental cache update. Graceful degradation.
 
@@ -262,12 +263,15 @@ def get_kline(
         days: Number of trading days to return.
         force_refresh: Force re-fetch from upstream.
         full_history: Fetch all available history from API (overrides days for fetch range).
+        cached_only: If True, skip API calls and return cached data only.
 
     Returns:
         List of K-line dicts (newest first).
     """
     code = normalize_code(code)
     cached = _cache.get_daily_price(code)
+    if cached_only:
+        return cached[:days] if cached else []
     if cached and not force_refresh and not full_history and len(cached) >= days:
         return cached[:days]
 
@@ -422,11 +426,14 @@ def _fetch_kline_bs(
 # -- Fundamentals -----------------------------------------------------------
 
 def get_fundamentals(
-    code: str, market: str = "A", force_refresh: bool = False
+    code: str, market: str = "A", force_refresh: bool = False,
+    cached_only: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Get latest fundamental snapshot. Graceful degradation."""
     code = normalize_code(code)
     cached = _cache.get_latest_factor_snapshot(code)
+    if cached_only:
+        return cached
     if cached and not force_refresh:
         return cached
     try:

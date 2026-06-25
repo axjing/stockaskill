@@ -31,14 +31,17 @@ class CompositeAnalyzer:
         self.code = code
         self.market = market
 
-    def analyze(self) -> Dict[str, Any]:
+    def analyze(self, cached_only: bool = False) -> Dict[str, Any]:
         """Analyze all factors for the stock.
+
+        Args:
+            cached_only: Skip API calls, use only cached data.
 
         Returns:
             Dict with total_score, factors (name->score), f_score, details.
         """
-        fundamentals = get_fundamentals(self.code, self.market) or {}
-        kline = get_kline(self.code, self.market, days=365)
+        fundamentals = get_fundamentals(self.code, self.market, cached_only=cached_only) or {}
+        kline = get_kline(self.code, self.market, days=365, cached_only=cached_only)
 
         factor_weights = cfg_get("factor_weights", {})
         factor_results: Dict[str, float] = {}
