@@ -109,10 +109,6 @@ class BacktestEngine:
                     price = day_data.get("close", 0)
                     portfolio_value += shares * price
 
-        # Compute score-weighted allocation for BUY signals
-        buy_signals = [s for s in signals if s.get("signal") == "BUY"]
-        total_buy_score = sum(s.get("score", 50) for s in buy_signals) or 1
-
         # Rebalance: sell SELL signals, buy BUY signals
         for sig in signals:
             code = sig["code"]
@@ -133,8 +129,7 @@ class BacktestEngine:
                     "action": "SELL", "shares": shares, "price": price,
                 })
             elif sig.get("signal") == "BUY" and code not in self.positions:
-                score_weight = sig.get("score", 50) / total_buy_score
-                alloc = portfolio_value * 0.20 * score_weight
+                alloc = portfolio_value * 0.10 / max(len(signals), 1)
                 shares = int(alloc / price / 100) * 100
                 if shares > 0:
                     cost = shares * price * (1 + self.commission)

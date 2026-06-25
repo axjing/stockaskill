@@ -31,11 +31,9 @@ mock_fundamentals = {
 
 @pytest.fixture(autouse=True)
 def mock_data():
-    with patch("strategies.base.get_kline", return_value=mock_kline_data), \
-         patch("strategies.base.get_fundamentals", return_value=mock_fundamentals), \
-         patch("factors.composite.get_kline", return_value=mock_kline_data), \
-         patch("factors.composite.get_fundamentals", return_value=mock_fundamentals):
-        yield
+    with patch("strategies.base.get_kline", return_value=mock_kline_data):
+        with patch("strategies.base.get_fundamentals", return_value=mock_fundamentals):
+            yield
 
 
 class TestStrategyBase:

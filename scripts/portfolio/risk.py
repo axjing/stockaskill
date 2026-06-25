@@ -46,7 +46,7 @@ class RiskMetrics:
         excess = self.returns - self.daily_rf
         mean_excess = np.mean(excess)
         std = np.std(excess, ddof=1)
-        if std < 1e-10:
+        if std == 0:
             return 0.0
         return float(mean_excess / std * np.sqrt(252))
 
@@ -58,9 +58,9 @@ class RiskMetrics:
         mean_excess = np.mean(excess)
         downside = self.returns[self.returns < 0]
         if len(downside) == 0:
-            return 0.0
+            return float(mean_excess * np.sqrt(252) / 1e-9)
         down_std = np.std(downside, ddof=1)
-        if down_std < 1e-10:
+        if down_std == 0:
             return 0.0
         return float(mean_excess / down_std * np.sqrt(252))
 

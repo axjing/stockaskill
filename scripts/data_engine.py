@@ -1,7 +1,6 @@
 ﻿"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
 from __future__ import annotations
 
-import logging
 import sqlite3
 import threading
 import time
@@ -11,8 +10,6 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from cache import get_cache
-
-logger = logging.getLogger(__name__)
 from config import get as cfg_get
 
 _akshare_lock = threading.Lock()
@@ -97,7 +94,7 @@ def _try_baostock():
 
 def _sina_code(code: str, market: str = "A") -> str:
     """Convert code to Sina format: sh601318, sz002475."""
-    code = normalize_code(code).zfill(6) if market in ("A", "FUND") else normalize_code(code)
+    code = normalize_code(code)
     if market in ("A", "FUND"):
         if code.startswith(("6", "9")):
             return f"sh{code}"
@@ -118,6 +115,8 @@ def _refresh_stock_pool(market: str) -> None:
     """Fetch full stock pool from API and cache it."""
     ak = _try_akshare()
     if ak is None:
+        print("[WARN] akshare not installed, cannot refresh stock pool. "
+              "Run: pip install akshare")
         return
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -163,8 +162,8 @@ def _refresh_stock_pool(market: str) -> None:
                     "updated_at": now,
                 })
             _cache.upsert_stock_pool(rows)
-    except Exception as e:
-        logger.warning("refresh %s pool failed: %s", market, e)
+    except Exception as exc:
+        print(f"[WARN] Failed to refresh stock pool for {market}: {exc}")
 
 
 @_api_call("stock_pool_a")
@@ -268,8 +267,6 @@ def get_kline(
         List of K-line dicts (newest first).
     """
     code = normalize_code(code)
-    if market in ("A", "FUND"):
-        code = code.zfill(6)  # canonical: 6-digit padded for A-shares
     cached = _cache.get_daily_price(code)
     if cached and not force_refresh and not full_history and len(cached) >= days:
         return cached[:days]
@@ -296,13 +293,8 @@ def get_kline(
         if new_data:
             _cache.upsert_daily_price(new_data)
             cached = _cache.get_daily_price(code)
-<<<<<<< HEAD
-    except Exception as e:
-        logger.warning("fetch kline %s failed: %s", code, e)
-=======
     except Exception:
         pass
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
 
     return cached[:days] if cached else []
 
@@ -311,8 +303,6 @@ def _fetch_kline(
     code: str, market: str, start: str, end: str
 ) -> List[Dict[str, Any]]:
     """Fetch K-line: Sina first, then baostock, then efinance."""
-    if market in ("A", "FUND"):
-        code = code.zfill(6)
     ak = _try_akshare()
     if ak is not None:
         return _fetch_kline_sina(code, market, start, end, ak)
@@ -394,8 +384,7 @@ def _fetch_kline_ef(
                 "market": market,
             })
         return rows
-    except Exception as e:
-        logger.warning("efinance kline fetch failed: %s", e)
+    except Exception:
         return []
 
 
@@ -437,8 +426,6 @@ def get_fundamentals(
 ) -> Optional[Dict[str, Any]]:
     """Get latest fundamental snapshot. Graceful degradation."""
     code = normalize_code(code)
-    if market in ("A", "FUND"):
-        code = code.zfill(6)  # canonical: 6-digit padded for A-shares
     cached = _cache.get_latest_factor_snapshot(code)
     if cached and not force_refresh:
         return cached
@@ -447,8 +434,8 @@ def get_fundamentals(
         if snapshot:
             _cache.upsert_factor_snapshot([snapshot])
             return snapshot
-    except Exception as e:
-        logger.warning("fetch fundamentals %s failed: %s", code, e)
+    except Exception:
+        pass
     return cached
 
 
@@ -462,77 +449,10 @@ def _fetch_fundamentals(
     return None
 
 
-_SINA_FINANCE_URL = (
-    "https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022"
-)
-
-_LATEST_REPORT_LABELS: Dict[str, str] = {
-    "eps": "\u57fa\u672c\u6bcf\u80a1\u6536\u76ca",
-    "bvps": "\u6bcf\u80a1\u51c0\u8d44\u4ea7",
-    "roe": "\u51c0\u8d44\u4ea7\u6536\u76ca\u7387(ROE)",
-    "roa": "\u603b\u8d44\u4ea7\u62a5\u916c\u7387(ROA)",
-    "gross_margin": "\u6bdb\u5229\u7387",
-    "net_margin": "\u9500\u552e\u51c0\u5229\u7387",
-}
-
-
 @_api_call("fundamentals")
 def _fetch_fundamentals_ak(
     code: str, market: str, ak
 ) -> Optional[Dict[str, Any]]:
-<<<<<<< HEAD
-    """Fetch latest fundamentals via Sina finance report API (lightweight)."""
-    if market not in ("A", "FUND"):
-        return None
-    prefix = "sh" if code.startswith(("6", "9")) else "sz"
-    padded = code.zfill(6)
-    try:
-        import requests as req
-        params = {"paperCode": f"{prefix}{padded}", "source": "gjzb", "type": "0", "page": "1", "num": "1"}
-        r = req.get(_SINA_FINANCE_URL, params=params, timeout=30)
-        data = r.json()
-        result_data = data.get("result")
-        if result_data is None:
-            logger.warning("Sina API result is None for code=%s, raw=%s", code, str(data)[:200])
-            return None
-        report_list = result_data.get("data", {}).get("report_list", {})
-        if not report_list:
-            return None
-        items = next(iter(report_list.values())).get("data", [])
-
-        extracted: Dict[str, float] = {}
-        for item in items:
-            title = str(item.get("item_title", "")).strip()
-            for key, label in _LATEST_REPORT_LABELS.items():
-                if title == label:
-                    try:
-                        val = float(item.get("item_value", 0))
-                        extracted[key] = val
-                    except (ValueError, TypeError):
-                        pass
-
-        price = _guess_price(code)
-        today = datetime.now().strftime("%Y-%m-%d")
-        eps = extracted.get("eps")
-        bvps = extracted.get("bvps")
-        pe_ttm = price / eps if eps and price and eps > 0 else 0.0
-        pb = price / bvps if bvps and price and bvps > 0 else 0.0
-
-        return {
-            "code": code,
-            "date": today,
-            "market_cap": 0.0,
-            "pe_ttm": round(pe_ttm, 2),
-            "pe_static": round(pe_ttm, 2),
-            "pb": round(pb, 2),
-            "ps_ttm": 0.0,
-            "pcf_ttm": 0.0,
-            "dividend_yield": 0.0,
-            "roe": round(extracted.get("roe", 0), 2),
-            "roa": round(extracted.get("roa", 0), 2),
-            "gross_margin": round(extracted.get("gross_margin", 0), 2),
-            "net_margin": round(extracted.get("net_margin", 0), 2),
-=======
     """Fetch fundamentals via Sina financial abstract."""
     try:
         if market != "A":
@@ -555,18 +475,10 @@ def _fetch_fundamentals_ak(
             "roa": 0.0,
             "gross_margin": 0.0,
             "net_margin": 0.0,
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
             "revenue_growth": 0.0,
             "profit_growth": 0.0,
             "debt_ratio": 0.0,
             "current_ratio": 0.0,
-<<<<<<< HEAD
-            "eps": round(eps, 4) if eps else 0.0,
-            "bvps": round(bvps, 4) if bvps else 0.0,
-        }
-    except Exception as e:
-        logger.warning("fetch fundamentals via Sina report API failed: code=%s %s", code, e)
-=======
             "eps": 0.0,
             "bvps": 0.0,
         }
@@ -599,19 +511,7 @@ def _fetch_fundamentals_ak(
                 result["current_ratio"] = v
         return result
     except Exception:
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
         return None
-
-
-def _guess_price(code: str) -> Optional[float]:
-    """Get latest close price from cache for PE/PB calculation."""
-    cached = _cache.get_daily_price(code)
-    if cached:
-        for r in cached:
-            p = safe_float(r.get("close", 0))
-            if p > 0:
-                return p
-    return None
 
 
 # -- Fund data --------------------------------------------------------------
@@ -651,8 +551,8 @@ def _refresh_fund_pool() -> None:
                     "updated_at": now,
                 })
             _cache.upsert_fund_info(fund_rows)
-    except Exception as e:
-        logger.warning("refresh fund pool failed: %s", e)
+    except Exception:
+        pass
 
 
 def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
@@ -682,8 +582,8 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
                 if rows:
                     _cache.upsert_fund_nav(rows)
                     return _cache.get_fund_nav(code, days)
-    except Exception as e:
-        logger.warning("fetch fund nav %s failed: %s", code, e)
+    except Exception:
+        pass
     return []
 
 
@@ -701,8 +601,8 @@ def get_market_index(
         if rows:
             _cache.upsert_market_index(rows)
             return _cache.get_market_index(index_code, days)
-    except Exception as e:
-        logger.warning("fetch market index %s failed: %s", index_code, e)
+    except Exception:
+        pass
     return []
 
 
@@ -736,8 +636,7 @@ def _fetch_market_index(index_code: str, days: int) -> List[Dict[str, Any]]:
                 "amount": 0.0,
             })
         return rows
-    except Exception as e:
-        logger.warning("fetch market index data failed: %s", e)
+    except Exception:
         return []
 
 

@@ -102,7 +102,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
         scanner = MarketScanner()
         results = scanner.scan_top(market, top_n, max_candidates=getattr(args, 'candidates', 0))
         if not results:
-            print("  No results returned.")
+            print("  No results returned (run 'python scripts/run.py fetch pool' to refresh data).")
         for i, r in enumerate(results, 1):
             score = r.get("total_score", 0)
             name = r.get("name", r["code"])
@@ -162,56 +162,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         print(f"Unknown fetch type: {fetch_type}")
 
 
-<<<<<<< HEAD
-def cmd_backtest(args: argparse.Namespace) -> None:
-    """Run backtest simulation on a set of stocks."""
-    codes = [c.strip() for c in args.codes.split(",")]
-    capital = args.capital or 1000000
-    market = getattr(args, "market", "A") or "A"
-
-    print(f"Backtesting {len(codes)} stocks, capital={capital:,.0f}")
-    try:
-        from portfolio.backtest import BacktestEngine
-        from strategies.aggregator import StrategyAggregator
-
-        signals = []
-        for c in codes:
-            agg = StrategyAggregator(c, market)
-            result = agg.analyze_all()
-            signals.append({
-                "code": c,
-                "market": market,
-                "signal": result.get("final_signal", "HOLD"),
-                "score": result.get("final_score", 50),
-            })
-            print(f"  {c}: {signals[-1]['signal']} (score={signals[-1]['score']:.1f})")
-
-        engine = BacktestEngine(
-            capital=capital,
-            commission=args.commission or 0.0003,
-            stamp_tax=args.stamp_tax or 0.001,
-            slippage=args.slippage or 0.001,
-        )
-        result = engine.run(signals)
-        if "error" in result:
-            print(f"  Error: {result['error']}")
-            return
-
-        print(f"\nBacktest Results:")
-        print(f"  Initial Capital: {result['initial_capital']:,.0f}")
-        print(f"  Final Capital:   {result['final_capital']:,.0f}")
-        print(f"  Total Return:    {result['total_return']*100:.2f}%")
-        print(f"  Total Trades:    {result['num_trades']}")
-        if "risk_metrics" in result:
-            rm = result["risk_metrics"]
-            print(f"  Sharpe Ratio:    {rm.get('sharpe', 0):.4f}")
-            print(f"  Max Drawdown:    {rm.get('max_drawdown', 0)*100:.2f}%")
-            print(f"  Volatility:      {rm.get('volatility', 0)*100:.2f}%")
-            print(f"  VaR(95):         {rm.get('var_95', 0)*100:.2f}%")
-            print(f"  CVaR(95):        {rm.get('cvar_95', 0)*100:.2f}%")
-    except Exception as exc:
-        print(f"Backtest failed: {exc}")
-=======
 def cmd_alpha(args: argparse.Namespace) -> None:
     """Alpha momentum scan: rank stocks by optimized multi-factor strategy."""
     market = args.market
@@ -457,7 +407,6 @@ def cmd_backtest(args: argparse.Namespace) -> None:
         print(f"Backtest failed: {exc}")
         import traceback
         traceback.print_exc()
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
 
 
 def cmd_scheduler(args: argparse.Namespace) -> None:
@@ -510,16 +459,6 @@ def main() -> None:
     p.add_argument("--capital", type=float, default=1000000)
     p.add_argument("--market", default="A")
     p.set_defaults(func=cmd_portfolio)
-
-    # backtest
-    p = sub.add_parser("backtest", help="Run backtest simulation")
-    p.add_argument("--codes", required=True, help="Comma-separated stock codes")
-    p.add_argument("--capital", type=float, default=1000000)
-    p.add_argument("--market", default="A")
-    p.add_argument("--commission", type=float, default=0.0003, help="Buy commission rate")
-    p.add_argument("--stamp-tax", type=float, default=0.001, help="Sell stamp tax rate (A-share)")
-    p.add_argument("--slippage", type=float, default=0.001, help="Slippage per trade")
-    p.set_defaults(func=cmd_backtest)
 
     # fetch
     p = sub.add_parser("fetch", help="Refresh data")

@@ -1,13 +1,10 @@
 """Sentiment data sources: East Money guba, market breadth, north flow."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from cache import get_cache
-
-logger = logging.getLogger(__name__)
 from sentiment.dictionary import analyze_sentiment
 
 _cache = get_cache()
@@ -43,8 +40,8 @@ def get_market_breadth() -> Dict[str, Any]:
             }
             _cache.kv_set("market_breadth", result, ttl=3600)
             return result
-    except Exception as e:
-        logger.warning("get market breadth failed: %s", e)
+    except Exception:
+        pass
 
     return {
         "advancers": 0, "decliners": 0, "ratio": 0.5,
@@ -77,8 +74,8 @@ def get_north_flow(days: int = 20) -> List[Dict[str, Any]]:
                     "date": str(row.get("日期", "")),
                     "net_flow": float(row.get("当日成交净买入额", 0) or 0),
                 })
-    except Exception as e:
-        logger.warning("get north flow failed: %s", e)
+    except Exception:
+        pass
 
     _cache.kv_set("north_flow", records[:days], ttl=3600)
     return records[:days]

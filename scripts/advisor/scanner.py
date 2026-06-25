@@ -1,18 +1,11 @@
 """Market scanner: find top stocks across markets."""
 from __future__ import annotations
 
-<<<<<<< HEAD
-import logging
-=======
 from concurrent.futures import ThreadPoolExecutor, as_completed
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from cache import get_cache
 from data_engine import get_stock_pool, get_kline, get_fundamentals
-
-logger = logging.getLogger(__name__)
 from factors.composite import CompositeAnalyzer
 from config import get as cfg_get
 from utils import is_st, is_new
@@ -31,17 +24,9 @@ class MarketScanner:
         sector: Optional[str] = None,
         min_mcap: float = 0,
         max_mcap: float = float("inf"),
-<<<<<<< HEAD
-        max_analyze: int = 50,
-=======
         max_candidates: int = 0,
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
     ) -> List[Dict[str, Any]]:
         """Scan market and return top N stocks by composite score.
-
-        To avoid scoring thousands of stocks, the pool is pre-sorted by
-        market cap descending and only *max_analyze* candidates are fully
-        evaluated.
 
         Args:
             market: Market identifier (A/HK/US/FUND).
@@ -49,11 +34,7 @@ class MarketScanner:
             sector: Optional sector filter.
             min_mcap: Minimum market cap filter.
             max_mcap: Maximum market cap filter.
-<<<<<<< HEAD
-            max_analyze: Max stocks to fully score (default 200).
-=======
             max_candidates: Max stocks to evaluate (0=auto, default 200).
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
 
         Returns:
             List of dicts with code, name, score, and factor details.
@@ -91,21 +72,6 @@ class MarketScanner:
         if not filtered:
             return []
 
-<<<<<<< HEAD
-        # Sort: prefer stocks with cached kline, then by code (SH/SZ > BJ)
-        _cache_inst = get_cache()
-        def _score(stock):
-            code = stock.get("code", "")
-            has_cache = 1 if code and _cache_inst.get_daily_price(code) else 0
-            priority = 0 if code.startswith(("6", "0", "3")) else 1
-            return (has_cache, priority, code)
-        filtered.sort(key=_score, reverse=True)
-        candidates = filtered[:max_analyze]
-
-        # Score each candidate
-        results = []
-        for stock in candidates:
-=======
         # Sort by market cap descending, take top candidates
         filtered.sort(key=lambda s: float(s.get("total_market_cap", 0) or 0), reverse=True)
         limit = max_candidates or cfg_get("scan_max_candidates", 200)
@@ -113,11 +79,16 @@ class MarketScanner:
         if not candidates:
             candidates = filtered[:limit]
 
+        n = len(candidates)
+        if n == 0:
+            print("  No candidates to score (stock pool may be empty or all filtered out). "
+                  "Use 'python scripts/run.py fetch pool' to refresh data.")
+            return []
+
         # Score each stock (parallel)
         results: List[Dict[str, Any]] = []
 
         def _score_one(stock: Dict[str, Any]) -> Optional[Dict[str, Any]]:
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
             code = stock["code"]
             try:
                 analyzer = CompositeAnalyzer(code, market)
@@ -133,17 +104,10 @@ class MarketScanner:
                     "market_cap": stock.get("total_market_cap", 0),
                     "factors": factor_result.get("factors", {}),
                     "f_score": factor_result.get("f_score", 0),
-<<<<<<< HEAD
-                })
-            except Exception as e:
-                logger.warning("scan analyze %s failed: %s", code, e)
-                continue
-=======
                 }
             except Exception:
                 return None
 
-        n = len(candidates)
         done = 0
         with ThreadPoolExecutor(max_workers=8) as pool:
             futures = {pool.submit(_score_one, stock): stock for stock in candidates}
@@ -154,7 +118,10 @@ class MarketScanner:
                 result = f.result()
                 if result is not None:
                     results.append(result)
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
+
+        if not results:
+            print("  All candidates scored 0 or failed (check data/cache). "
+                  "Try 'python scripts/run.py fetch pool' to refresh.")
 
         # Sort by score descending
         results.sort(key=lambda x: x["total_score"], reverse=True)

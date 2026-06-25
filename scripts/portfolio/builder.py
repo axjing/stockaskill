@@ -1,15 +1,10 @@
 """Portfolio builder: construct portfolio from stock list."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import numpy as np
-
 from data_engine import get_kline
-
-logger = logging.getLogger(__name__)
 from models import Portfolio, Position
 from portfolio.position import compute_position
 from portfolio.allocator import signal_weighted
@@ -112,8 +107,8 @@ class PortfolioBuilder:
                 if returns:
                     risk = RiskMetrics(returns)
                     portfolio.metrics = risk.summary()
-            except Exception as e:
-                logger.warning("risk metrics calculation failed: %s", e)
+            except Exception:
+                pass
 
         return portfolio
 

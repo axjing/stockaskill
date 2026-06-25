@@ -48,7 +48,7 @@ class StockDiagnosis:
 
         # Combine into final decision
         final_decision = self._final_decision(
-            strategy_result, sentiment_result, factor_result, kline
+            strategy_result, sentiment_result, factor_result
         )
 
         return {
@@ -201,7 +201,6 @@ class StockDiagnosis:
         strategy: Dict[str, Any],
         sentiment: Dict[str, Any],
         factors: Dict[str, Any],
-        kline: List[Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
         """Generate final BUY/SELL/HOLD decision."""
         base_score = strategy.get("final_score", 50)
@@ -226,7 +225,9 @@ class StockDiagnosis:
             signal = "HOLD"
 
         # Stop-loss / take-profit references
-        tech = self._technical_analysis(kline or get_kline(self.code, self.market, days=365))
+        tech = self._technical_analysis(
+            get_kline(self.code, self.market, days=365)
+        )
         current_price = tech.get("current_price", 0)
         support = tech.get("support_20d", current_price * 0.9)
 

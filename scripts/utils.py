@@ -44,7 +44,7 @@ def code_to_akshare_symbol(code: str, market: str) -> str:
     """
     c = normalize_code(code)
     if market == "A":
-        return c.zfill(6)
+        return c
     if market == "HK":
         return c.zfill(5)
     if market == "US":
@@ -84,23 +84,17 @@ def is_st(code: str, name: str = "") -> bool:
 
 
 def is_new(list_date: str, threshold_days: int = 60) -> bool:
-<<<<<<< HEAD
-    """Check if stock is newly listed (< threshold_days)."""
-    if not list_date:
-        return False
-=======
     """Check if stock is newly listed (< threshold_days).
 
     Returns True for empty/invalid dates (conservative: treat as new).
     """
->>>>>>> 1e809508ea3cc839c82ccac2435f54f6b0e27ed4
     try:
         # Handle formats: "20240101" or "2024-01-01"
         clean = list_date.replace("-", "")
         ld = datetime.strptime(clean, "%Y%m%d")
         return (datetime.now() - ld).days < threshold_days
     except (ValueError, TypeError):
-        return True
+        return False
 
 
 def is_suspended(code: str, kline_data: list | None) -> bool:

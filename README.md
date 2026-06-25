@@ -1,4 +1,4 @@
-# astockskill
+# stockaskill
 
 A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股、组合构建、风险控制、买卖时机全流程。数据源为 AKShare, 本地 SQLite 积累式缓存。
 
@@ -22,10 +22,10 @@ pip install akshare pandas numpy
 
 ### 安装
 
-将 `astockskill/` 目录放入框架技能的搜索路径:
+将 `stockaskill/` 目录放入框架技能的搜索路径:
 
-- **opencode**: `~/.opencode/skills/astockskill/`
-- **claudecode**: `~/.claude/skills/astockskill/`
+- **opencode**: `~/.opencode/skills/stockaskill/`
+- **claudecode**: `~/.claude/skills/stockaskill/`
 - **其他框架**: 参照对应框架的 skill 放置说明
 
 ### 首次运行
@@ -128,7 +128,7 @@ pip install akshare pandas numpy
 
 ### opencode 集成
 
-将 `astockskill/` 放入 `~/.opencode/skills/` 后, opencode 会自动识别 SKILL.md 并根据用户自然语言路由到对应功能。
+将 `stockaskill/` 放入 `~/.opencode/skills/` 后, opencode 会自动识别 SKILL.md 并根据用户自然语言路由到对应功能。
 
 ### 直接使用 Python 脚本
 
@@ -166,8 +166,8 @@ print(portfolio.summary())
 ### 直接使用命令行
 
 ```bash
-cd path/to/astockskill
-cd path/to/astockskill/scripts
+cd path/to/stockaskill
+cd path/to/stockaskill/scripts
 python -c "
 from advisor.diagnosis import StockDiagnosis
 r = StockDiagnosis('600519', 'A').full_report()

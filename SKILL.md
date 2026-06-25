@@ -1,5 +1,5 @@
 ﻿---
-name: astockskill
+name: stockaskill
 description: >-
   Intelligent stock selection agent for A-share/HK/US markets and funds.
   Compatible with Codex, OpenCode, ClaudeCode, OpenClaw, and other
@@ -27,7 +27,7 @@ Covers A-shares, HK stocks, US stocks, and funds (ETF/LOF/active).
 ## Quick Start
 
 ```bash
-cd path/to/astockskill
+cd path/to/stockaskill
 
 # Analyze a single stock (K-line + valuation + fundamentals)
 python scripts/run.py analyze 600519
@@ -265,3 +265,18 @@ Output is for investment reference only, not investment advice.
 Data sources are third-party public platforms with 10-15 minute delay.
 Historical backtest results do not represent future returns.
 Investment involves risk; proceed with caution.
+
+## Output
+
+将最终的输出结果以规范的markdown格式，写入reports文件夹下方便用户后续使用。
+命名方式：`{简短标题}_{输出结果时的时间}.md`
+
+## Bundled resources
+
+**Load only what is needed:**
+- [source paths by market.](./references/market-source-playbook.md)
+- [akshare offical docs](./references/akshare_official_docs.md)
+- [research partner and learning-mode behavior](./references//serenity-dialogue-protocol.md)
+- [plain-language output contract](./references/output-style-and-language.md)
+- [source map used by the project.](./references/research-sources.md)
+- [investment research boundaries](./references/risk-and-compliance.md)

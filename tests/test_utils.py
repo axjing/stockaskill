@@ -101,7 +101,7 @@ class TestIsST:
 
 class TestIsNew:
     def test_new_stock(self):
-        assert is_new("") is False  # empty list_date → unknown, assume not new
+        assert is_new("") is True
         assert is_new(datetime.now().strftime("%Y-%m-%d")) is True
 
     def test_old_stock(self):
