@@ -1,0 +1,3 @@
+﻿display_name: Smart Stock Selector
+short_description: Intelligent multi-market stock analysis with factor scoring, quantitative strategies, portfolio management, and BUY/SELL/HOLD signals for A/HK/US stocks and funds.
+default_prompt: Analyze the stock market and provide intelligent stock selection recommendations. Screen A-shares, HK stocks, US stocks, or funds using multi-factor analysis (value/quality/growth/momentum/low-vol/size), run quantitative strategies (multi-factor/deep-value/GARP/MA-trend/contrarian), and provide BUY/SELL/HOLD signals with risk assessment.
