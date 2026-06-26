@@ -1,5 +1,4 @@
 """Contrarian strategy: oversold + undervalued + volume stabilization."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 

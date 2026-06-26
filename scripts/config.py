@@ -1,19 +1,33 @@
 """Pure-Python config with dot-path access. No YAML dependency."""
-from __future__ import annotations
 
 from typing import Any, Dict
 
 _DEFAULTS: Dict[str, Any] = {
     "watchlist": ["002475", "600519", "601318", "000858", "600036"],
     "factor_weights": {
-        "value": 0.18,
-        "quality": 0.22,
-        "growth": 0.15,
-        "momentum": 0.15,
-        "low_vol": 0.10,
-        "size": 0.08,
-        "industry": 0.07,
-        "north_flow": 0.05,
+        "value": 0.2,
+        "quality": 0.25,
+        "growth": 0.17,
+        "momentum": 0.17,
+        "low_vol": 0.11,
+        "size": 0.09,
+    },
+    "enhanced_weights": {
+        "momentum": 0.35,
+        "low_vol": 0.18,
+        "quality": 0.20,
+        "value": 0.17,
+        "growth": 0.10,
+    },
+    "etf_core": [
+        {"code": "510300", "name": "沪深300ETF", "target": 0.17},
+        {"code": "159915", "name": "创业板ETF", "target": 0.12},
+        {"code": "588000", "name": "科创50ETF", "target": 0.11},
+    ],
+    "strategy_target": {
+        "cagr": 0.18,
+        "max_drawdown": 0.20,
+        "max_positions": 6,
     },
     "cache_ttl": {
         "realtime": 60,

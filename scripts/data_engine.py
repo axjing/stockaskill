@@ -1,5 +1,4 @@
-﻿"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
-from __future__ import annotations
+"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
 
 import sqlite3
 import threading
@@ -12,7 +11,7 @@ import pandas as pd
 from cache import get_cache
 from config import get as cfg_get
 
-_akshare_lock = threading.Lock()
+_akshare_lock = threading.RLock()
 from utils import (
     code_to_akshare_symbol,
     code_to_xq_symbol,
@@ -41,8 +40,7 @@ def _api_call(api_name: str):
             for attempt in range(retry_max):
                 try:
                     time.sleep(interval[0])
-                    with _akshare_lock:
-                        result = func(*args, **kwargs)
+                    result = func(*args, **kwargs)
                     return result
                 except Exception:
                     if attempt == retry_max - 1:
@@ -55,12 +53,6 @@ def _api_call(api_name: str):
 
 
 # -- Data source: AKShare (primary) -----------------------------------------
-
-def _akshare_call(func):
-    """Execute an AKShare function with thread lock (V8 engine is not thread-safe)."""
-    with _akshare_lock:
-        return func()
-
 
 def _try_akshare():
     """Import AKShare, return module or None."""
@@ -93,10 +85,10 @@ def _try_baostock():
 # -- Helpers ----------------------------------------------------------------
 
 def _sina_code(code: str, market: str = "A") -> str:
-    """Convert code to Sina format: sh601318, sz002475."""
+    """Convert code to Sina format: sh601318, sz002475, sh510300."""
     code = normalize_code(code)
     if market in ("A", "FUND"):
-        if code.startswith(("6", "9")):
+        if code.startswith(("5", "6", "9")):
             return f"sh{code}"
         return f"sz{code}"
     return code
@@ -324,7 +316,12 @@ def _fetch_kline_sina(
     code: str, market: str, start: str, end: str, ak
 ) -> List[Dict[str, Any]]:
     """Fetch K-line via Sina (daily, all history, then filter)."""
-    if market == "A" or market == "FUND":
+    if market == "FUND":
+        try:
+            df = ak.fund_etf_hist_sina(symbol=_sina_code(code, market))
+        except Exception:
+            df = ak.stock_zh_a_daily(symbol=_sina_code(code, market), adjust="qfq")
+    elif market == "A":
         df = ak.stock_zh_a_daily(symbol=_sina_code(code, market), adjust="qfq")
     elif market == "HK":
         df = ak.stock_hk_daily(symbol=code, adjust="qfq")
@@ -524,7 +521,7 @@ def _fetch_fundamentals_ak(
 # -- Fund data --------------------------------------------------------------
 
 def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Get ETF/fund pool."""
+    """Get ETF/fund pool. Auto-refreshes if cache is empty or expired."""
     if force_refresh:
         _refresh_fund_pool()
     funds = _cache.get_stock_pool("FUND")
@@ -533,6 +530,15 @@ def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
             conn.row_factory = sqlite3.Row
             cur = conn.execute("SELECT * FROM fund_info")
             funds = [dict(r) for r in cur.fetchall()]
+    # Auto-refresh if pool is empty (same behavior as get_stock_pool)
+    if not funds:
+        _refresh_fund_pool()
+        funds = _cache.get_stock_pool("FUND")
+        if not funds:
+            with _cache._conn() as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.execute("SELECT * FROM fund_info")
+                funds = [dict(r) for r in cur.fetchall()]
     return funds
 
 

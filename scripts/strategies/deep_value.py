@@ -1,5 +1,4 @@
 """Deep value strategy: low PE/PB + high F-Score + high dividend."""
-from __future__ import annotations
 
 from typing import Any, Dict
 

@@ -1,5 +1,4 @@
 """Value factor: PE/PB/dividend yield composite valuation."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 

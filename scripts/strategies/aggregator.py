@@ -1,5 +1,4 @@
 """Strategy aggregator: weighted vote across all strategies."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 
@@ -10,6 +9,7 @@ from strategies.garp import GARPStrategy
 from strategies.ma_trend import MATrendStrategy
 from strategies.contrarian import ContrarianStrategy
 from strategies.alpha_momentum import AlphaMomentumStrategy
+from strategies.momentum_enhanced import MomentumEnhancedStrategy
 
 _STRATEGIES = [
     MultiFactorStrategy,
@@ -18,6 +18,7 @@ _STRATEGIES = [
     MATrendStrategy,
     ContrarianStrategy,
     AlphaMomentumStrategy,
+    MomentumEnhancedStrategy,
 ]
 
 

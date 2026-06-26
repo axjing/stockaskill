@@ -1,5 +1,4 @@
 """GARP strategy: Growth at a Reasonable Price."""
-from __future__ import annotations
 
 from typing import Any, Dict
 

@@ -1,5 +1,4 @@
 """Momentum factor: 6-month momentum excluding recent reversal."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 

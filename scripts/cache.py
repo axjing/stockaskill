@@ -1,5 +1,4 @@
 """Unified SQLite cache manager for the stock selection system."""
-from __future__ import annotations
 
 import sqlite3
 import time
@@ -484,27 +483,46 @@ class CacheManager:
     # -- API usage tracking -------------------------------------------------
 
     def record_api_call(self, api_name: str) -> bool:
-        """Record an API call. Returns False if daily limit exceeded."""
+        """Record an API call. Returns False if daily limit exceeded.
+
+        Uses atomic UPDATE-then-INSERT pattern to avoid race conditions.
+        """
         today = datetime.now().strftime("%Y-%m-%d")
         limit = cfg_get("daily_api_limit", 500)
         with self._conn() as conn:
+            # Atomic check-and-increment: only increment if under limit
             cur = conn.execute(
-                "SELECT call_count FROM api_usage "
-                "WHERE date=? AND api_name=?",
-                (today, api_name),
+                "UPDATE api_usage SET call_count = call_count + 1 "
+                "WHERE date=? AND api_name=? AND call_count < ?",
+                (today, api_name, limit),
             )
-            row = cur.fetchone()
-            current = row[0] if row else 0
-            if current >= limit:
-                return False
+            if cur.rowcount > 0:
+                return True
+            # Try to insert (first call for this api today)
             conn.execute(
                 "INSERT INTO api_usage (date, api_name, call_count) "
                 "VALUES (?, ?, 1) "
                 "ON CONFLICT(date, api_name) DO UPDATE SET "
-                "call_count=call_count+1",
+                "call_count=call_count+1 "
+                "WHERE call_count < ?",
+                (today, api_name, limit),
+            )
+            # Verify the insert/update succeeded
+            cur2 = conn.execute(
+                "SELECT call_count FROM api_usage "
+                "WHERE date=? AND api_name=?",
                 (today, api_name),
             )
-        return True
+            row = cur2.fetchone()
+            if row and row[0] <= limit:
+                return True
+            # Roll back the increment if it exceeded limit
+            conn.execute(
+                "UPDATE api_usage SET call_count = call_count - 1 "
+                "WHERE date=? AND api_name=?",
+                (today, api_name),
+            )
+            return False
 
     def get_api_usage_today(self) -> int:
         """Get total API calls today."""

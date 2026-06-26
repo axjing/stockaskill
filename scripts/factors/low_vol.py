@@ -1,5 +1,4 @@
 """Low volatility factor: 12-month daily volatility."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 

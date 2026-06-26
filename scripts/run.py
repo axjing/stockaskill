@@ -1,5 +1,4 @@
 """Unified CLI entry point for the stock selection system."""
-from __future__ import annotations
 
 import argparse
 import json
@@ -184,7 +183,7 @@ def cmd_alpha(args: argparse.Namespace) -> None:
                 r = strat.analyze(code, market)
                 return (code, stock.get("name", ""), r["score"], r["signal"],
                         r["detail"]["f_score"], r["detail"]["factors"])
-            except:
+            except Exception:
                 return None
 
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -409,6 +408,71 @@ def cmd_backtest(args: argparse.Namespace) -> None:
         traceback.print_exc()
 
 
+def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
+    """Build enhanced core-satellite portfolio (ETFs + Alpha Momentum stocks)."""
+    capital = args.capital or 1000000
+    print(f"Building Momentum Enhanced Core-Satellite Portfolio, capital={capital:,.0f}")
+    print(f"  ETF core (40%): 沪深300ETF(510300) + 创业板ETF(159915) + 科创50ETF(588000)")
+    print(f"  Stock satellite (60%): Alpha Momentum top 3 stocks")
+    print(f"  Max positions: 6")
+
+    try:
+        from strategies.momentum_enhanced import MomentumEnhancedStrategy
+        from portfolio.builder import PortfolioBuilder
+        from portfolio.allocator import signal_weighted
+        from data_engine import get_stock_pool
+
+        strat = MomentumEnhancedStrategy()
+
+        # Get A-share stock pool and scan for top candidates
+        pool = get_stock_pool("A")
+        print(f"  Scanning {len(pool)} stocks for top picks...")
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results = []
+        candidates = pool[:200]
+        with ThreadPoolExecutor(max_workers=8) as pe:
+            futures = {pe.submit(strat.analyze, s["code"], "A"): s for s in candidates}
+            for f in as_completed(futures):
+                r = f.result()
+                if r and r.get("signal") == "BUY" and r.get("score", 0) > 0:
+                    results.append((futures[f]["code"], r["score"]))
+
+        results.sort(key=lambda x: x[1], reverse=True)
+
+        # Select top 3 diversified
+        selected = strat.select_top_stocks(
+            [{"code": c} for c, _ in results], max_picks=3
+        )
+        print(f"  Selected stocks: {selected if selected else 'NONE (market may be weak)'}")
+
+        # Build portfolio
+        builder = PortfolioBuilder("Momentum Enhanced", capital=capital)
+
+        # Add ETFs
+        for etf in MomentumEnhancedStrategy.get_etf_allocation():
+            builder.add_from_strategy(etf["code"], "FUND")
+
+        # Add selected stocks
+        for code in selected:
+            builder.add_from_strategy(code, "A")
+
+        portfolio = builder.build()
+        print("\n" + portfolio.summary())
+
+    except Exception as exc:
+        print(f"Enhanced portfolio build failed: {exc}")
+        import traceback
+        traceback.print_exc()
+
+
+def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
+    """Run enhanced core-satellite backtest."""
+    from backtest_enhanced import run_backtest
+    run_backtest()
+
+
 def cmd_scheduler(args: argparse.Namespace) -> None:
     """Run scheduled analysis."""
     watchlist = cfg_get("watchlist", [])
@@ -477,6 +541,15 @@ def main() -> None:
     # backtest
     p = sub.add_parser("backtest", help="Run Alpha Momentum backtest (2018-2026)")
     p.set_defaults(func=cmd_backtest)
+
+    # backtest-enhanced
+    p = sub.add_parser("backtest-enhanced", help="Run Enhanced Core-Satellite backtest (2018-2026)")
+    p.set_defaults(func=cmd_backtest_enhanced)
+
+    # portfolio-enhanced
+    p = sub.add_parser("portfolio-enhanced", help="ETF(3) + Alpha Momentum Top3 = 6 positions")
+    p.add_argument("--capital", type=float, default=1000000)
+    p.set_defaults(func=cmd_portfolio_enhanced)
 
     # scheduler
     p = sub.add_parser("scheduler", help="Run scheduled analysis")

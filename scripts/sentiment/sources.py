@@ -1,10 +1,18 @@
 """Sentiment data sources: East Money guba, market breadth, north flow."""
-from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from cache import get_cache
+
+# Import the global AKShare lock to prevent Chromium allocator crashes
+# when multiple threads initialize AKShare simultaneously
+import sys
+from pathlib import Path
+_de = str(Path(__file__).resolve().parent.parent)
+if _de not in sys.path:
+    sys.path.insert(0, _de)
+from data_engine import _akshare_lock
 from sentiment.dictionary import analyze_sentiment
 
 _cache = get_cache()
@@ -23,7 +31,8 @@ def get_market_breadth() -> Dict[str, Any]:
 
     try:
         import akshare as ak
-        df = ak.stock_zh_a_spot_em()
+        with _akshare_lock:
+            df = ak.stock_zh_a_spot_em()
         if df is not None and not df.empty:
             advancers = len(df[df.get("涨跌幅", 0) > 0])
             decliners = len(df[df.get("涨跌幅", 0) < 0])
@@ -67,7 +76,8 @@ def get_north_flow(days: int = 20) -> List[Dict[str, Any]]:
         import akshare as ak
         start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
         end = datetime.now().strftime("%Y%m%d")
-        df = ak.stock_hsgt_hist_em(symbol="沪股通")
+        with _akshare_lock:
+            df = ak.stock_hsgt_hist_em(symbol="沪股通")
         if df is not None and not df.empty:
             for _, row in df.iterrows():
                 records.append({

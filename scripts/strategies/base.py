@@ -1,11 +1,9 @@
 """Base strategy class and signal enum."""
-from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List
 
-from config import get as cfg_get
 from data_engine import get_kline, get_fundamentals
 from models import Signal
 
@@ -22,12 +20,12 @@ class Strategy(ABC):
     def weight(self) -> float:
         """Strategy weight in aggregation."""
         weights = {
-            "multi_factor": 0.25,
-            "deep_value": 0.15,
+            "multi_factor": 0.30,
+            "deep_value": 0.25,
             "garp": 0.20,
             "ma_trend": 0.15,
-            "contrarian": 0.05,
-            "alpha_momentum": 0.20,
+            "contrarian": 0.10,
+            "alpha_momentum": 0.15,
         }
         return weights.get(self.name, 0.1)
 

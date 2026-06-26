@@ -1,5 +1,4 @@
 """Chinese financial sentiment dictionary."""
-from __future__ import annotations
 
 POSITIVE = {
     "利好": 1.0, "业绩爆发": 1.0, "重大突破": 1.0,

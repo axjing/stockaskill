@@ -1,5 +1,4 @@
 """Growth factor: revenue and profit growth rates."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 

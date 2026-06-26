@@ -1,5 +1,4 @@
 """Stock diagnosis: comprehensive analysis report."""
-from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 

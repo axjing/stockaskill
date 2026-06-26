@@ -1,5 +1,4 @@
 """Sentiment aggregator: combine multiple sources into adjustment factor."""
-from __future__ import annotations
 
 from typing import Any, Dict, List
 

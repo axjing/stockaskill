@@ -1,5 +1,4 @@
 """Composite factor analyzer: aggregates all 7 factors + F-Score."""
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List

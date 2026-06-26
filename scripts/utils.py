@@ -1,8 +1,6 @@
 """Utility functions for stock code handling and filtering."""
-from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional
 
 
 def normalize_code(code: str) -> str:

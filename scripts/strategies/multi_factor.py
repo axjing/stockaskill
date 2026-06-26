@@ -1,5 +1,4 @@
 """Multi-factor strategy: weighted composite of all factors."""
-from __future__ import annotations
 
 from typing import Any, Dict
 

@@ -1,4 +1,4 @@
-﻿---
+---
 name: stockaskill
 description: >-
   Intelligent stock selection agent for A-share/HK/US markets and funds.
@@ -14,7 +14,9 @@ compatibility: >-
   Requires Python 3.10+, pip, network access (AKShare data source). Designed
   for Codex, OpenCode, ClaudeCode, OpenClaw, and SKILL.md-compatible agents.
 metadata:
-  version: "1.0"
+  author: stockaskill-team
+  version: "1.1"
+  short-description: Multi-market intelligent stock selection with AKShare, 7-factor analysis, 6 quant strategies, and portfolio management
 ---
 
 # Smart Stock Selector
@@ -39,8 +41,8 @@ python scripts/run.py alpha A --top 10
 # Quick scan (cached data only, no API calls)
 python scripts/run.py scan A --top 20
 
-# Full alpha momentum scan (makes API calls for fresh data, slower)
-python scripts/run.py alpha A --top 10
+# Full scan with fresh data (makes API calls, slower)
+python scripts/run.py alpha A --top 10 --candidates 50
 
 # Build portfolio
 python scripts/run.py portfolio --codes 601318,000858,600036 --capital 1000000
@@ -156,6 +158,7 @@ Weights configurable via `config.py` _DEFAULTS dict.
 | MA Trend | 15% | MA5/10/20/60 alignment, golden/death cross |
 | Contrarian | 10% | Oversold>15% from 60d high, low valuation, volume stabilization |
 | Alpha Momentum | 15% | Momentum(30%)+LowVol(28%)+Quality(21%)+Value(14%)+Growth(7%), Top6 monthly, CAGR 14.27% (2018-2026 backtest, 75 stocks) |
+| Enhanced Momentum | - | Optimized weights + ETF core overlay, target 18% CAGR, <20% MaxDD |
 
 Final signal = weighted vote. Sentiment adjusts intensity (0.8x~1.15x) without changing direction.
 
@@ -278,8 +281,8 @@ Investment involves risk; proceed with caution.
 
 **Load only what is needed:**
 - [source paths by market.](./references/market-source-playbook.md)
-- [akshare offical docs](./references/akshare_official_docs.md)
-- [research partner and learning-mode behavior](./references//serenity-dialogue-protocol.md)
+- [akshare official docs](./references/akshare_official_docs.md)
+- [research partner and learning-mode behavior](./references/serenity-dialogue-protocol.md)
 - [plain-language output contract](./references/output-style-and-language.md)
 - [source map used by the project.](./references/research-sources.md)
 - [investment research boundaries](./references/risk-and-compliance.md)
