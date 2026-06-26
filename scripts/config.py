@@ -44,6 +44,10 @@ _DEFAULTS: Dict[str, Any] = {
     "retry_base": 2,
     "kline_years": 3,
     "financial_reports": 8,
+    "low_vol_min": 0.4,
+    "commission": 0.0003,
+    "stamp_tax": 0.001,
+    "slippage": 0.001,
 }
 
 _cache: Dict[str, Any] | None = None

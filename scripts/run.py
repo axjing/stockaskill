@@ -99,9 +99,11 @@ def cmd_scan(args: argparse.Namespace) -> None:
     try:
         from advisor.scanner import MarketScanner
         scanner = MarketScanner()
-        results = scanner.scan_top(market, top_n, max_candidates=getattr(args, 'candidates', 0))
+        results = scanner.scan_top(market, top_n, max_candidates=getattr(args, '
+        candidates', 0))
         if not results:
-            print("  No results returned (run 'python scripts/run.py fetch pool' to refresh data).", flush=True)
+            print("  No results returned (run 'python scripts/run.py fetch pool' to 
+        refresh data).", flush=True)
         for i, r in enumerate(results, 1):
             score = r.get("total_score", 0)
             name = r.get("name", r["code"])
@@ -169,7 +171,10 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     print(f"Alpha Momentum scan on {market}, top {top_n}...")
     try:
         pool = get_stock_pool(market)
-        max_candidates = getattr(args, "candidates", 0) or cfg_get("scan_max_candidates", 200)
+        max_candidates = getattr(args, "candidates", 0)
+        if not max_candidates:
+            max_candidates = cfg_get("scan_max_candidates", 200)
+         200)
         candidates = pool[:max_candidates]
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from strategies.alpha_momentum import AlphaMomentumStrategy
@@ -213,264 +218,33 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     """Run Alpha Momentum backtest (2018-2026)."""
     print("Running Alpha Momentum backtest...")
     try:
-        import numpy as np
-        from datetime import datetime
-        from collections import defaultdict
-        from cache import get_cache
-        from data_engine import get_fundamentals
-        from factors.momentum import MomentumFactor
-        from factors.low_vol import LowVolFactor
-        from factors.quality import QualityFactor
-        from factors.value import ValueFactor
-        from factors.growth import GrowthFactor
-        import sqlite3
+        from portfolio.backtest_engine import AlphaMomentumBacktest
 
-        from utils import is_st
-        c = get_cache()
-        conn = sqlite3.connect(str(c.db_path))
-        cur = conn.execute("""
-            SELECT d.code, d.date, d.close, COALESCE(s.name, '') as name
-            FROM daily_price d
-            LEFT JOIN stock_pool s ON d.code = s.code
-            WHERE d.code IN (
-                SELECT code FROM daily_price GROUP BY code HAVING COUNT(*) >= 1500
-            )
-            ORDER BY d.code, d.date ASC
-        """)
-        sd = defaultdict(list)
-        st_codes = set()
-        for row in cur.fetchall():
-            sd[row[0]].append({"date": row[1], "close": float(row[2])})
-            if is_st(row[0], row[3]):
-                st_codes.add(row[0])
-        codes = sorted(sd.keys())
-        codes = [c for c in codes if c not in st_codes]
-        conn.close()
+        engine = AlphaMomentumBacktest(
+            capital=cfg_get("backtest_capital", 1_000_000),
+            low_vol_min=cfg_get("low_vol_min", 0.4),
+        )
+        result = engine.run()
 
-        fc = {}
-        for code in codes:
-            try:
-                f = get_fundamentals(code, "A", force_refresh=False)
-                if f and f.get("eps", 0) > 0:
-                    fc[code] = f
-            except Exception:
-                pass
-        codes = sorted(fc.keys())
+        print(f"  Pool: {result.get(\"pool_size\", 0)} stocks, {result.get(\"years\", 
+        0)} years")
+        print(f"  Period: {result.get(\"period_start\", \"?\")} ~ {result.get(\"
+        period_end\", \"?\")}")
+        print(f"  CAGR: {result.get(\"cagr\", 0) * 100:.2f}%")
+        print(f"  Total Return: {result.get(\"total_return\", 0) * 100:.2f}%")
+        print(f"  Sharpe: {result.get(\"sharpe\", 0):.2f}")
+        print(f"  Max Drawdown: {result.get(\"max_drawdown\", 0) * 100:.2f}%")
+        print(f"  Monthly Avg: {result.get(\"monthly_avg\", 0):.2f}%")
 
-        all_d = sorted(set(d["date"] for code in codes for d in sd[code]))
-        all_d = [d for d in all_d if d >= "2018-01-01"]
-        md = {}
-        for d in all_d:
-            md[d[:7]] = d
-        rd = sorted(md.values())
-
-        mf = MomentumFactor()
-        lf = LowVolFactor()
-        qf = QualityFactor()
-        vf = ValueFactor()
-        gf = GrowthFactor()
-
-        LOW_VOL_MIN = 0.4
-
-        def _score(code, kslice):
-            fund = fc.get(code, {})
-            try:
-                s = mf.compute(fund, kslice, "A")
-                l = lf.compute(kslice, "A")
-                q = qf.compute(fund, kslice, "A")
-                v = vf.compute(fund, kslice, "A")
-                g = gf.compute(fund, kslice, "A")
-                # Hard filter: exclude stocks with low_vol below threshold
-                if l < LOW_VOL_MIN:
-                    return 0
-                return s * 0.30 + l * 0.28 + q * 0.21 + v * 0.14 + g * 0.07
-            except Exception:
-                return 0
-
-        cap = 1000000
-        positions = {}
-        cash = cap
-        nav = []
-
-        def _board(code):
-            if code.startswith("60"):
-                return "SH"
-            if code.startswith("688"):
-                return "STAR"
-            if code.startswith("000"):
-                return "SZ"
-            if code.startswith("002"):
-                return "SME"
-            if code.startswith("300"):
-                return "GEM"
-            return "OTHER"
-
-        def _select_diversified(scored, top_k=6, max_per_board=3):
-            selected = []
-            board_count = {}
-            for code, score in scored:
-                if score <= 0:
-                    continue
-                board = _board(code)
-                if board_count.get(board, 0) >= max_per_board:
-                    continue
-                selected.append(code)
-                board_count[board] = board_count.get(board, 0) + 1
-                if len(selected) >= top_k:
-                    break
-            return selected
-
-        for i, reb_date in enumerate(rd):
-            if i == 0:
-                continue
-            scored = []
-            for code in codes:
-                kslice = [x for x in sd[code] if x["date"] <= reb_date]
-                if len(kslice) < 120:
-                    continue
-                s = _score(code, kslice)
-                if s > 0:
-                    scored.append((code, s))
-            scored.sort(key=lambda x: x[1], reverse=True)
-            selected = _select_diversified(scored, top_k=6, max_per_board=3)
-
-            for code in list(positions.keys()):
-                if code not in selected:
-                    p = [x["close"] for x in sd[code] if x["date"] <= reb_date]
-                    price = p[-1] if p else 0
-                    if price > 0:
-                        cash += positions[code] * price * (1 - 0.0003 - 0.001)
-                        del positions[code]
-
-            if selected:
-                alloc = cash / len(selected)
-                for code in selected:
-                    if code not in positions:
-                        p = [x["close"] for x in sd[code] if x["date"] <= reb_date]
-                        price = p[-1] if p else 0
-                        if price > 0:
-                            shares = max(100, int(alloc / price / 100) * 100)
-                            cost = shares * price * 1.0003
-                            if cost <= cash and shares > 0:
-                                positions[code] = shares
-                                cash -= cost
-
-            total = cash
-            for code, shares in positions.items():
-                p = [x["close"] for x in sd[code] if x["date"] <= reb_date]
-                price = p[-1] if p else 0
-                total += shares * price
-            nav.append(total)
-
-        final_date = all_d[-1]
-        total = cash
-        for code, shares in positions.items():
-            p = [x["close"] for x in sd[code] if x["date"] <= final_date]
-            price = p[-1] if p else 0
-            total += shares * price
-        nav.append(total)
-
-        na = np.array(nav)
-        tr = (na[-1] - na[0]) / na[0]
-        start_dt = datetime.strptime(rd[0] if len(rd) > 1 else rd[0], "%Y-%m-%d")
-        ed_dt = datetime.strptime(final_date, "%Y-%m-%d")
-        yr = max((ed_dt - start_dt).days / 365.25, 0.1)
-        cagr = (na[-1] / na[0]) ** (1 / yr) - 1
-
-        ra = []
-        for k in range(1, len(na)):
-            if na[k - 1] > 0:
-                ra.append((na[k] - na[k - 1]) / na[k - 1])
-        ra = np.array(ra)
-        sh = 0
-        if len(ra) > 1 and np.std(ra) > 0:
-            sh = np.mean(ra) / np.std(ra) * np.sqrt(12)
-        cum = np.cumprod(1 + ra) if len(ra) > 0 else np.array([1])
-        peak = np.maximum.accumulate(cum)
-        dd = (cum - peak) / peak
-        mdd = np.min(dd) if len(dd) > 0 else 0
-
-        print(f"  Pool: {len(codes)} stocks, {len(rd)-1} months")
-        print(f"  Period: {rd[0] if len(rd) > 1 else rd[0]} ~ {final_date} ({yr:.1f}y)")
-        print(f"  CAGR: {cagr*100:.2f}%")
-        print(f"  Total Return: {tr*100:.2f}%")
-        print(f"  Sharpe: {sh:.2f}")
-        print(f"  Max Drawdown: {mdd*100:.2f}%")
-        print(f"  Monthly Avg: {np.mean(ra)*100:.2f}%")
-
+        cagr = result.get("cagr", 0)
         if cagr > 0.12:
-            print(f"  Result: PASS (CAGR {cagr*100:.2f}% > 12% target)")
+            print(f"  Result: PASS (CAGR {cagr * 100:.2f}% > 12% target)")
         else:
-            print(f"  Result: FAIL (CAGR {cagr*100:.2f}% < 12% target)")
+            print(f"  Result: FAIL (CAGR {cagr * 100:.2f}% < 12% target)")
     except Exception as exc:
         print(f"Backtest failed: {exc}")
         import traceback
         traceback.print_exc()
-
-
-def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
-    """Build enhanced core-satellite portfolio (ETFs + Alpha Momentum stocks)."""
-    capital = args.capital or 1000000
-    print(f"Building Momentum Enhanced Core-Satellite Portfolio, capital={capital:,.0f}")
-    print(f"  ETF core (40%): 沪深300ETF(510300) + 创业板ETF(159915) + 科创50ETF(588000)")
-    print(f"  Stock satellite (60%): Alpha Momentum top 3 stocks")
-    print(f"  Max positions: 6")
-
-    try:
-        from strategies.momentum_enhanced import MomentumEnhancedStrategy
-        from portfolio.builder import PortfolioBuilder
-        from portfolio.allocator import signal_weighted
-        from data_engine import get_stock_pool
-
-        strat = MomentumEnhancedStrategy()
-
-        # Get A-share stock pool and scan for top candidates
-        pool = get_stock_pool("A")
-        print(f"  Scanning {len(pool)} stocks for top picks...")
-
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        results = []
-        candidates = pool[:200]
-        with ThreadPoolExecutor(max_workers=8) as pe:
-            futures = {pe.submit(strat.analyze, s["code"], "A"): s for s in candidates}
-            for f in as_completed(futures):
-                r = f.result()
-                if r and r.get("signal") == "BUY" and r.get("score", 0) > 0:
-                    results.append((futures[f]["code"], r["score"]))
-
-        results.sort(key=lambda x: x[1], reverse=True)
-
-        # Select top 3 diversified
-        selected = strat.select_top_stocks(
-            [{"code": c} for c, _ in results], max_picks=3
-        )
-        print(f"  Selected stocks: {selected if selected else 'NONE (market may be weak)'}")
-
-        # Build portfolio
-        builder = PortfolioBuilder("Momentum Enhanced", capital=capital)
-
-        # Add ETFs
-        for etf in MomentumEnhancedStrategy.get_etf_allocation():
-            builder.add_from_strategy(etf["code"], "FUND")
-
-        # Add selected stocks
-        for code in selected:
-            builder.add_from_strategy(code, "A")
-
-        portfolio = builder.build()
-        print("\n" + portfolio.summary())
-
-    except Exception as exc:
-        print(f"Enhanced portfolio build failed: {exc}")
-        import traceback
-        traceback.print_exc()
-
-
-def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
-    """Run enhanced core-satellite backtest."""
-    from backtest_enhanced import run_backtest
-    run_backtest()
 
 
 def cmd_scheduler(args: argparse.Namespace) -> None:
@@ -514,7 +288,8 @@ def main() -> None:
     p = sub.add_parser("scan", help="Scan market for top stocks")
     p.add_argument("market", help="Market (A/HK/US/FUND)")
     p.add_argument("--top", type=int, default=20, help="Number of results")
-    p.add_argument("--candidates", type=int, default=0, help="Max candidates to evaluate (0=auto)")
+    p.add_argument("--candidates", type=int, default=0, help="Max candidates to evaluate 
+        (0=auto)")
     p.set_defaults(func=cmd_scan)
 
     # portfolio
@@ -527,7 +302,8 @@ def main() -> None:
     # fetch
     p = sub.add_parser("fetch", help="Refresh data")
     p.add_argument("type", choices=["pool", "kline", "fundamentals"])
-    p.add_argument("code", nargs="?", default="", help="Stock code (for kline/fundamentals)")
+    p.add_argument("code", nargs="?", default="", help="Stock code (for 
+        kline/fundamentals)")
     p.add_argument("--market", default="A")
     p.set_defaults(func=cmd_fetch)
 
@@ -535,7 +311,8 @@ def main() -> None:
     p = sub.add_parser("alpha", help="Alpha momentum stock scan")
     p.add_argument("market", default="A", nargs="?", help="Market (A/HK/US)")
     p.add_argument("--top", type=int, default=10, help="Number of results")
-    p.add_argument("--candidates", type=int, default=0, help="Max candidates to evaluate (0=auto)")
+    p.add_argument("--candidates", type=int, default=0, help="Max candidates to evaluate 
+        (0=auto)")
     p.set_defaults(func=cmd_alpha)
 
     # backtest
@@ -543,11 +320,13 @@ def main() -> None:
     p.set_defaults(func=cmd_backtest)
 
     # backtest-enhanced
-    p = sub.add_parser("backtest-enhanced", help="Run Enhanced Core-Satellite backtest (2018-2026)")
+    p = sub.add_parser("backtest-enhanced", help="Run Enhanced Core-Satellite backtest (
+        2018-2026)")
     p.set_defaults(func=cmd_backtest_enhanced)
 
     # portfolio-enhanced
-    p = sub.add_parser("portfolio-enhanced", help="ETF(3) + Alpha Momentum Top3 = 6 positions")
+    p = sub.add_parser("portfolio-enhanced", help="ETF(3) + Alpha Momentum Top3 = 6 
+        positions")
     p.add_argument("--capital", type=float, default=1000000)
     p.set_defaults(func=cmd_portfolio_enhanced)
 

@@ -23,6 +23,7 @@ def _sina_code(code: str) -> str:
 
 
 def fetch_and_upsert(code: str, market: str = "A") -> int:
+    """Fetch and upsert K-line data for a stock."""
     import akshare as ak
     try:
         symbol = _sina_code(code)
@@ -51,10 +52,11 @@ def fetch_and_upsert(code: str, market: str = "A") -> int:
         return 0
 
 
-def main():
+def main() -> None:
     target = int(sys.argv[1]) if len(sys.argv) > 1 else 50
 
-    print(f"Expanding candidate pool: fetching full history for up to {target} more stocks...")
+    print(f"Expanding candidate pool: fetching full history for up to {target} more 
+        stocks...")
 
     pool = get_stock_pool("A")
     if not pool:
@@ -68,7 +70,8 @@ def main():
     conn.close()
     print(f"  Pool: {len(pool)} stocks, existing w/ data: {len(existing)}")
 
-    candidates = [s for s in pool if s["code"] not in existing and not s["code"].startswith("bj")]
+    candidates = [s for s in pool if s["code"] not in existing and not s["code"
+        ].startswith("bj")]
 
     if not candidates:
         print("  All pool stocks already have data!")
@@ -103,14 +106,16 @@ def main():
             time.sleep(3)
 
     elapsed = time.time() - start
-    print(f"\nDone: {success} ok, {fail} failed, {fetched} total rows in {elapsed:.0f}s")
+    print(f"\nDone: {success} ok, {fail} failed, {fetched} total rows in {elapsed:.0f}s"
+        )
 
     conn2 = sqlite3.connect(str(_cache.db_path))
     total_with_data = conn2.execute(
         "SELECT COUNT(DISTINCT code) FROM daily_price"
     ).fetchone()[0]
     total_full = conn2.execute(
-        "SELECT COUNT(*) FROM (SELECT code FROM daily_price GROUP BY code HAVING COUNT(*) >= 1500)"
+        "SELECT COUNT(*) FROM (SELECT code FROM daily_price GROUP BY code HAVING COUNT(
+        *) >= 1500)"
     ).fetchone()[0]
     conn2.close()
     print(f"  Stocks with any daily_price data: {total_with_data}")

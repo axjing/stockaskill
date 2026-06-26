@@ -39,7 +39,8 @@ class CompositeAnalyzer:
         Returns:
             Dict with total_score, factors (name->score), f_score, details.
         """
-        fundamentals = get_fundamentals(self.code, self.market, cached_only=cached_only) or {}
+        fundamentals = get_fundamentals(self.code, self.market, cached_only=cached_only) 
+        or {}
         kline = get_kline(self.code, self.market, days=365, cached_only=cached_only)
 
         factor_weights = cfg_get("factor_weights", {})

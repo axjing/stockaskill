@@ -2,6 +2,7 @@
 
 import sqlite3
 import threading
+import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,7 @@ from utils import (
 )
 
 _cache = get_cache()
+logger = logging.getLogger(__name__)
 
 
 # -- Retry / rate-limit decorator -------------------------------------------
@@ -54,7 +56,7 @@ def _api_call(api_name: str):
 
 # -- Data source: AKShare (primary) -----------------------------------------
 
-def _try_akshare():
+def _try_akshare() -> Optional[Any]:
     """Import AKShare, return module or None."""
     try:
         import akshare as ak
@@ -63,7 +65,7 @@ def _try_akshare():
         return None
 
 
-def _try_efinance():
+def _try_efinance() -> Optional[Any]:
     """Import efinance, return module or None."""
     try:
         import efinance as ef
@@ -72,7 +74,7 @@ def _try_efinance():
         return None
 
 
-def _try_baostock():
+def _try_baostock() -> Optional[Any]:
     """Import baostock, return module or None."""
     try:
         import baostock as bs
@@ -85,6 +87,7 @@ def _try_baostock():
 # -- Helpers ----------------------------------------------------------------
 
 def _sina_code(code: str, market: str = "A") -> str:
+    """Convert code to Sina format."""
     """Convert code to Sina format: sh601318, sz002475, sh510300."""
     code = normalize_code(code)
     if market in ("A", "FUND"):
@@ -96,7 +99,8 @@ def _sina_code(code: str, market: str = "A") -> str:
 
 # -- Stock pool -------------------------------------------------------------
 
-def get_stock_pool(market: str = "A", force_refresh: bool = False) -> List[Dict[str, Any]]:
+def get_stock_pool(market: str = "A", force_refresh: bool = False) -> List[Dict[str, 
+        Any]]:
     """Get stock pool for a market. Returns cached data, refreshes if needed."""
     if force_refresh or _cache.pool_needs_refresh():
         _refresh_stock_pool(market)
@@ -254,7 +258,8 @@ def get_kline(
         market: Market identifier.
         days: Number of trading days to return.
         force_refresh: Force re-fetch from upstream.
-        full_history: Fetch all available history from API (overrides days for fetch range).
+        full_history: Fetch all available history from API (overrides days for fetch 
+        range).
         cached_only: If True, skip API calls and return cached data only.
 
     Returns:
@@ -459,9 +464,14 @@ def _fetch_fundamentals_ak(
 ) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals via Sina financial abstract."""
     try:
-        if market != "A":
+        if market == "A":
+            df = ak.stock_financial_report_sina(symbol=code, name="主要指标")
+        elif market == "HK":
+            df = ak.stock_financial_hk_report_em(symbol=code)
+        elif market == "US":
+            df = ak.stock_financial_us_report_em(symbol=code)
+        else:
             return None
-        df = ak.stock_financial_abstract(symbol=code)
         if df is None or df.empty:
             return None
         today = datetime.now().strftime("%Y-%m-%d")
@@ -509,7 +519,8 @@ def _fetch_fundamentals_ak(
                 result["debt_ratio"] = v / 100.0
             elif name == "\u8425\u4e1a\u6536\u5165\u589e\u957f\u7387":
                 result["revenue_growth"] = v / 100.0
-            elif name == "\u5f52\u5c5e\u6bcd\u516c\u53f8\u51c0\u5229\u6da6\u589e\u957f\u7387":
+            elif name == "
+        \u5f52\u5c5e\u6bcd\u516c\u53f8\u51c0\u5229\u6da6\u589e\u957f\u7387":
                 result["profit_growth"] = v / 100.0
             elif name == "\u6d41\u52a8\u6bd4\u7387":
                 result["current_ratio"] = v

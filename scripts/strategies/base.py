@@ -41,7 +41,7 @@ class Strategy(ABC):
             Dict with signal, score, confidence, detail.
         """
 
-    def _get_data(self, code: str, market: str):
+    def _get_data(self, code: str, market: str) -> tuple:
         """Fetch fundamentals and K-line data."""
         fundamentals = get_fundamentals(code, market) or {}
         kline = get_kline(code, market, days=365)

@@ -542,7 +542,8 @@ class CacheManager:
         if conn is None:
             with self._conn() as c:
                 c.execute(
-                    "INSERT INTO cache_meta (table_name, last_updated, record_count, status) "
+                    "INSERT INTO cache_meta (table_name, last_updated, record_count, 
+        status) "
                     "VALUES (?, ?, ?, 'ok') "
                     "ON CONFLICT(table_name) DO UPDATE SET "
                     "last_updated=excluded.last_updated, "
@@ -551,7 +552,8 @@ class CacheManager:
                 )
         else:
             conn.execute(
-                "INSERT INTO cache_meta (table_name, last_updated, record_count, status) "
+                "INSERT INTO cache_meta (table_name, last_updated, record_count, status) 
+        "
                 "VALUES (?, ?, ?, 'ok') "
                 "ON CONFLICT(table_name) DO UPDATE SET "
                 "last_updated=excluded.last_updated, "
@@ -568,6 +570,51 @@ class CacheManager:
             row = cur.fetchone()
             return row[0] if row else None
 
+
+
+    def cleanup(self, max_age_days: int = 30, max_size_mb: int = 500) -> Dict[str, int]:
+        """Clean up old cache entries to prevent unbounded growth.
+
+        Args:
+            max_age_days: Remove entries older than this many days.
+            max_size_mb: If DB exceeds this size, aggressively clean.
+
+        Returns:
+            Dict with counts of removed entries per table.
+        """
+        import os as _os
+        removed = {}
+        db_size = os.path.getsize(self.db_path) / (1024 * 1024)
+
+        with self._conn() as conn:
+            # Remove old daily_price entries
+            cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime("%Y-%m-%d"
+        )
+            cur = conn.execute(
+                "DELETE FROM daily_price WHERE date < ?",
+                (cutoff,),
+            )
+            removed["daily_price"] = cur.rowcount
+
+            # Remove old sentiment entries
+            cur = conn.execute(
+                "DELETE FROM sentiment WHERE date < ?",
+                (cutoff,),
+            )
+            removed["sentiment"] = cur.rowcount
+
+            # If DB is still too large, clean more aggressively
+            if db_size > max_size_mb:
+                cur = conn.execute(
+                    "DELETE FROM factor_snapshot WHERE date < ?",
+                    (cutoff,),
+                )
+                removed["factor_snapshot"] = cur.rowcount
+
+            # Vacuum to reclaim space
+            conn.execute("VACUUM")
+
+        return removed
 
 # Singleton
 _cache: CacheManager | None = None

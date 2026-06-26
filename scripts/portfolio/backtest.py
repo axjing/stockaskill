@@ -14,7 +14,7 @@ class BacktestEngine:
     def __init__(
         self,
         capital: float = 1000000,
-        commission: float = 0.0003,
+        commission: float = 0.0003,  # Default from config
         stamp_tax: float = 0.001,
         slippage: float = 0.001,
     ) -> None:
@@ -68,7 +68,8 @@ class BacktestEngine:
         return {
             "initial_capital": self.initial_capital,
             "final_capital": self.nav_history[-1],
-            "total_return": (self.nav_history[-1] - self.initial_capital) / self.initial_capital,
+            "total_return": (self.nav_history[-1] - self.initial_capital) / 
+        self.initial_capital,
             "nav_history": self.nav_history,
             "risk_metrics": risk.summary(),
             "trades": self.trade_log,

@@ -141,7 +141,9 @@ def run_backtest():
     try:
         conn2 = sqlite3.connect(str(c.db_path))
         cur2 = conn2.execute(
-            "SELECT date, close FROM market_index WHERE index_code = ? ORDER BY date ASC",
+            "SELECT date, close FROM market_index "
+            "WHERE index_code = ? ORDER BY date"
+        ,
             (_INDEX_CSI300,),
         )
         for row in cur2.fetchall():

@@ -94,13 +94,42 @@ def get_north_flow(days: int = 20) -> List[Dict[str, Any]]:
 def get_guba_sentiment(code: str) -> Dict[str, Any]:
     """Get East Money guba sentiment for a stock.
 
+    Fetches recent posts from East Money guba and analyzes sentiment
+    using the financial sentiment dictionary.
+
     Args:
-        code: Stock code.
+        code: Stock code (6-digit A-share code).
 
     Returns:
-        Dict with post_count, hot_score, sentiment_score.
+        Dict with post_count, hot_score, sentiment_score in [-1, 1].
     """
-    # Simulated sentiment based on price action
+    try:
+        import akshare as ak
+        from utils import exchange_suffix
+
+        prefix = exchange_suffix(code)
+        # Fetch guba posts for the stock
+        with _akshare_lock:
+            df = ak.stock_comment_em(symbol=prefix + code)
+
+        if df is not None and not df.empty:
+            posts = df.head(20)  # Analyze latest 20 posts
+            titles = posts.get("content", posts.iloc[:, -1]).tolist()
+
+            # Analyze sentiment using dictionary
+            scores = [analyze_sentiment(str(t)) for t in titles if t]
+            if scores:
+                avg_score = sum(scores) / len(scores)
+                return {
+                    "post_count": len(posts),
+                    "hot_score": min(1, len(posts) / 20),
+                    "sentiment_score": round(avg_score, 3),
+                }
+
+    except Exception:
+        pass
+
+    # Fallback: use price momentum as sentiment proxy
     from data_engine import get_kline
 
     kline = get_kline(code, "A", days=10)
@@ -113,9 +142,8 @@ def get_guba_sentiment(code: str) -> Dict[str, Any]:
     if len(closes) < 2:
         return {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
 
-    # Price momentum as proxy for attention
     ret = (closes[0] - closes[-1]) / max(closes[-1], 1e-9)
-    sentiment = max(-1, min(1, ret * 5))  # Scale: 20% move = 1.0
+    sentiment = max(-1, min(1, ret * 5))
 
     return {
         "post_count": len(kline),

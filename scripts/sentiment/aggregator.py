@@ -40,7 +40,8 @@ class SentimentAggregator:
         breadth = get_market_breadth()
 
         # Weighted average
-        stock_sentiment = (guba.get("sentiment_score", 0.5) + 1) / 2  # Map [-1,1] to [0,1]
+        stock_sentiment = (guba.get("sentiment_score", 0.5) + 1) / 2
+        1]
         overall = stock_sentiment * 0.4 + market * 0.6
 
         return {

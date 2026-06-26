@@ -68,7 +68,8 @@ class MomentumEnhancedStrategy(Strategy):
                 "signal": "SELL",
                 "score": 0.0,
                 "confidence": 0.0,
-                "detail": dict(detail, filter=f"low_vol {low_vol_score:.2f} < {LOW_VOL_MIN}"),
+                "detail": dict(detail, filter=f"low_vol {low_vol_score:.2f} < 
+        {LOW_VOL_MIN}"),
             }
 
         score = (

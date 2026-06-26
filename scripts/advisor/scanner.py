@@ -72,19 +72,23 @@ class MarketScanner:
             return []
 
         # Sort by market cap descending, take top candidates
-        filtered.sort(key=lambda s: float(s.get("total_market_cap", 0) or 0), reverse=True)
+        filtered.sort(key=lambda s: float(s.get("total_market_cap", 0) or 0), 
+        reverse=True)
         limit = max_candidates or cfg_get("scan_max_candidates", 200)
-        candidates = [s for s in filtered if not s.get("code", "").startswith("bj")][:limit]
+        candidates = [s for s in filtered if not s.get("code", "").startswith("bj"
+        )][:limit]
         if not candidates:
             candidates = filtered[:limit]
 
         n = len(candidates)
         if n == 0:
-            print("  No candidates to score (stock pool may be empty or all filtered out). "
+            print("  No candidates to score (stock pool may be empty or all filtered 
+        out). "
                   "Use 'python scripts/run.py fetch pool' to refresh data.", flush=True)
             return []
 
-        print(f"  Scoring {n} candidates (cached data only, no API calls during scan)...", flush=True)
+        print(f"Scoring {n} candidates...", flush=True)
+        , flush=True)
 
         # Score each stock (parallel, cached-only for speed)
         results: List[Dict[str, Any]] = []
@@ -123,8 +127,10 @@ class MarketScanner:
 
         if not results:
             print("  All candidates scored 0 (no cached data yet). "
-                  "Run 'python scripts/run.py diagnose' on individual stocks to build cache, "
-                  "or use 'python scripts/run.py alpha A --top 20' for full scoring.", flush=True)
+                  "Run 'python scripts/run.py diagnose' on individual stocks to build 
+        cache, "
+                  "or use 'python scripts/run.py alpha A --top 20' for full scoring.", 
+        flush=True)
         else:
             print(f"  Scored {len(results)} stocks successfully.", flush=True)
 

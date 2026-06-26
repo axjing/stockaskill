@@ -139,8 +139,10 @@ class StockDiagnosis:
         dy = fundamentals.get("dividend_yield", 0) or 0
 
         health_checks = {
-            "valuation": "reasonable" if 0 < pe < 30 else ("expensive" if pe > 0 else "unknown"),
-            "profitability": "good" if roe > 0.15 else ("weak" if roe > 0 else "negative"),
+            "valuation": "reasonable" if 0 < pe < 30 else ("expensive" if pe > 0 else "
+        unknown"),
+                "profitability": "good" if roe > 0.15 else "negative",
+        ),
             "leverage": "safe" if debt < 0.5 else "high",
             "dividend": "paying" if dy > 0 else "none",
         }

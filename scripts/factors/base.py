@@ -64,30 +64,35 @@ class Factor(ABC):
 
     @staticmethod
     def _normalize(scores: Dict[str, float]) -> Dict[str, float]:
-        """Normalize scores to [0, 1] using percentile rank."""
+        """Normalize scores to [0, 1] using percentile rank.
+
+        Uses scipy.stats.rankdata for O(n log n) performance instead
+        of the previous O(n^2) nested loop approach.
+
+        Args:
+            scores: Dict mapping stock code to raw factor score.
+
+        Returns:
+            Dict mapping stock code to normalized score in [0, 1].
+        """
         if not scores:
             return scores
-        vals = list(scores.values())
-        vals_arr = np.array(vals, dtype=float)
-        # Handle NaN
-        valid = ~np.isnan(vals_arr)
+        from scipy.stats import rankdata
+
+        vals = np.array(list(scores.values()), dtype=float)
+        # Handle NaN: replace with median for ranking
+        valid = ~np.isnan(vals)
         if not valid.any():
             return scores
-        # Percentile rank
-        ranks = np.zeros_like(vals_arr)
-        sorted_vals = np.sort(vals_arr[valid])
-        for i, v in enumerate(sorted_vals):
-            pct = np.sum(vals_arr[valid] < v) / max(len(sorted_vals) - 1, 1)
-            # Find all indices with this value
-            mask = vals_arr == v
-            ranks[mask] = pct
-        # Clip to [0, 1]
-        ranks = np.clip(ranks, 0, 1)
-        result = {}
-        codes = list(scores.keys())
-        for i, code in enumerate(codes):
-            result[code] = float(ranks[i])
-        return result
+        vals[~valid] = np.median(vals[valid])
+
+        # Use rankdata for O(n log n) percentile ranking
+        ranks = rankdata(vals, method="average") - 1
+        n = len(ranks)
+        normalized = ranks / max(n - 1, 1)
+        normalized = np.clip(normalized, 0, 1)
+
+        return dict(zip(scores.keys(), normalized.tolist()))
 
     def _safe(self, val: Any, default: float = 0.0) -> float:
         """Safely convert to float."""
