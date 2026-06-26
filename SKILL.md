@@ -269,10 +269,10 @@ Data sources are third-party public platforms with 10-15 minute delay.
 Historical backtest results do not represent future returns.
 Investment involves risk; proceed with caution.
 
-## Output
-
-将最终的输出结果以规范的markdown格式，写入reports文件夹下方便用户后续使用。
-命名方式：`{简短标题}_{输出结果时的时间}.md`
+## Output File Specifications
+1. Storage Path: Folder `./reports/`
+2. File Naming Rule: `{YYYY-MM-DD-HHMM}_{Short Title}.md`
+3. File Format: Standard Markdown with clear hierarchy and unified formatting for direct reuse
 
 ## Bundled resources
 
