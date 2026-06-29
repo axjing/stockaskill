@@ -1,360 +1,211 @@
 ---
 name: stockaskill
 description: >-
-  Multi-market intelligent stock selection agent for A-share/HK/US markets and
-  ETFs/mutual funds. Supports 7-factor analysis (value/quality/growth/momentum/
-  low-vol/size/F-Score), 6 quantitative strategies (multi-factor/deep-value/
-  GARP/MA-trend/contrarian/alpha-momentum), portfolio construction with Kelly
-  sizing, backtesting, and sentiment aggregation. Use when the user asks about
-  stock analysis, market scanning, portfolio construction, factor screening,
-  quantitative strategy signals, fund screening, backtesting, or investment
-  diagnosis for Chinese A-shares, Hong Kong stocks, US stocks, or ETFs/mutual
-  funds.
+  Multi-market intelligent stock selection for A-share/HK/US stocks and
+  ETFs. Use when user asks about stock analysis, market scanning,
+  portfolio construction, factor screening, quantitative strategy
+  signals, fund screening, backtesting, or investment diagnosis.
+  Triggers on stock codes (600519, AAPL, 0700.HK), Chinese stock names
+  (贵州茅台), fund codes (510300), and queries with keywords like
+  "分析", "选股", "scan", "portfolio", "backtest", "因子", "评分",
+  "BUY/SELL/HOLD", or "诊断".
 license: MIT
-compatibility: >-
-  Requires Python 3.10+, pip packages (akshare, efinance, baostock, pandas,
-  numpy, scipy), network access for AKShare data (free, no API key), and SQLite
-  for caching (A-share/HK/US markets and
-  ETFs/mutual funds).
+compatibility: Requires Python 3.10+, akshare/efinance/baostock for data,
+  network access (free, no API key), SQLite for caching.
 metadata:
   author: stockaskill-team
   version: "1.1"
-  short-description: Multi-market intelligent stock selection with AKShare, 7-factor
-    analysis, 6 quant strategies, and portfolio management
+  short-description: Multi-market intelligent stock selection with AKShare
 ---
 
 # Smart Stock Selector
 
-Multi-market intelligent stock selection system with AKShare + SQLite caching.
+Multi-market intelligent stock selection with AKShare + SQLite caching.
 Covers A-shares, HK stocks, US stocks, and funds (ETF/LOF/active).
 
 ## Core promise
 
-Given a stock code, market, or investment theme, run quantitative analysis and return actionable signals with scores. All analysis is script-driven and cache-backed for speed.
+Given a stock code, market, or investment theme, run quantitative analysis
+and return actionable signals with scores. All analysis is script-driven
+and cache-backed for speed.
 
-## Request router
+## When to Use
 
-Classify the user request and run the matching workflow:
+- Single stock analysis by code (600519, AAPL, 0700.HK) or name (贵州茅台)
+- Deep diagnosis with BUY/SELL/HOLD recommendation
+- Market scanning for top-ranked stocks in A/HK/US/FUND
+- Momentum-driven alpha ranking with multi-factor scoring
+- Portfolio construction with Kelly sizing and allocation methods
+- Historical backtest to validate strategy performance
+- Fund/ETF screening by NAV, scale, and performance
+- Sentiment / market breadth check
+- Data cache management and refresh
 
-- **Single stock analysis** — User gives a code like `600519`, `AAPL`, `0700.HK`: run 7-factor analysis + strategy signals + technical indicators.
-- **Deep diagnosis** — User asks for comprehensive report with BUY/SELL/HOLD: run full pipeline including sentiment and risk.
-- **Market scan** — User asks to find top stocks in a market: use scanner to rank by composite score.
-- **Alpha momentum** — User wants momentum-driven ranking: run alpha momentum strategy with multi-factor optimization.
-- **Portfolio construction** — User gives multiple codes or wants to build a portfolio: use builder with allocation strategies.
-- **Backtest** — User wants to validate a strategy historically: run backtest engine.
-- **Fund/ETF screening** — User asks about funds or ETFs: fetch fund pool and NAV data.
-- **Sentiment check** — User asks about market sentiment or north-bound flow: run sentiment aggregation.
-- **Data refresh** — Cache is stale or user explicitly asks to refresh: run fetch commands.
+## When Not to Use
+
+- Direct trade execution or brokerage API integration
+- Real-time tick-level or Level-2 data
+- Manual financial statement reading for deep fundamental research
+- Macroeconomic analysis without stock-specific context
+- Crypto or futures market analysis
+
+## Prerequisites
+
+1. **Install dependencies**:
+   `pip install akshare efinance baostock pandas numpy scipy`
+
+2. **Working directory**: Run commands from project root (where `scripts/` is directly accessible).
+
+3. **UTF-8 support**: The CLI forces UTF-8 on Windows automatically.
+
+4. **First run**: Refresh all data pools before scanning:
+   `python scripts/run.py fetch pool`
 
 ## Default behavior
 
-Check the cache first for all data fetches. Refresh only when:
-- TTL has expired (pool: 24h, fundamentals: 7d, sentiment: 1h, K-line: incremental).
+Check cache first for all data fetches. Refresh only when:
+- TTL expired (pool: 24h, fundamentals: 7d, sentiment: 1h, K-line: incremental).
 - User explicitly requests fresh data.
 - `cached_only` flag is not set.
 
 If cache is empty, fetch from AKShare automatically. Run the full pipeline before giving a final answer.
 
-When the user gives a Chinese stock name like "贵州茅台" instead of a code, use the stock pool to resolve it to a code before analysis.
+When the user gives a Chinese stock name like "贵州茅台" instead of a code, resolve it from the stock pool before analysis.
 
-## Prerequisites
+## Request router
 
-Run these steps if the environment hasn't been set up:
-
-1. Install dependencies:
-   `pip install akshare efinance baostock pandas numpy scipy`
-
-2. Set the project root as working directory (where `scripts/` is directly accessible).
-
-3. Verify the shell has UTF-8 support (the CLI forces UTF-8 on Windows automatically).
+| User intent | Workflow |
+|-------------|----------|
+| Single stock code or name | Run single stock analysis |
+| Comprehensive report with BUY/SELL/HOLD | Run deep diagnosis |
+| "Find top stocks in [market]" | Run market scan (fallback to alpha scan if empty) |
+| Momentum-driven ranking | Run alpha momentum scan |
+| Multiple codes or portfolio build | Run portfolio construction |
+| Validate strategy historically | Run backtest |
+| Fund/ETF query | Run fund screening |
+| Market sentiment or north-bound flow | Run sentiment check |
+| Cache refresh or stale data | Run data operations |
 
 ## Workflows
 
-### 1. Market Scan
+### 1. Single Stock Analysis
 
-Use when the user wants to find top stocks in a market.
+Normalize code by market convention:
+- `6xxxxx`, `0xxxxx`, `3xxxxx` → A-share
+- `xxxx.HK`, `0xxxx.HK` → HK
+- Plain ticker (`AAPL`) → US
 
-Steps:
-1. If cache is empty or stale, run `python scripts/run.py fetch pool` to refresh stock pool.
-2. Run the CLI scanner:
-   `python scripts/run.py scan A --top 20`
-   For other markets: `scan HK --top 10`, `scan US --top 15`, `scan FUND --top 20`.
-3. If `scan` returns no results (all scored 0), switch to alpha mode with full scoring:
-   `python scripts/run.py alpha A --top 20 --candidates 200`
-
-Output format:
-```
-排名  代码        名称        得分   信号   F
--------------------------------------------------
-1     600519     贵州茅台     85.3   BUY    8
-2     000858     五粮液       78.1   BUY    7
-...
+```bash
+python scripts/run.py analyze 600519 --market A
 ```
 
-If the user wants sector-filtered scanning, use the Python API:
-`python -c "from advisor.scanner import MarketScanner; scanner = MarketScanner(); results = scanner.scan_by_sector('A', top_n=5)"`
+Output includes PE/PB/ROE/Dividend, composite factor score by dimension, and strategy signal.
 
-### 2. Single Stock Analysis
+### 2. Deep Diagnosis
 
-Use when the user gives a stock code for basic information.
-
-Steps:
-1. Normalize the code if needed. Detect market from prefix conventions:
-   - `6xxxxx`, `0xxxxx`, `3xxxxx` → A-share
-   - `xxxx.HK`, `0xxxx.HK` → HK
-   - Ticker without prefix, `AAPL` pattern → US
-2. Run the CLI: `python scripts/run.py analyze 600519 --market A`
-3. The output shows: K-line cache status, fundamentals (PE/PB/ROE/Dividend), composite factor score by dimension, and strategy signal.
-
-Output fundamentals explained:
-```
-Analyzing 600519 (market=A)...
-  K-line data: 245 days cached
-  PE(TTM):    28.5
-  PB:         6.2
-  ROE:        21.3%
-  DivYld:     1.8%
-  MktCap:     2,150,000,000,000
-  Composite Score: 82.3/100
-    value:    45.2  (PE/PB percentile relative to A-share)
-    quality:  88.7  (ROE, margins, debt safety)
-    growth:   72.1  (revenue/profit YoY)
-    momentum: 76.5  (6-month price, MA alignment)
-    low_vol:  65.0  (12-month volatility)
-    size:     30.2  (large-cap penalty)
-  Strategy Signal: BUY (score=78.5)
+Comprehensive BUY/SELL/HOLD with risk assessment:
+```bash
+python scripts/run.py diagnose 600519 --market A
 ```
 
-### 3. Deep Diagnosis
+JSON output includes: `final_decision.signal`, `adjusted_score`, `factors`, `strategy`, `technical`, `sentiment`, `fundamentals`, `risks`.
 
-Use when the user wants a comprehensive BUY/SELL/HOLD recommendation with risk assessment.
+Present the result:
+- BUY → include stop-loss and take-profit reference prices
+- SELL → explain risk factors
+- HOLD → explain what would need to change
 
-Steps:
-1. Run: `python scripts/run.py diagnose 600519 --market A`
-2. Parse the JSON output:
-   - `final_decision.signal` — BUY/SELL/HOLD
-   - `adjusted_score` — 0-100 after sentiment adjustment
-   - `factors` — 7-dimension factor scores with details
-   - `strategy` — 6-strategy aggregation with individual signals
-   - `technical` — MA alignment, support/resistance, RSI-14
-   - `sentiment` — market breadth + north flow + guba adjustment factor
-   - `fundamentals` — valuation assessment, financial health
-   - `risks` — identified risk factors and severity
+### 3. Market Scan
 
-Output format:
-```json
-{
-  "code": "600519",
-  "final_decision": {
-    "signal": "BUY",
-    "adjusted_score": 72.5,
-    "base_score": 68.0,
-    "stop_loss": 1480.50,
-    "take_profit": 1980.00
-  },
-  "factors": { "total_score": 82.3, "f_score": 8 },
-  "strategy": { "final_signal": "BUY", "final_score": 68.0 },
-  "technical": {
-    "ma5": 1580, "ma10": 1550, "ma20": 1520, "ma60": 1450,
-    "rsi_14": 62.5, "trend": "bullish"
-  },
-  "risks": { "risk_level": "low", "risks": [] }
-}
+```bash
+python scripts/run.py scan A --top 20
+# Also: scan HK --top 10, scan US --top 15, scan FUND --top 20
 ```
 
-3. Present the result to the user. For BUY signals, include stop-loss and take-profit reference prices. For SELL, explain the risk factors. For HOLD, explain what would need to change.
+If scan returns all zeros, fall back to alpha mode:
+```bash
+python scripts/run.py alpha A --top 20 --candidates 200
+```
+
+For sector-filtered scanning:
+```bash
+python -c "from advisor.scanner import MarketScanner; MarketScanner().scan_by_sector('A', top_n=5)"
+```
 
 ### 4. Alpha Momentum Scan
 
-Use when the user wants a momentum-driven, multi-factor ranking. More comprehensive than scan, uses full scoring (not cache-only).
-
-Steps:
-1. Ensure stock pool is cached: `python scripts/run.py fetch pool`
-2. Run: `python scripts/run.py alpha A --top 10 --candidates 200`
-3. The output includes ranked list with scores, signals, and F-Score, plus a summary of BUY-signal stocks.
-
-Output format:
-```
-排名   代码         名称       得分    信号   F
--------------------------------------------------
-1      002475      立讯精密    85.2   BUY    7
-2      300750      宁德时代    82.1   BUY    8
-...
-
-推荐买入 (BUY信号):
-  002475 立讯精密 (得分=85.2, F=7)
-  300750 宁德时代 (得分=82.1, F=8)
+Full multi-factor ranking with thread-parallel scoring:
+```bash
+python scripts/run.py alpha A --top 10 --candidates 200
 ```
 
-When the alpha momentum ranks are reported, explain:
-- Which factors drove the top rankings (momentum + low-vol + quality weighted 73% combined).
-- Whether the top candidates show sector concentration.
-- How the Enhanced Momentum variant differs (ETF core overlay + optimized factor weights).
+Output includes ranked list with scores, signals, and F-Score, plus BUY summary.
+
+When reporting, explain:
+- Which factors drove top rankings (momentum + low-vol + quality weighted ~73% combined)
+- Whether top candidates show sector concentration
+- How Enhanced Momentum variant differs (see [references/enhanced-momentum.md](references/enhanced-momentum.md) if user mentions "enhanced")
 
 ### 5. Portfolio Construction
 
-Use when the user wants to build or review a portfolio.
-
-Steps:
-1. Gather parameters: stock codes, capital amount, market, allocation method.
-2. Run CLI for standard portfolio:
-   `python scripts/run.py portfolio --codes 600519,000858,002475 --capital 1000000 --market A`
-3. For the enhanced core-satellite portfolio:
-   `python scripts/run.py portfolio-enhanced --capital 1000000`
-   (ETF core: 沪深300 17%, 创业板 12%, 科创50 11% + Alpha Momentum Top 3)
-
-Output format:
-```
-Portfolio: My Portfolio
-Capital:   1,000,000
-Positions: 3
-Allocated: 85.3%
-  600519 贵州茅台: 35.0% (450 shares @ 1580.00)
-  000858 五粮液:   28.0% (1800 shares @ 155.00)
-  002475 立讯精密: 22.3% (5000 shares @ 44.50)
-Risk Metrics:
-  Sharpe: 1.25
-  Sortino: 1.52
-  MaxDD: -0.18
-  VaR(95%): -0.023
-  CVaR(95%): -0.035
+Standard portfolio:
+```bash
+python scripts/run.py portfolio --codes 600519,000858,002475 --capital 1000000 --market A
 ```
 
-When the user wants a specific allocation method, use the Python API:
-- Equal weight: `from portfolio.allocator import equal_weights`
-- Signal-weighted: `from portfolio.allocator import signal_weighted`
-- Risk parity: `from portfolio.allocator import risk_parity`
-- Min variance: `from portfolio.allocator import min_variance`
-
-For position sizing:
-```python
-from portfolio.position import compute_position
-result = compute_position(code="600519", name="贵州茅台", market="A",
-    capital=100000, score=75.0, current_price=100.0,
-    method="kelly", max_weight=0.25)
+Enhanced core-satellite:
+```bash
+python scripts/run.py portfolio-enhanced --capital 1000000
 ```
+
+For custom allocation methods via Python API (equal weight, signal-weighted, risk parity, min variance), load [references/python-api.md](references/python-api.md).
 
 ### 6. Backtest
 
-Use when the user wants to validate a strategy's historical performance.
-
-Steps:
-1. Ensure sufficient historical data exists (requires >= 1500 trading days in cache).
-2. Run standard backtest:
-   `python scripts/run.py backtest`
-3. Run enhanced core-satellite backtest:
-   `python scripts/run.py backtest-enhanced`
-
-Output format:
-```
-Pool: 200 stocks, 8 years
-Period: 2018-01 ~ 2026-06
-CAGR: 18.50%
-Total Return: 285.00%
-Sharpe: 1.32
-Max Drawdown: -15.80%
-Monthly Avg: 1.42%
-Result: PASS (CAGR 18.50% > 12% target)
+Standard backtest (Alpha Momentum, 2018-2026):
+```bash
+python scripts/run.py backtest
 ```
 
-When reporting backtest results, explain:
-- The CAGR target (12% standard, 18% enhanced).
-- Whether the result passed or failed the target.
-- The Max Drawdown period context (avoid cherry-picking).
-- That past performance does not guarantee future returns.
+Enhanced backtest (core-satellite):
+```bash
+python scripts/run.py backtest-enhanced
+```
+
+Requires >= 1500 trading days in cache. When reporting results, explain:
+- CAGR target (12% standard, 18% enhanced)
+- Whether result passed or failed
+- That past performance does not guarantee future returns
 
 ### 7. Fund/ETF Screening
 
-Use when the user asks about funds or ETFs.
+```bash
+python scripts/run.py scan FUND --top 20
+```
 
-Steps:
-1. Run: `python scripts/run.py fetch pool` (includes FUND market).
-2. Run scanner: `python scripts/run.py scan FUND --top 20`
-3. For fund NAV history, use Python API:
-   ```python
-   from data_engine import get_fund_nav
-   nav = get_fund_nav("510300", days=365)
-   ```
-
-For deeper analysis, use the Python API:
+For deeper analysis:
 ```python
-from data_engine import get_fund_pool
+from data_engine import get_fund_pool, get_fund_nav
 funds = get_fund_pool()
-# Filter by type, sort by scale
-etfs = [f for f in funds if f.get("fund_type") == "ETF"]
-etfs.sort(key=lambda x: float(x.get("scale", 0)), reverse=True)
+nav = get_fund_nav("510300", days=365)
 ```
 
 ### 8. Data Operations
 
-Use when cache needs refresh or management.
+```bash
+# Full pool refresh
+python scripts/run.py fetch pool
 
-Refresh commands:
-- Full pool refresh: `python scripts/run.py fetch pool`
-- Single stock K-line: `python scripts/run.py fetch kline 600519 --market A`
-- Single stock fundamentals: `python scripts/run.py fetch fundamentals 600519 --market A`
+# Single stock K-line
+python scripts/run.py fetch kline 600519 --market A
 
-Cache cleanup (from Python):
-```python
-from cache import get_cache
-cache = get_cache()
-removed = cache.cleanup(max_age_days=30, max_size_mb=500)
-# Returns {"daily_price": N, "sentiment": N, "factor_snapshot": N}
+# Single stock fundamentals
+python scripts/run.py fetch fundamentals 600519 --market A
 ```
-
-## Analysis frameworks
-
-### Factor system
-
-7 dimensions, each returning a 0-1 percentile score:
-
-| Factor | Weight | Core Metrics |
-|--------|:---:|------------|
-| Value | 18% | PE_TTM, PB percentile, dividend yield |
-| Quality | 22% | ROE (40%), margin stability (25%), debt safety (20%), FCF (15%) |
-| Growth | 15% | Revenue YoY, profit YoY, growth acceleration |
-| Momentum | 15% | 6-month momentum (excl. 1-month reversal), MA alignment |
-| Low Vol | 10% | 12-month volatility, max drawdown penalty |
-| Size | 8% | log(market cap) negative scoring |
-| F-Score | Bonus | Piotroski 9-point system |
-
-Composite score = weighted sum + F-Score bonus, normalized to 0-100.
-
-### Strategy system
-
-6 strategies with weighted voting:
-
-| Strategy | Weight | Logic |
-|----------|:---:|-------|
-| Multi-Factor | 30% | 7-factor composite, >=70=BUY, <=30=SELL |
-| Deep Value | 25% | PE<25th%, PB<1.5, yield>3%, F-Score>=6 |
-| GARP | 20% | PEG<1, ROE>15%, revenue growth>10% |
-| MA Trend | 15% | MA5/10/20/60 alignment, golden/death cross |
-| Contrarian | 10% | Oversold>15% from 60d high, low valuation |
-| Alpha Momentum | 15% | Momentum(30%)+LowVol(28%)+Quality(21%)+Value(14%)+Growth(7%) |
-
-Final signal: weighted vote across strategies. BUY if weighted score >= 65, SELL if <= 35, else HOLD.
-
-### Sentiment adjustment
-
-The sentiment aggregator computes an adjustment factor (0.8-1.2) based on:
-- Market breadth (advance-decline ratio, from index data).
-- North-bound flow (沪股通/深股通 net buy for A-shares).
-- Guba sentiment (East Money 股吧 community sentiment score).
-
-The final adjusted score = strategy base score * sentiment adjustment factor, then clamped to [0, 100].
-
-### Enhanced Momentum variant
-
-When the user mentions "enhanced" or "core-satellite" strategy:
-- ETF core: 沪深300 (17%), 创业板 (12%), 科创50 (11%) = 40% total.
-- Alpha momentum satellite: Top 3 stocks by enhanced score = 60% total (20% each).
-- Enhanced weights: momentum 35%, low-vol 18%, quality 20%, value 17%, growth 10%.
 
 ## Output guidelines
 
-Keep the answer concise when the user asks a quick question:
-
+Quick answer format:
 ```
 600519 贵州茅台:
   评分 82.3/100 | 信号: BUY (F=8)
@@ -363,124 +214,65 @@ Keep the answer concise when the user asks a quick question:
   参考止损/止盈: 1480.50 / 1980.00
 ```
 
-Provide a full report when the user asks for diagnosis or analysis:
-- Start with the decision signal and score.
-- List the top-3 driving factors.
-- Include the strategy that triggered the signal.
-- Note sentiment adjustment if significant (>5% impact).
-- State the risk level and key risks.
-- End with stop-loss and take-profit reference prices.
+Full diagnosis report format:
+1. Decision signal and score
+2. Top-3 driving factors
+3. Strategy that triggered the signal
+4. Sentiment adjustment if >5% impact
+5. Risk level and key risks
+6. Stop-loss and take-profit reference prices
 
-Use Chinese for Chinese market content unless the user writes in English. Use English for US/HK market content.
+Use Chinese for A-share content unless the user writes in English. Use English for US/HK content.
 
-## Error handling
+## Gotchas
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ModuleNotFoundError: No module named 'config'` | Wrong working directory | Run from project root (where `scripts/` is) or set PYTHONPATH |
+| `ModuleNotFoundError: No module named 'config'` | Wrong working directory | Run from project root (where scripts/ is) |
 | Scan returns 0 results | Cache empty or TTL expired | `python scripts/run.py fetch pool` first |
 | "Daily API limit reached" | AKShare rate limit (500/day) | Wait until next day; use cached data |
-| `RuntimeError: Daily API limit reached` | API calls exhausted | The system auto-degrades to cache; retry next day |
+| No BUY signals in alpha scan | Market weakness or cache cold | Run `diagnose` on individual stocks to build cache |
 | `import akshare` fails | Package not installed | `pip install akshare efinance baostock` |
-| No BUY signals in alpha scan | Market weakness or data not yet cached | Run `diagnose` on individual stocks first to build factor cache |
+| Code not found (e.g. "贵州茅台") | Pool not fetched | `python scripts/run.py fetch pool` to resolve names |
+| Diagnose returns partial data | K-line cache too short | `python scripts/run.py fetch kline <code> --market A` |
+| Backtest fails | Insufficient historical data | Ensure >= 1500 trading days cached |
 
-Python API error recovery patterns:
+Safe API fallback pattern:
 ```python
 from data_engine import get_kline
-kline = get_kline("600519", "A", days=365, cached_only=True)  # Skip API if cache exists
+kline = get_kline("600519", "A", days=365, cached_only=True)
 ```
+
+## Key Principles
+
+1. **Cache first, fetch on miss** — All data operations check SQLite cache before hitting AKShare API. Only refresh when TTL expires or user requests.
+2. **Multi-factor, multi-strategy** — No single factor or strategy drives decisions. Final signal is a weighted vote across 6 strategies built from 7 factor dimensions.
+3. **Script-driven analysis** — All workflows use `scripts/run.py` CLI. The agent runs commands, never reimplements logic.
+4. **Parallel by default** — Alpha momentum scoring uses thread pool (8 workers) for speed. Market scans factor scores concurrently.
+5. **Graceful degradation** — When API limit reached, system auto-degrades to cache-only mode. Partial results better than failures.
 
 ## Reference files
 
 Load only what is needed:
-- [source paths by market](./references/market-source-playbook.md)
-- [akshare official docs](./references/akshare_official_docs.md)
-- [research partner and learning-mode behavior](./references/serenity-dialogue-protocol.md)
-- [plain-language output contract](./references/output-style-and-language.md)
-- [source map used by the project](./references/research-sources.md)
-- [investment research boundaries](./references/risk-and-compliance.md)
 
-## Python API quick reference
+- **Factor weights & scoring details**: [references/factors.md](references/factors.md) — load when explaining factor breakdown or scoring logic
+- **Strategy weights & signal logic**: [references/strategies.md](references/strategies.md) — load when explaining strategy signals or enhanced weights
+- **Sentiment adjustment**: [references/sentiment.md](references/sentiment.md) — load when running diagnosis or sentiment analysis
+- **Python API & code structure**: [references/python-api.md](references/python-api.md) — load when user asks for programmatic access
+- **Enhanced Momentum details**: [references/enhanced-momentum.md](references/enhanced-momentum.md) — load when user mentions "enhanced" or "core-satellite"
+- **Market source paths**: [references/market-source-playbook.md](references/market-source-playbook.md)
+- **AKShare official docs**: [references/akshare_official_docs.md](references/akshare_official_docs.md)
+- **Output style & language**: [references/output-style-and-language.md](references/output-style-and-language.md)
+- **Research sources**: [references/research-sources.md](references/research-sources.md)
+- **Risk & compliance**: [references/risk-and-compliance.md](references/risk-and-compliance.md)
+- **Serenity dialogue protocol**: [references/serenity-dialogue-protocol.md](references/serenity-dialogue-protocol.md)
 
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
-```
+## Output File Specifications
 
-Data layer:
-```python
-from data_engine import get_stock_pool, get_kline, get_fundamentals
-from data_engine import get_fund_pool, get_fund_nav
-pool = get_stock_pool("A")
-kline = get_kline("600519", "A", days=365)
-fund = get_fundamentals("600519", "A")
-nav = get_fund_nav("510300", days=365)
-```
-
-Analysis:
-```python
-from factors.composite import CompositeAnalyzer
-result = CompositeAnalyzer("600519", "A").analyze()
-# total_score (0-100), factors dict, f_score (0-9)
-
-from strategies.aggregator import StrategyAggregator
-signals = StrategyAggregator("600519", "A").analyze_all()
-# final_signal, final_score, confidence, signals list
-
-from advisor.diagnosis import StockDiagnosis
-report = StockDiagnosis("600519", "A").full_report()
-# full diagnosis dict with all sections
-
-from advisor.scanner import MarketScanner
-scanner = MarketScanner()
-results = scanner.scan_top("A", top_n=20)
-```
-
-Portfolio and backtest:
-```python
-from portfolio.builder import PortfolioBuilder
-from portfolio.backtest_engine import AlphaMomentumBacktest
-
-builder = PortfolioBuilder("My Portfolio", capital=1_000_000)
-builder.add_from_strategy("600519", "A")
-portfolio = builder.build()
-
-engine = AlphaMomentumBacktest(capital=1_000_000, low_vol_min=0.4)
-result = engine.run()
-```
-
-Sentiment:
-```python
-from sentiment.aggregator import SentimentAggregator
-sentiment = SentimentAggregator("600519", "A").get_sentiment_report()
-# adjustment_factor (0.8-1.2), sources, scores
-```
-
-## Code structure
-
-```text
-scripts/
-├── config.py              # Pure-Python config with dot-path access
-├── cache.py               # SQLite cache manager with TTL, cleanup
-├── data_engine.py         # Data engine with AKShare + fallbacks
-├── models.py              # Data classes (StockInfo, KlineData, etc.)
-├── utils.py               # Code normalization, market detection
-├── run.py                 # CLI entry point
-├── factors/               # 7-factor analysis modules
-├── strategies/            # 6 quantitative strategies
-├── portfolio/             # Portfolio management (builder, allocator, risk)
-├── sentiment/             # Market sentiment aggregation
-├── advisor/               # Smart advisory (diagnosis, scanner)
-└── tools/                 # Utilities
-```
+1. **Storage path**: `./reports/`
+2. **Naming rule**: `{YYYY-MM-DD-HHMM}_{Short Title}.md`
+3. **Format**: Standard Markdown with clear hierarchy and unified formatting for direct reuse
 
 ## Risk disclaimer
 
 Output is for investment reference only, not investment advice. Data sources are third-party public platforms with 10-15 minute delay. Historical backtest results do not represent future returns.
-
-## Output File Specifications
-
-1. Storage Path: Folder `./reports/`
-2. File Naming Rule: `{YYYY-MM-DD-HHMM}_{Short Title}.md`
-3. File Format: Standard Markdown with clear hierarchy and unified formatting for direct reuse
