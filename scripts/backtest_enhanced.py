@@ -6,6 +6,15 @@ Monthly rebalance with market trend filter.
 Target: 18% CAGR, <20% MaxDD.
 """
 
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "numpy>=1.24.0",
+#     "pandas>=2.0.0",
+# ]
+# ///
+
+import argparse
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
@@ -313,4 +322,15 @@ def run_backtest():
 
 
 if __name__ == "__main__":
-    run_backtest()
+    parser = argparse.ArgumentParser(description="Enhanced Core-Satellite Backtest")
+    parser.add_argument("--output-dir", default="reports", help="Report output directory")
+    args = parser.parse_args()
+
+    from report_generator import save_report, format_backtest_summary
+
+    result = run_backtest()
+    save_report(result, "backtest_enhanced_direct", output_dir=args.output_dir,
+                metadata={"command": "backtest_enhanced", "engine": "CoreSatellite"})
+    md = format_backtest_summary(result, "Enhanced Core-Satellite Backtest (Direct)")
+    from report_generator import save_markdown
+    save_markdown(md, "backtest_enhanced_direct", output_dir=args.output_dir)

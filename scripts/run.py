@@ -1,5 +1,15 @@
 """Unified CLI entry point for the stock selection system."""
 
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "akshare>=1.10.0",
+#     "pandas>=2.0.0",
+#     "numpy>=1.24.0",
+#     "scipy>=1.10.0",
+# ]
+# ///
+
 import argparse
 import json
 import sys
@@ -25,23 +35,53 @@ from data_engine import (  # noqa: E402
     get_stock_pool,
 )
 
+from report_generator import (  # noqa: E402
+    save_report,
+    save_json,
+    save_markdown,
+    format_scan_results,
+    format_portfolio_summary,
+    format_diagnosis_summary,
+    format_backtest_summary,
+)
+
+
+def _save_report(
+    name: str, fmt: str, output_dir: str,
+    data: dict | None = None, md: str | None = None,
+    metadata: dict | None = None,
+) -> None:
+    """Save report in requested formats."""
+    if fmt == "none":
+        return
+    if fmt in ("json", "both") and data is not None:
+        save_report(data, name, output_dir=output_dir, metadata=metadata)
+    if fmt in ("md", "both") and md is not None:
+        save_markdown(md, name, output_dir=output_dir)
+
 
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Analyze a single stock: K-line + valuation + fundamentals."""
     code = args.code
     market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
     print(f"Analyzing {code} (market={market})...")
 
     kline = get_kline(code, market, days=365)
     print(f"  K-line data: {len(kline)} days cached")
 
     fund = get_fundamentals(code, market)
+    report_data = {"code": code, "market": market}
     if fund:
         print(f"  PE(TTM): {fund.get('pe_ttm', 'N/A')}")
         print(f"  PB:      {fund.get('pb', 'N/A')}")
         print(f"  ROE:     {fund.get('roe', 'N/A')}")
         print(f"  DivYld:  {fund.get('dividend_yield', 'N/A')}%")
         print(f"  MktCap:  {fund.get('market_cap', 0):,.0f}")
+        report_data["fundamentals"] = {
+            k: fund.get(k) for k in ("pe_ttm", "pb", "roe", "dividend_yield", "market_cap")
+        }
     else:
         print("  Fundamentals: not available (using cached/computed)")
 
@@ -55,6 +95,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         print(f"  Composite Score: {score:.1f}/100")
         for factor_name, factor_score in result.get("factors", {}).items():
             print(f"    {factor_name}: {factor_score:.1f}")
+        report_data["factor_analysis"] = result
     except Exception as exc:
         print(f"  Factor analysis: {exc}")
 
@@ -67,14 +108,20 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         final = signals.get("final_signal", "HOLD")
         final_score = signals.get("final_score", 0)
         print(f"  Strategy Signal: {final} (score={final_score:.1f})")
+        report_data["strategy"] = signals
     except Exception as exc:
         print(f"  Strategy analysis: {exc}")
+
+    _save_report(f"analyze_{code}_{market}", fmt, output_dir, data=report_data,
+                  metadata={"command": "analyze"})
 
 
 def cmd_diagnose(args: argparse.Namespace) -> None:
     """Deep diagnosis: strategy + sentiment + risk."""
     code = args.code
     market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
     print(f"Diagnosing {code} (market={market})...")
 
     try:
@@ -83,6 +130,10 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
         diag = StockDiagnosis(code, market)
         report = diag.full_report()
         print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+
+        md = format_diagnosis_summary(report)
+        _save_report(f"diagnose_{code}_{market}", fmt, output_dir,
+                      data=report, md=md, metadata={"command": "diagnose"})
     except Exception as exc:
         print(f"Diagnosis failed: {exc}")
 
@@ -91,6 +142,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
     """Scan market for top stocks."""
     market = args.market
     top_n = args.top or 20
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
 
     if market == "FUND":
         print("Scanning funds...")
@@ -98,6 +151,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
         print(f"Found {len(funds)} funds")
         for f in funds[:top_n]:
             print(f"  {f.get('code', '?')} {f.get('name', '?')}")
+        _save_report("scan_FUND", fmt, output_dir,
+                      data={"market": "FUND", "count": len(funds), "results": funds[:top_n]})
         return
 
     print(f"Scanning {market} market for top {top_n}...", flush=True)
@@ -119,6 +174,10 @@ def cmd_scan(args: argparse.Namespace) -> None:
             name = r.get("name", r["code"])
             f_score = r.get("f_score", 0)
             print(f"  {i:3d}. {r['code']} {name}: {score:.1f} (F={f_score})")
+
+        _save_report(f"scan_{market}", fmt, output_dir,
+                      data={"market": market, "top_n": top_n, "results": results},
+                      metadata={"command": "scan", "market": market, "top_n": top_n})
     except Exception as exc:
         print(f"Scan failed: {exc}")
 
@@ -128,6 +187,8 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
     codes = [c.strip() for c in args.codes.split(",")]
     capital = args.capital or 1000000
     market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
 
     print(f"Building portfolio with {len(codes)} stocks, capital={capital:,.0f}")
     try:
@@ -138,6 +199,24 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
             builder.add_from_strategy(c, market)
         portfolio = builder.build()
         print(portfolio.summary())
+
+        positions_data = []
+        for p in portfolio.positions:
+            positions_data.append({
+                "code": p.code, "name": p.name, "weight": p.weight,
+                "shares": p.shares, "cost": p.cost,
+            })
+        port_data = {
+            "name": portfolio.name,
+            "capital": capital,
+            "market": market,
+            "positions": positions_data,
+            "metrics": portfolio.metrics,
+        }
+        md = format_portfolio_summary(portfolio.name, capital, positions_data, portfolio.metrics)
+        _save_report(f"portfolio_{market}", fmt, output_dir,
+                      data=port_data, md=md,
+                      metadata={"command": "portfolio", "market": market})
     except Exception as exc:
         print(f"Portfolio build failed: {exc}")
 
@@ -181,6 +260,8 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     """Alpha momentum scan: rank stocks by optimized multi-factor strategy."""
     market = args.market
     top_n = args.top or 10
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
 
     print(f"Alpha Momentum scan on {market}, top {top_n}...")
     try:
@@ -223,21 +304,34 @@ def cmd_alpha(args: argparse.Namespace) -> None:
         header += f"{'得分':<6} {'信号':<6} {'F':<4}"
         print(f"\n{header}")
         print("-" * 45)
-        for i, (code, name, score, signal, fsc, _) in enumerate(results[:top_n], 1):
+        top_results = results[:top_n]
+        for i, (code, name, score, signal, fsc, _) in enumerate(top_results, 1):
             print(f"{i:<4} {code:<10} {name:<10} {score:<6.1f} {signal:<6} {fsc:<4}")
 
         print("\n推荐买入 (BUY信号):")
-        buys = [(c, n, s, f) for c, n, s, sig, f, _ in results[:top_n] if sig == "BUY"]
+        buys = [(c, n, s, f) for c, n, s, sig, f, _ in top_results if sig == "BUY"]
         for c, n, s, f in buys:
             print(f"  {c} {n} (得分={s:.1f}, F={f})")
         if not buys:
             print("  当前无BUY信号")
+
+        ranked = []
+        for code, name, score, signal, fsc, factors in top_results:
+            ranked.append({
+                "code": code, "name": name, "score": score,
+                "signal": signal, "f_score": fsc, "factors": factors,
+            })
+        _save_report(f"alpha_{market}", fmt, output_dir,
+                      data={"market": market, "top_n": top_n, "results": ranked, "buys": buys},
+                      metadata={"command": "alpha", "market": market, "top_n": top_n})
     except Exception as exc:
         print(f"Alpha scan failed: {exc}")
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
     """Run Alpha Momentum backtest (2018-2026)."""
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
     print("Running Alpha Momentum backtest...")
     try:
         from portfolio.backtest_engine import AlphaMomentumBacktest
@@ -270,6 +364,10 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             print(f"  Result: PASS (CAGR {cagr * 100:.2f}% > 12% target)")
         else:
             print(f"  Result: FAIL (CAGR {cagr * 100:.2f}% < 12% target)")
+
+        md = format_backtest_summary(result, "Alpha Momentum Backtest (2018-2026)")
+        _save_report("backtest", fmt, output_dir, data=result, md=md,
+                      metadata={"command": "backtest", "engine": "AlphaMomentumBacktest"})
     except Exception as exc:
         print(f"Backtest failed: {exc}")
         import traceback
@@ -279,6 +377,8 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
 def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
     """Run Enhanced Core-Satellite backtest (2018-2026)."""
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
     print("Running Enhanced Core-Satellite backtest...")
     try:
         import importlib
@@ -290,6 +390,10 @@ def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
             f"Sharpe={result.get('sharpe', 0):.2f}, "
             f"MaxDD={result.get('max_drawdown', 0)*100:.2f}%"
         )
+
+        md = format_backtest_summary(result, "Enhanced Core-Satellite Backtest (2018-2026)")
+        _save_report("backtest_enhanced", fmt, output_dir, data=result, md=md,
+                      metadata={"command": "backtest-enhanced", "engine": "CoreSatellite"})
     except Exception as exc:
         print(f"Enhanced backtest failed: {exc}")
         import traceback
@@ -300,6 +404,8 @@ def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
 def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
     """Build ETF(3) + Alpha Momentum Top3 = 6 positions portfolio."""
     capital = args.capital or 1000000
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
     print(f"Building Enhanced Core-Satellite portfolio, capital={capital:,.0f}")
     try:
         from data_engine import get_stock_pool
@@ -321,6 +427,24 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
             builder.add_from_strategy(code, "A")
         portfolio = builder.build()
         print(portfolio.summary())
+
+        positions_data = []
+        for p in portfolio.positions:
+            positions_data.append({
+                "code": p.code, "name": p.name, "weight": p.weight,
+                "shares": p.shares, "cost": p.cost,
+            })
+        port_data = {
+            "name": "Core-Satellite",
+            "capital": capital,
+            "etfs": [e["code"] for e in etfs],
+            "stocks": selected,
+            "positions": positions_data,
+            "metrics": portfolio.metrics,
+        }
+        md = format_portfolio_summary("Core-Satellite", capital, positions_data, portfolio.metrics)
+        _save_report("portfolio_enhanced", fmt, output_dir, data=port_data, md=md,
+                      metadata={"command": "portfolio-enhanced"})
     except Exception as exc:
         print(f"Enhanced portfolio build failed: {exc}")
 
@@ -336,7 +460,7 @@ def cmd_scheduler(args: argparse.Namespace) -> None:
         print(f"Running scheduled analysis for {len(watchlist)} stocks...")
         for code in watchlist:
             print(f"\n--- {code} ---")
-            fake_args = argparse.Namespace(code=code, market="A")
+            fake_args = argparse.Namespace(code=code, market="A", output_dir="reports")
             cmd_analyze(fake_args)
     else:
         print("Scheduler mode: use --run-now for immediate execution")
@@ -352,12 +476,18 @@ def main() -> None:
     p = sub.add_parser("analyze", help="Analyze a single stock")
     p.add_argument("code", help="Stock code")
     p.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_analyze)
 
     # diagnose
     p = sub.add_parser("diagnose", help="Deep stock diagnosis")
     p.add_argument("code", help="Stock code")
     p.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_diagnose)
 
     # scan
@@ -367,6 +497,9 @@ def main() -> None:
     p.add_argument(
         "--candidates", type=int, default=0, help="Max candidates to evaluate (0=auto)"
     )
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_scan)
 
     # portfolio
@@ -374,6 +507,9 @@ def main() -> None:
     p.add_argument("--codes", required=True, help="Comma-separated stock codes")
     p.add_argument("--capital", type=float, default=1000000)
     p.add_argument("--market", default="A")
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_portfolio)
 
     # fetch
@@ -392,16 +528,25 @@ def main() -> None:
     p.add_argument(
         "--candidates", type=int, default=0, help="Max candidates to evaluate (0=auto)"
     )
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_alpha)
 
     # backtest
     p = sub.add_parser("backtest", help="Run Alpha Momentum backtest (2018-2026)")
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_backtest)
 
     # backtest-enhanced
     p = sub.add_parser(
         "backtest-enhanced", help="Run Enhanced Core-Satellite backtest (2018-2026)"
     )
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_backtest_enhanced)
 
     # portfolio-enhanced
@@ -409,6 +554,9 @@ def main() -> None:
         "portfolio-enhanced", help="ETF(3)+Alpha Momentum Top3 = 6 positions"
     )
     p.add_argument("--capital", type=float, default=1000000)
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
+                    help="Report output format")
     p.set_defaults(func=cmd_portfolio_enhanced)
 
     # scheduler
