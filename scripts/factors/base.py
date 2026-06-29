@@ -1,10 +1,9 @@
 """Base factor class and normalization utilities."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
-
 from config import get as cfg_get
 
 

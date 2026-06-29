@@ -1,6 +1,7 @@
 """Smart investment advisor module."""
-from advisor.scanner import MarketScanner
+
 from advisor.diagnosis import StockDiagnosis
+from advisor.scanner import MarketScanner
 
 __all__ = [
     "MarketScanner",

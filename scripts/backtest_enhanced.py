@@ -11,14 +11,13 @@ from collections import defaultdict
 from datetime import datetime
 
 import numpy as np
-
 from cache import get_cache
 from data_engine import get_fundamentals
-from factors.momentum import MomentumFactor
+from factors.growth import GrowthFactor
 from factors.low_vol import LowVolFactor
+from factors.momentum import MomentumFactor
 from factors.quality import QualityFactor
 from factors.value import ValueFactor
-from factors.growth import GrowthFactor
 from utils import is_st
 
 LOW_VOL_MIN = 0.40
@@ -126,13 +125,13 @@ def run_backtest():
         fund = fc.get(code, {})
         try:
             s = mf.compute(fund, kslice, "A")
-            l = lf.compute(kslice, "A")
+            lv = lf.compute(kslice, "A")
             q = qf.compute(fund, kslice, "A")
             v = vf.compute(fund, kslice, "A")
             g = gf.compute(fund, kslice, "A")
-            if l < LOW_VOL_MIN:
+            if lv < LOW_VOL_MIN:
                 return 0
-            return s * 0.35 + l * 0.18 + q * 0.20 + v * 0.17 + g * 0.10
+            return s * 0.35 + lv * 0.18 + q * 0.20 + v * 0.17 + g * 0.10
         except Exception:
             return 0
 
@@ -142,8 +141,7 @@ def run_backtest():
         conn2 = sqlite3.connect(str(c.db_path))
         cur2 = conn2.execute(
             "SELECT date, close FROM market_index "
-            "WHERE index_code = ? ORDER BY date"
-        ,
+            "WHERE index_code = ? ORDER BY date",
             (_INDEX_CSI300,),
         )
         for row in cur2.fetchall():
@@ -270,7 +268,7 @@ def run_backtest():
     yr = max((ed_dt - start_dt).days / 365.25, 0.1)
     cagr = (na[-1] / na[0]) ** (1 / yr) - 1
 
-    ra = [((na[k] - na[k-1]) / na[k-1]) for k in range(1, len(na)) if na[k-1] > 0]
+    ra = [((na[k] - na[k - 1]) / na[k - 1]) for k in range(1, len(na)) if na[k - 1] > 0]
     ra = np.array(ra)
     sh = 0
     if len(ra) > 1 and np.std(ra) > 0:
@@ -291,7 +289,7 @@ def run_backtest():
     print(f"  Max DD:     {mdd*100:.2f}%")
     print(f"  Calmar:     {calmar:.2f}")
     print(f"  Final NAV:  {na[-1]:,.0f}")
-    print(f"  Target:     18.00% CAGR, <20% MaxDD")
+    print("  Target:     18.00% CAGR, <20% MaxDD")
 
     if cagr >= 0.18 and abs(mdd) <= 0.20:
         print("\n  VERDICT: PASS")
@@ -303,9 +301,14 @@ def run_backtest():
         print("\n  VERDICT: FAIL")
 
     return {
-        "cagr": cagr, "total_return": tr, "sharpe": sh,
-        "max_drawdown": mdd, "calmar": calmar, "final_nav": float(na[-1]),
-        "months": len(rd) - 1, "years": yr,
+        "cagr": cagr,
+        "total_return": tr,
+        "sharpe": sh,
+        "max_drawdown": mdd,
+        "calmar": calmar,
+        "final_nav": float(na[-1]),
+        "months": len(rd) - 1,
+        "years": yr,
     }
 
 

@@ -16,7 +16,6 @@ Factor weights (optimized for higher target return):
 
 from typing import Any, Dict, List
 
-from models import Signal
 from strategies.base import Strategy
 
 LOW_VOL_MIN = 0.40
@@ -68,8 +67,9 @@ class MomentumEnhancedStrategy(Strategy):
                 "signal": "SELL",
                 "score": 0.0,
                 "confidence": 0.0,
-                "detail": dict(detail, filter=f"low_vol {low_vol_score:.2f} < 
-        {LOW_VOL_MIN}"),
+                "detail": dict(
+                    detail, filter=f"low_vol {low_vol_score:.2f} < {LOW_VOL_MIN}"
+                ),
             }
 
         score = (

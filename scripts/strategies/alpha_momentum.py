@@ -2,7 +2,6 @@
 
 from typing import Any, Dict
 
-from models import Signal
 from strategies.base import Strategy
 
 LOW_VOL_MIN = 0.4
@@ -22,7 +21,7 @@ class AlphaMomentumStrategy(Strategy):
     Hard filters: low_vol < 0.4 excluded, EPS <= 0 excluded, ST stocks excluded.
     Diversification: max 3 stocks per board (SH/SZ/SME/GEM/STAR).
 
-    Backtest result (75 A-share stocks, 2018-2026): CAGR 14.27%, Sharpe 0.72, MaxDD 
+    Backtest result (75 A-share stocks, 2018-2026): CAGR 14.27%, Sharpe 0.72, MaxDD
         -18.35%.
     """
 
@@ -47,8 +46,9 @@ class AlphaMomentumStrategy(Strategy):
                 "signal": "SELL",
                 "score": 0.0,
                 "confidence": 0.0,
-                "detail": dict(detail, filter=f"low_vol {low_vol_score:.2f} < 
-        {LOW_VOL_MIN}"),
+                "detail": dict(
+                    detail, filter=f"low_vol {low_vol_score:.2f} < {LOW_VOL_MIN}"
+                ),
             }
 
         # Weighted composite score

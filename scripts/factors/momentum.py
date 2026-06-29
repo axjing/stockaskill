@@ -33,7 +33,7 @@ class MomentumFactor(Factor):
             return 0.5
 
         # 6-month momentum, excluding last month (~20 trading days)
-        current = closes[0]
+        _ = closes[0]
         m1_ago = closes[20] if len(closes) > 20 else closes[0]
         m6_ago = closes[120] if len(closes) > 120 else closes[-1]
 

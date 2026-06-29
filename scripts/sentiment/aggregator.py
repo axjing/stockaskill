@@ -1,11 +1,11 @@
 """Sentiment aggregator: combine multiple sources into adjustment factor."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from sentiment.sources import (
+    aggregate_market_sentiment,
     get_guba_sentiment,
     get_market_breadth,
-    aggregate_market_sentiment,
 )
 
 
@@ -41,7 +41,6 @@ class SentimentAggregator:
 
         # Weighted average
         stock_sentiment = (guba.get("sentiment_score", 0.5) + 1) / 2
-        1]
         overall = stock_sentiment * 0.4 + market * 0.6
 
         return {

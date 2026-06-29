@@ -1,11 +1,12 @@
 """Unified SQLite cache manager for the stock selection system."""
 
+import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from config import get as cfg_get
 
@@ -83,7 +84,7 @@ _SCHEMA = [
         low REAL, close REAL, volume REAL, amount REAL,
         PRIMARY KEY (index_code, date)
     )""",
-        """CREATE TABLE IF NOT EXISTS kv_store (
+    """CREATE TABLE IF NOT EXISTS kv_store (
         key TEXT PRIMARY KEY, value TEXT, expires REAL
     )""",
     """CREATE TABLE IF NOT EXISTS factor_weights (
@@ -187,8 +188,7 @@ class CacheManager:
                 )
             else:
                 cur = conn.execute(
-                    "SELECT * FROM daily_price "
-                    "WHERE code=? ORDER BY date DESC",
+                    "SELECT * FROM daily_price " "WHERE code=? ORDER BY date DESC",
                     (code,),
                 )
             return [dict(r) for r in cur.fetchall()]
@@ -233,9 +233,7 @@ class CacheManager:
                 rows,
             )
 
-    def get_latest_factor_snapshot(
-        self, code: str
-    ) -> Dict[str, Any] | None:
+    def get_latest_factor_snapshot(self, code: str) -> Dict[str, Any] | None:
         """Get the most recent fundamental snapshot for a stock."""
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
@@ -264,9 +262,7 @@ class CacheManager:
                     (code, date, name, value),
                 )
 
-    def get_computed_factors(
-        self, code: str, date: str = ""
-    ) -> Dict[str, float]:
+    def get_computed_factors(self, code: str, date: str = "") -> Dict[str, float]:
         """Get computed factors for a stock."""
         with self._conn() as conn:
             if date:
@@ -300,6 +296,7 @@ class CacheManager:
     def get_sentiment(self, code: str, days: int = 7) -> List[Dict[str, Any]]:
         """Get recent sentiment data for a stock."""
         from datetime import datetime, timedelta
+
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
@@ -351,17 +348,15 @@ class CacheManager:
                 rows,
             )
 
-    def get_fund_nav(
-        self, code: str, days: int = 365
-    ) -> List[Dict[str, Any]]:
+    def get_fund_nav(self, code: str, days: int = 365) -> List[Dict[str, Any]]:
         """Get fund NAV history."""
         from datetime import datetime, timedelta
+
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                "SELECT * FROM fund_nav WHERE code=? AND date>=? "
-                "ORDER BY date DESC",
+                "SELECT * FROM fund_nav WHERE code=? AND date>=? " "ORDER BY date DESC",
                 (code, cutoff),
             )
             return [dict(r) for r in cur.fetchall()]
@@ -388,6 +383,7 @@ class CacheManager:
     ) -> List[Dict[str, Any]]:
         """Get market index K-line data."""
         from datetime import datetime, timedelta
+
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
@@ -438,12 +434,14 @@ class CacheManager:
                 if row[1] and time.time() > row[1]:
                     return None
                 import json
+
                 return json.loads(row[0])
         return None
 
     def kv_set(self, key: str, value: Any, ttl: int = 3600) -> None:
         """Set a cached value with TTL."""
         import json
+
         expires = time.time() + ttl
         with self._conn() as conn:
             conn.execute(
@@ -509,8 +507,7 @@ class CacheManager:
             )
             # Verify the insert/update succeeded
             cur2 = conn.execute(
-                "SELECT call_count FROM api_usage "
-                "WHERE date=? AND api_name=?",
+                "SELECT call_count FROM api_usage " "WHERE date=? AND api_name=?",
                 (today, api_name),
             )
             row = cur2.fetchone()
@@ -537,13 +534,14 @@ class CacheManager:
 
     # -- metadata -----------------------------------------------------------
 
-    def _touch_meta(self, table: str, count: int,
-                    conn: sqlite3.Connection | None = None) -> None:
+    def _touch_meta(
+        self, table: str, count: int, conn: sqlite3.Connection | None = None
+    ) -> None:
         if conn is None:
             with self._conn() as c:
                 c.execute(
-                    "INSERT INTO cache_meta (table_name, last_updated, record_count, 
-        status) "
+                    "INSERT INTO cache_meta "
+                    "(table_name, last_updated, record_count, status) "
                     "VALUES (?, ?, ?, 'ok') "
                     "ON CONFLICT(table_name) DO UPDATE SET "
                     "last_updated=excluded.last_updated, "
@@ -552,8 +550,8 @@ class CacheManager:
                 )
         else:
             conn.execute(
-                "INSERT INTO cache_meta (table_name, last_updated, record_count, status) 
-        "
+                "INSERT INTO cache_meta "
+                "(table_name, last_updated, record_count, status) "
                 "VALUES (?, ?, ?, 'ok') "
                 "ON CONFLICT(table_name) DO UPDATE SET "
                 "last_updated=excluded.last_updated, "
@@ -570,8 +568,6 @@ class CacheManager:
             row = cur.fetchone()
             return row[0] if row else None
 
-
-
     def cleanup(self, max_age_days: int = 30, max_size_mb: int = 500) -> Dict[str, int]:
         """Clean up old cache entries to prevent unbounded growth.
 
@@ -582,14 +578,14 @@ class CacheManager:
         Returns:
             Dict with counts of removed entries per table.
         """
-        import os as _os
         removed = {}
         db_size = os.path.getsize(self.db_path) / (1024 * 1024)
 
         with self._conn() as conn:
             # Remove old daily_price entries
-            cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime("%Y-%m-%d"
-        )
+            cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime(
+                "%Y-%m-%d"
+            )
             cur = conn.execute(
                 "DELETE FROM daily_price WHERE date < ?",
                 (cutoff,),
@@ -615,6 +611,7 @@ class CacheManager:
             conn.execute("VACUUM")
 
         return removed
+
 
 # Singleton
 _cache: CacheManager | None = None

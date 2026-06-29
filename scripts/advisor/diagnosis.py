@@ -1,12 +1,10 @@
 """Stock diagnosis: comprehensive analysis report."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
-
-from data_engine import get_kline, get_fundamentals
+from data_engine import get_fundamentals, get_kline
 from factors.composite import CompositeAnalyzer
-from models import Signal
 from sentiment.aggregator import SentimentAggregator
 from strategies.aggregator import StrategyAggregator
 
@@ -87,9 +85,7 @@ class StockDiagnosis:
         except Exception as exc:
             return {"error": str(exc), "adjustment_factor": 1.0}
 
-    def _technical_analysis(
-        self, kline: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def _technical_analysis(self, kline: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Technical indicators from K-line data."""
         if not kline or len(kline) < 60:
             return {"status": "insufficient_data"}
@@ -125,9 +121,7 @@ class StockDiagnosis:
             "trend": "bullish" if ma5 > ma10 > ma20 else "bearish",
         }
 
-    def _fundamental_health(
-        self, fundamentals: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _fundamental_health(self, fundamentals: Dict[str, Any]) -> Dict[str, Any]:
         """Assess fundamental health."""
         if not fundamentals:
             return {"status": "no_data"}
@@ -139,10 +133,10 @@ class StockDiagnosis:
         dy = fundamentals.get("dividend_yield", 0) or 0
 
         health_checks = {
-            "valuation": "reasonable" if 0 < pe < 30 else ("expensive" if pe > 0 else "
-        unknown"),
-                "profitability": "good" if roe > 0.15 else "negative",
-        ),
+            "valuation": "reasonable"
+            if 0 < pe < 30
+            else ("expensive" if pe > 0 else "unknown"),
+            "profitability": "good" if roe > 0.15 else "negative",
             "leverage": "safe" if debt < 0.5 else "high",
             "dividend": "paying" if dy > 0 else "none",
         }
@@ -192,9 +186,9 @@ class StockDiagnosis:
         return {
             "risk_count": len(risks),
             "risks": risks,
-            "risk_level": "high" if len(risks) >= 2 else (
-                "medium" if len(risks) == 1 else "low"
-            ),
+            "risk_level": "high"
+            if len(risks) >= 2
+            else ("medium" if len(risks) == 1 else "low"),
         }
 
     def _final_decision(
@@ -226,9 +220,7 @@ class StockDiagnosis:
             signal = "HOLD"
 
         # Stop-loss / take-profit references
-        tech = self._technical_analysis(
-            get_kline(self.code, self.market, days=365)
-        )
+        tech = self._technical_analysis(get_kline(self.code, self.market, days=365))
         current_price = tech.get("current_price", 0)
         support = tech.get("support_20d", current_price * 0.9)
 
@@ -246,7 +238,7 @@ class StockDiagnosis:
         """Calculate RSI."""
         if len(closes) < period + 1:
             return 50.0
-        changes = np.diff(closes[:period + 1][::-1])
+        changes = np.diff(closes[: period + 1][::-1])
         gains = np.maximum(changes, 0)
         losses = np.maximum(-changes, 0)
         avg_gain = np.mean(gains)

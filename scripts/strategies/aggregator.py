@@ -2,14 +2,14 @@
 
 from typing import Any, Dict, List
 
+from strategies.alpha_momentum import AlphaMomentumStrategy
 from strategies.base import Strategy
-from strategies.multi_factor import MultiFactorStrategy
+from strategies.contrarian import ContrarianStrategy
 from strategies.deep_value import DeepValueStrategy
 from strategies.garp import GARPStrategy
 from strategies.ma_trend import MATrendStrategy
-from strategies.contrarian import ContrarianStrategy
-from strategies.alpha_momentum import AlphaMomentumStrategy
 from strategies.momentum_enhanced import MomentumEnhancedStrategy
+from strategies.multi_factor import MultiFactorStrategy
 
 _STRATEGIES = [
     MultiFactorStrategy,
@@ -85,6 +85,3 @@ class StrategyAggregator:
             "confidence": round(avg_confidence, 2),
             "signals": signals,
         }
-
-
-

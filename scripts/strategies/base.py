@@ -1,10 +1,9 @@
 """Base strategy class and signal enum."""
 
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from data_engine import get_kline, get_fundamentals
+from data_engine import get_fundamentals, get_kline
 from models import Signal
 
 

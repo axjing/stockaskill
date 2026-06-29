@@ -3,10 +3,9 @@
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
-
 from cache import get_cache
 from data_engine import get_fundamentals
 from factors.growth import GrowthFactor
@@ -111,13 +110,13 @@ class AlphaMomentumBacktest:
                 fund = fc.get(code, {})
                 try:
                     s = self.mf.compute(fund, kslice, "A")
-                    l = self.lf.compute(kslice, "A")
+                    lv = self.lf.compute(kslice, "A")
                     q = self.qf.compute(fund, kslice, "A")
                     v = self.vf.compute(fund, kslice, "A")
                     g = self.gf.compute(fund, kslice, "A")
-                    if l < self.low_vol_min:
+                    if lv < self.low_vol_min:
                         continue
-                    score = s * 0.30 + l * 0.28 + q * 0.21 + v * 0.14 + g * 0.07
+                    score = s * 0.30 + lv * 0.28 + q * 0.21 + v * 0.14 + g * 0.07
                     if score > 0:
                         scored.append((code, score))
                 except Exception:
@@ -185,9 +184,7 @@ class AlphaMomentumBacktest:
             return "GEM"
         return "OTHER"
 
-    def _select_diversified(
-        self, scored: List[tuple[str, float]]
-    ) -> List[str]:
+    def _select_diversified(self, scored: List[tuple[str, float]]) -> List[str]:
         """Select top stocks with board diversification.
 
         Args:
@@ -210,9 +207,7 @@ class AlphaMomentumBacktest:
                 break
         return selected
 
-    def _compute_metrics(
-        self, nav: List[float], rd: List[str]
-    ) -> Dict[str, Any]:
+    def _compute_metrics(self, nav: List[float], rd: List[str]) -> Dict[str, Any]:
         """Compute backtest performance metrics.
 
         Args:

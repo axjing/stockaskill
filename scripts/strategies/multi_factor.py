@@ -2,7 +2,6 @@
 
 from typing import Any, Dict
 
-from models import Signal
 from strategies.base import Strategy
 
 

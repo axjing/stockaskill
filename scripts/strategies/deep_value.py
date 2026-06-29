@@ -2,7 +2,6 @@
 
 from typing import Any, Dict
 
-from models import Signal
 from strategies.base import Strategy
 
 
@@ -29,6 +28,7 @@ class DeepValueStrategy(Strategy):
 
         # F-Score from composite
         from factors.composite import CompositeAnalyzer
+
         f_score = CompositeAnalyzer(code, market).analyze().get("f_score", 0)
 
         score = 0
@@ -66,7 +66,7 @@ class DeepValueStrategy(Strategy):
         # Safety margin estimate (simplified Graham number)
         if pe > 0 and self._safe(fund.get("bvps", 0)) > 0:
             graham_num = (22.5 * pe * self._safe(fund.get("bvps", 0))) ** 0.5
-            current = self._safe(fund.get("market_cap", 0))
+            _ = self._safe(fund.get("market_cap", 0))
             # Simplified: use PE*BV as proxy
             safety = (graham_num - pe) / max(pe, 1)
             if safety > 0.3:

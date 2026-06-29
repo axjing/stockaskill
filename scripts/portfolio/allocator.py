@@ -1,6 +1,6 @@
 """Asset allocation strategies."""
 
-from typing import Any, Dict, List, Tuple
+from typing import List
 
 import numpy as np
 

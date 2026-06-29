@@ -1,23 +1,18 @@
 """Core data engine: AKShare (Sina primary) with caching and fallbacks."""
 
+import logging
 import sqlite3
 import threading
-import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-
 from cache import get_cache
 from config import get as cfg_get
 
 _akshare_lock = threading.RLock()
-from utils import (
-    code_to_akshare_symbol,
-    code_to_xq_symbol,
-    detect_market,
-    exchange_suffix,
+from utils import (  # noqa: E402
     normalize_code,
     safe_float,
 )
@@ -28,14 +23,14 @@ logger = logging.getLogger(__name__)
 
 # -- Retry / rate-limit decorator -------------------------------------------
 
+
 def _api_call(api_name: str):
     """Decorator: rate-limit + exponential backoff + usage tracking."""
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             if not _cache.record_api_call(api_name):
-                raise RuntimeError(
-                    f"Daily API limit reached for {api_name}"
-                )
+                raise RuntimeError(f"Daily API limit reached for {api_name}")
             retry_max = cfg_get("retry_max", 3)
             retry_base = cfg_get("retry_base", 2)
             interval = cfg_get("request_interval", [0.5, 2.0])
@@ -47,19 +42,23 @@ def _api_call(api_name: str):
                 except Exception:
                     if attempt == retry_max - 1:
                         raise
-                    delay = min(retry_base ** attempt * 2, 30)
+                    delay = min(retry_base**attempt * 2, 30)
                     time.sleep(delay)
             return None
+
         return wrapper
+
     return decorator
 
 
 # -- Data source: AKShare (primary) -----------------------------------------
 
+
 def _try_akshare() -> Optional[Any]:
     """Import AKShare, return module or None."""
     try:
         import akshare as ak
+
         return ak
     except ImportError:
         return None
@@ -69,6 +68,7 @@ def _try_efinance() -> Optional[Any]:
     """Import efinance, return module or None."""
     try:
         import efinance as ef
+
         return ef
     except ImportError:
         return None
@@ -78,6 +78,7 @@ def _try_baostock() -> Optional[Any]:
     """Import baostock, return module or None."""
     try:
         import baostock as bs
+
         bs.login()
         return bs
     except ImportError:
@@ -85,6 +86,7 @@ def _try_baostock() -> Optional[Any]:
 
 
 # -- Helpers ----------------------------------------------------------------
+
 
 def _sina_code(code: str, market: str = "A") -> str:
     """Convert code to Sina format."""
@@ -99,8 +101,10 @@ def _sina_code(code: str, market: str = "A") -> str:
 
 # -- Stock pool -------------------------------------------------------------
 
-def get_stock_pool(market: str = "A", force_refresh: bool = False) -> List[Dict[str, 
-        Any]]:
+
+def get_stock_pool(
+    market: str = "A", force_refresh: bool = False
+) -> List[Dict[str, Any]]:
     """Get stock pool for a market. Returns cached data, refreshes if needed."""
     if force_refresh or _cache.pool_needs_refresh():
         _refresh_stock_pool(market)
@@ -111,8 +115,10 @@ def _refresh_stock_pool(market: str) -> None:
     """Fetch full stock pool from API and cache it."""
     ak = _try_akshare()
     if ak is None:
-        print("[WARN] akshare not installed, cannot refresh stock pool. "
-              "Run: pip install akshare")
+        print(
+            "[WARN] akshare not installed, cannot refresh stock pool. "
+            "Run: pip install akshare"
+        )
         return
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -127,17 +133,21 @@ def _refresh_stock_pool(market: str) -> None:
             if df is not None and not df.empty:
                 pool_rows = []
                 for _, r in df.iterrows():
-                    pool_rows.append({
-                        "code": normalize_code(str(r.get("code", ""))),
-                        "name": str(r.get("name", "")),
-                        "market": "FUND",
-                        "sector": "",
-                        "industry": str(r.get("fund_type", "ETF")),
-                        "list_date": "",
-                        "total_market_cap": safe_float(r.get("total_market_cap", 0)),
-                        "is_active": 1,
-                        "updated_at": now,
-                    })
+                    pool_rows.append(
+                        {
+                            "code": normalize_code(str(r.get("code", ""))),
+                            "name": str(r.get("name", "")),
+                            "market": "FUND",
+                            "sector": "",
+                            "industry": str(r.get("fund_type", "ETF")),
+                            "list_date": "",
+                            "total_market_cap": safe_float(
+                                r.get("total_market_cap", 0)
+                            ),
+                            "is_active": 1,
+                            "updated_at": now,
+                        }
+                    )
                 _cache.upsert_stock_pool(pool_rows)
             return
         else:
@@ -146,17 +156,19 @@ def _refresh_stock_pool(market: str) -> None:
             rows = []
             for _, r in df.iterrows():
                 raw_code = str(r.get("code", ""))
-                rows.append({
-                    "code": normalize_code(raw_code),
-                    "name": str(r.get("name", "")),
-                    "market": market,
-                    "sector": str(r.get("sector", "")),
-                    "industry": str(r.get("industry", "")),
-                    "list_date": str(r.get("list_date", "")),
-                    "total_market_cap": safe_float(r.get("total_market_cap", 0)),
-                    "is_active": 1,
-                    "updated_at": now,
-                })
+                rows.append(
+                    {
+                        "code": normalize_code(raw_code),
+                        "name": str(r.get("name", "")),
+                        "market": market,
+                        "sector": str(r.get("sector", "")),
+                        "industry": str(r.get("industry", "")),
+                        "list_date": str(r.get("list_date", "")),
+                        "total_market_cap": safe_float(r.get("total_market_cap", 0)),
+                        "is_active": 1,
+                        "updated_at": now,
+                    }
+                )
             _cache.upsert_stock_pool(rows)
     except Exception as exc:
         print(f"[WARN] Failed to refresh stock pool for {market}: {exc}")
@@ -243,6 +255,7 @@ def _fetch_fund_pool_df(ak) -> Optional[pd.DataFrame]:
 
 # -- K-line data ------------------------------------------------------------
 
+
 def get_kline(
     code: str,
     market: str = "A",
@@ -258,7 +271,7 @@ def get_kline(
         market: Market identifier.
         days: Number of trading days to return.
         force_refresh: Force re-fetch from upstream.
-        full_history: Fetch all available history from API (overrides days for fetch 
+        full_history: Fetch all available history from API (overrides days for fetch
         range).
         cached_only: If True, skip API calls and return cached data only.
 
@@ -288,7 +301,7 @@ def get_kline(
             start = _date_str(datetime.now() - timedelta(days=days + 30))
 
     end = _date_str(datetime.now())
-    call_days = max(days, 1500) if full_history else days
+    _ = max(days, 1500) if full_history else days
     try:
         new_data = _fetch_kline(code, market, start, end)
         if new_data:
@@ -300,9 +313,7 @@ def get_kline(
     return cached[:days] if cached else []
 
 
-def _fetch_kline(
-    code: str, market: str, start: str, end: str
-) -> List[Dict[str, Any]]:
+def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str, Any]]:
     """Fetch K-line: Sina first, then baostock, then efinance."""
     ak = _try_akshare()
     if ak is not None:
@@ -351,17 +362,19 @@ def _fetch_kline_sina(
 
     rows = []
     for _, r in df.iterrows():
-        rows.append({
-            "code": code,
-            "date": str(r.get("date", "")),
-            "open": safe_float(r.get("open", 0)),
-            "high": safe_float(r.get("high", 0)),
-            "low": safe_float(r.get("low", 0)),
-            "close": safe_float(r.get("close", 0)),
-            "volume": safe_float(r.get("volume", 0)),
-            "amount": safe_float(r.get("amount", 0)),
-            "market": market,
-        })
+        rows.append(
+            {
+                "code": code,
+                "date": str(r.get("date", "")),
+                "open": safe_float(r.get("open", 0)),
+                "high": safe_float(r.get("high", 0)),
+                "low": safe_float(r.get("low", 0)),
+                "close": safe_float(r.get("close", 0)),
+                "volume": safe_float(r.get("volume", 0)),
+                "amount": safe_float(r.get("amount", 0)),
+                "market": market,
+            }
+        )
     return rows
 
 
@@ -378,17 +391,19 @@ def _fetch_kline_ef(
             return []
         rows = []
         for _, r in df.iterrows():
-            rows.append({
-                "code": code,
-                "date": str(r.get("\u65e5\u671f", "")),
-                "open": safe_float(r.get("\u5f00\u76d8", 0)),
-                "high": safe_float(r.get("\u6700\u9ad8", 0)),
-                "low": safe_float(r.get("\u6700\u4f4e", 0)),
-                "close": safe_float(r.get("\u6536\u76d8", 0)),
-                "volume": safe_float(r.get("\u6210\u4ea4\u91cf", 0)),
-                "amount": safe_float(r.get("\u6210\u4ea4\u989d", 0)),
-                "market": market,
-            })
+            rows.append(
+                {
+                    "code": code,
+                    "date": str(r.get("\u65e5\u671f", "")),
+                    "open": safe_float(r.get("\u5f00\u76d8", 0)),
+                    "high": safe_float(r.get("\u6700\u9ad8", 0)),
+                    "low": safe_float(r.get("\u6700\u4f4e", 0)),
+                    "close": safe_float(r.get("\u6536\u76d8", 0)),
+                    "volume": safe_float(r.get("\u6210\u4ea4\u91cf", 0)),
+                    "amount": safe_float(r.get("\u6210\u4ea4\u989d", 0)),
+                    "market": market,
+                }
+            )
         return rows
     except Exception:
         return []
@@ -405,30 +420,37 @@ def _fetch_kline_bs(
     rs = bs.query_history_k_data_plus(
         f"{prefix}.{code}",
         "date,open,high,low,close,volume,amount",
-        start_date=start, end_date=end,
-        frequency="d", adjustflag="2",
+        start_date=start,
+        end_date=end,
+        frequency="d",
+        adjustflag="2",
     )
     rows = []
     while rs.error_code == "0" and rs.next():
         r = rs.get_row_data()
-        rows.append({
-            "code": code,
-            "date": r[0],
-            "open": safe_float(r[1]),
-            "high": safe_float(r[2]),
-            "low": safe_float(r[3]),
-            "close": safe_float(r[4]),
-            "volume": safe_float(r[5]),
-            "amount": safe_float(r[6]),
-            "market": market,
-        })
+        rows.append(
+            {
+                "code": code,
+                "date": r[0],
+                "open": safe_float(r[1]),
+                "high": safe_float(r[2]),
+                "low": safe_float(r[3]),
+                "close": safe_float(r[4]),
+                "volume": safe_float(r[5]),
+                "amount": safe_float(r[6]),
+                "market": market,
+            }
+        )
     return rows
 
 
 # -- Fundamentals -----------------------------------------------------------
 
+
 def get_fundamentals(
-    code: str, market: str = "A", force_refresh: bool = False,
+    code: str,
+    market: str = "A",
+    force_refresh: bool = False,
     cached_only: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Get latest fundamental snapshot. Graceful degradation."""
@@ -448,9 +470,7 @@ def get_fundamentals(
     return cached
 
 
-def _fetch_fundamentals(
-    code: str, market: str
-) -> Optional[Dict[str, Any]]:
+def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals from available source."""
     ak = _try_akshare()
     if ak is not None:
@@ -459,9 +479,7 @@ def _fetch_fundamentals(
 
 
 @_api_call("fundamentals")
-def _fetch_fundamentals_ak(
-    code: str, market: str, ak
-) -> Optional[Dict[str, Any]]:
+def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals via Sina financial abstract."""
     try:
         if market == "A":
@@ -519,8 +537,9 @@ def _fetch_fundamentals_ak(
                 result["debt_ratio"] = v / 100.0
             elif name == "\u8425\u4e1a\u6536\u5165\u589e\u957f\u7387":
                 result["revenue_growth"] = v / 100.0
-            elif name == "
-        \u5f52\u5c5e\u6bcd\u516c\u53f8\u51c0\u5229\u6da6\u589e\u957f\u7387":
+            elif name == (
+                "\u5f52\u5c5e\u6bcd\u516c\u53f8\u51c0\u5229\u6da6\u589e\u957f\u7387"
+            ):
                 result["profit_growth"] = v / 100.0
             elif name == "\u6d41\u52a8\u6bd4\u7387":
                 result["current_ratio"] = v
@@ -530,6 +549,7 @@ def _fetch_fundamentals_ak(
 
 
 # -- Fund data --------------------------------------------------------------
+
 
 def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Get ETF/fund pool. Auto-refreshes if cache is empty or expired."""
@@ -564,16 +584,18 @@ def _refresh_fund_pool() -> None:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             fund_rows = []
             for _, r in df.iterrows():
-                fund_rows.append({
-                    "code": str(r.get("code", "")),
-                    "name": str(r.get("name", "")),
-                    "fund_type": "ETF",
-                    "nav": safe_float(r.get("nav", 0)),
-                    "acc_nav": 0.0,
-                    "scale": safe_float(r.get("total_market_cap", 0)),
-                    "track_index": "",
-                    "updated_at": now,
-                })
+                fund_rows.append(
+                    {
+                        "code": str(r.get("code", "")),
+                        "name": str(r.get("name", "")),
+                        "fund_type": "ETF",
+                        "nav": safe_float(r.get("nav", 0)),
+                        "acc_nav": 0.0,
+                        "scale": safe_float(r.get("total_market_cap", 0)),
+                        "track_index": "",
+                        "updated_at": now,
+                    }
+                )
             _cache.upsert_fund_info(fund_rows)
     except Exception:
         pass
@@ -597,12 +619,14 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
                 df = df[dates_clean >= cutoff_clean]
                 rows = []
                 for _, r in df.iterrows():
-                    rows.append({
-                        "code": code,
-                        "date": str(r.get("date", "")),
-                        "nav": safe_float(r.get("close", 0)),
-                        "acc_nav": 0.0,
-                    })
+                    rows.append(
+                        {
+                            "code": code,
+                            "date": str(r.get("date", "")),
+                            "nav": safe_float(r.get("close", 0)),
+                            "acc_nav": 0.0,
+                        }
+                    )
                 if rows:
                     _cache.upsert_fund_nav(rows)
                     return _cache.get_fund_nav(code, days)
@@ -612,6 +636,7 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
 
 
 # -- Market index -----------------------------------------------------------
+
 
 def get_market_index(
     index_code: str = "000001", days: int = 250
@@ -649,22 +674,25 @@ def _fetch_market_index(index_code: str, days: int) -> List[Dict[str, Any]]:
 
         rows = []
         for _, r in df.iterrows():
-            rows.append({
-                "index_code": index_code,
-                "date": str(r.get("date", "")),
-                "open": safe_float(r.get("open", 0)),
-                "high": safe_float(r.get("high", 0)),
-                "low": safe_float(r.get("low", 0)),
-                "close": safe_float(r.get("close", 0)),
-                "volume": safe_float(r.get("volume", 0)),
-                "amount": 0.0,
-            })
+            rows.append(
+                {
+                    "index_code": index_code,
+                    "date": str(r.get("date", "")),
+                    "open": safe_float(r.get("open", 0)),
+                    "high": safe_float(r.get("high", 0)),
+                    "low": safe_float(r.get("low", 0)),
+                    "close": safe_float(r.get("close", 0)),
+                    "volume": safe_float(r.get("volume", 0)),
+                    "amount": 0.0,
+                }
+            )
         return rows
     except Exception:
         return []
 
 
 # -- Utility ----------------------------------------------------------------
+
 
 def _date_str(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d")

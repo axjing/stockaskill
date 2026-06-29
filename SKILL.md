@@ -14,7 +14,8 @@ license: MIT
 compatibility: >-
   Requires Python 3.10+, pip packages (akshare, efinance, baostock, pandas,
   numpy, scipy), network access for AKShare data (free, no API key), and SQLite
-  for caching (~200MB for full A-share pool).
+  for caching (A-share/HK/US markets and
+  ETFs/mutual funds).
 metadata:
   author: stockaskill-team
   version: "1.1"
@@ -228,7 +229,9 @@ When the user wants a specific allocation method, use the Python API:
 For position sizing:
 ```python
 from portfolio.position import compute_position
-result = compute_position(price=100.0, capital=100000, weight=0.25, method="kelly", signal_score=75.0)
+result = compute_position(code="600519", name="贵州茅台", market="A",
+    capital=100000, score=75.0, current_price=100.0,
+    method="kelly", max_weight=0.25)
 ```
 
 ### 6. Backtest
@@ -475,3 +478,9 @@ scripts/
 ## Risk disclaimer
 
 Output is for investment reference only, not investment advice. Data sources are third-party public platforms with 10-15 minute delay. Historical backtest results do not represent future returns.
+
+## Output File Specifications
+
+1. Storage Path: Folder `./reports/`
+2. File Naming Rule: `{YYYY-MM-DD-HHMM}_{Short Title}.md`
+3. File Format: Standard Markdown with clear hierarchy and unified formatting for direct reuse

@@ -1,10 +1,9 @@
 """Moving average trend strategy."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import numpy as np
 
-from models import Signal
 from strategies.base import Strategy
 
 
@@ -65,7 +64,7 @@ class MATrendStrategy(Strategy):
             checks.append("bearish_alignment")
 
         # Golden/death cross (MA5 vs MA10)
-        current_price = closes[0]
+        _ = closes[0]
         if ma5 > ma10 and closes[0] > ma5:
             score += 10
             checks.append("golden_cross")

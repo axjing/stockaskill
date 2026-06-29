@@ -1,10 +1,10 @@
 """Backtesting engine: daily simulation with transaction costs."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
-
 from data_engine import get_kline
+
 from portfolio.risk import RiskMetrics
 
 
@@ -21,7 +21,7 @@ class BacktestEngine:
         self.initial_capital = capital
         self.capital = capital
         self.commission = commission  # Buy commission
-        self.stamp_tax = stamp_tax    # Sell stamp tax (A-share)
+        self.stamp_tax = stamp_tax  # Sell stamp tax (A-share)
         self.slippage = slippage
         self.positions: Dict[str, int] = {}  # code -> shares
         self.nav_history: List[float] = [capital]
@@ -68,8 +68,8 @@ class BacktestEngine:
         return {
             "initial_capital": self.initial_capital,
             "final_capital": self.nav_history[-1],
-            "total_return": (self.nav_history[-1] - self.initial_capital) / 
-        self.initial_capital,
+            "total_return": (self.nav_history[-1] - self.initial_capital)
+            / self.initial_capital,
             "nav_history": self.nav_history,
             "risk_metrics": risk.summary(),
             "trades": self.trade_log,
@@ -124,10 +124,15 @@ class BacktestEngine:
                 shares = self.positions.pop(code)
                 revenue = shares * price * (1 - self.commission - self.stamp_tax)
                 self.capital += revenue
-                self.trade_log.append({
-                    "date": date, "code": code,
-                    "action": "SELL", "shares": shares, "price": price,
-                })
+                self.trade_log.append(
+                    {
+                        "date": date,
+                        "code": code,
+                        "action": "SELL",
+                        "shares": shares,
+                        "price": price,
+                    }
+                )
             elif sig.get("signal") == "BUY" and code not in self.positions:
                 alloc = portfolio_value * 0.10 / max(len(signals), 1)
                 shares = int(alloc / price / 100) * 100
@@ -136,10 +141,15 @@ class BacktestEngine:
                     if cost <= self.capital:
                         self.positions[code] = shares
                         self.capital -= cost
-                        self.trade_log.append({
-                            "date": date, "code": code,
-                            "action": "BUY", "shares": shares, "price": price,
-                        })
+                        self.trade_log.append(
+                            {
+                                "date": date,
+                                "code": code,
+                                "action": "BUY",
+                                "shares": shares,
+                                "price": price,
+                            }
+                        )
 
         # Record NAV
         total = self.capital

@@ -1,6 +1,6 @@
 """Utility functions for stock code handling and filtering."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 def normalize_code(code: str) -> str:
@@ -101,8 +101,11 @@ def is_suspended(code: str, kline_data: list | None) -> bool:
         return True
     # Check if latest trading day is more than 10 days ago
     try:
-        latest = kline_data[0].get("date", "") if isinstance(kline_data[0], dict) else 
-        getattr(kline_data[0], "date", "")
+        latest = (
+            kline_data[0].get("date", "")
+            if isinstance(kline_data[0], dict)
+            else getattr(kline_data[0], "date", "")
+        )
         if latest:
             clean = latest.replace("-", "")
             ld = datetime.strptime(clean, "%Y%m%d")
@@ -135,8 +138,9 @@ def percentile_rank(values: list[float], value: float) -> float:
     """
     if not values:
         return 0.5
-    sorted_vals = sorted(v for v in values if v is not None and not (v != v))  # filter 
-        NaN
+    sorted_vals = sorted(
+        v for v in values if v is not None and not (v != v)
+    )  # filter NaN
     if not sorted_vals:
         return 0.5
     n = len(sorted_vals)

@@ -1,10 +1,9 @@
 """Contrarian strategy: oversold + undervalued + volume stabilization."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import numpy as np
 
-from models import Signal
 from strategies.base import Strategy
 
 

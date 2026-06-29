@@ -1,13 +1,12 @@
 """Market scanner: find top stocks across markets."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from data_engine import get_stock_pool, get_kline, get_fundamentals
-from factors.composite import CompositeAnalyzer
 from config import get as cfg_get
-from utils import is_st, is_new
+from data_engine import get_stock_pool
+from factors.composite import CompositeAnalyzer
+from utils import is_new, is_st
 
 
 class MarketScanner:
@@ -72,23 +71,27 @@ class MarketScanner:
             return []
 
         # Sort by market cap descending, take top candidates
-        filtered.sort(key=lambda s: float(s.get("total_market_cap", 0) or 0), 
-        reverse=True)
+        filtered.sort(
+            key=lambda s: float(s.get("total_market_cap", 0) or 0), reverse=True
+        )
         limit = max_candidates or cfg_get("scan_max_candidates", 200)
-        candidates = [s for s in filtered if not s.get("code", "").startswith("bj"
-        )][:limit]
+        candidates = [s for s in filtered if not s.get("code", "").startswith("bj")][
+            :limit
+        ]
         if not candidates:
             candidates = filtered[:limit]
 
         n = len(candidates)
         if n == 0:
-            print("  No candidates to score (stock pool may be empty or all filtered 
-        out). "
-                  "Use 'python scripts/run.py fetch pool' to refresh data.", flush=True)
+            print(
+                "  No candidates to score (stock pool may be empty or all filtered"
+                " out). "
+                "Use 'python scripts/run.py fetch pool' to refresh data.",
+                flush=True,
+            )
             return []
 
         print(f"Scoring {n} candidates...", flush=True)
-        , flush=True)
 
         # Score each stock (parallel, cached-only for speed)
         results: List[Dict[str, Any]] = []
@@ -126,11 +129,14 @@ class MarketScanner:
                     results.append(result)
 
         if not results:
-            print("  All candidates scored 0 (no cached data yet). "
-                  "Run 'python scripts/run.py diagnose' on individual stocks to build 
-        cache, "
-                  "or use 'python scripts/run.py alpha A --top 20' for full scoring.", 
-        flush=True)
+            print(
+                "  All candidates scored 0 (no cached data yet). "
+                "Run 'python scripts/run.py diagnose' on individual stocks"
+                " to build cache, "
+                "or use 'python scripts/run.py alpha A --top 20'"
+                " for full scoring.",
+                flush=True,
+            )
         else:
             print(f"  Scored {len(results)} stocks successfully.", flush=True)
 
@@ -192,8 +198,6 @@ class MarketScanner:
         filtered = [f for f in funds if f.get("fund_type", "") == fund_type]
 
         # Sort by scale descending
-        filtered.sort(
-            key=lambda x: float(x.get("scale", 0) or 0), reverse=True
-        )
+        filtered.sort(key=lambda x: float(x.get("scale", 0) or 0), reverse=True)
 
         return filtered[:top_n]

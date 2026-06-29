@@ -50,24 +50,23 @@ pip install akshare pandas numpy
 
 | 因子 | 权重 | 说明 | 参考策略 |
 |------|:----:|------|---------|
-| 估值因子 | 18% | PE/PB/股息率复合估值 | 华泰证券 EP+BP 因子 |
-| 质量因子 | 22% | ROE/毛利率/负债率/FCF 质量 | 长江证券雪球因子 |
-| 成长因子 | 15% | 营收/净利润同比增长 | 中信建投超预期因子 |
-| 动量因子 | 15% | 6月动量(剔除近1月反转) | A 股动量因子 |
-| 低波因子 | 10% | 12月日波动率 | 国泰君安低波因子 |
-| 市值因子 | 8% | log(总市值)负向打分 | A 股小市值溢价 |
-| 行业因子 | 7% | 行业相对强度排名 | 行业轮动策略 |
-| 北向资金 | 5% | 北向资金 20 日净流入趋势 | 聪明钱跟踪 |
+| 估值因子 | 20% | PE/PB/股息率复合估值 | 华泰证券 EP+BP 因子 |
+| 质量因子 | 25% | ROE/毛利率/负债率/FCF 质量 | 长江证券雪球因子 |
+| 成长因子 | 17% | 营收/净利润同比增长 | 中信建投超预期因子 |
+| 动量因子 | 17% | 6月动量(剔除近1月反转) | A 股动量因子 |
+| 低波因子 | 11% | 12月日波动率 | 国泰君安低波因子 |
+| 市值因子 | 9% | log(总市值)负向打分 | A 股小市值溢价 |
+
+增强版 (Core-Satellite) 权重: 动量 35% / 低波 18% / 质量 20% / 估值 17% / 成长 10%。
 
 ### 2. 组合构建
 
 均值-方差优化, 施加以下约束:
 
-- 单只股票权重上限: 10%
-- 单行业权重上限: 25%
-- 持仓数量: 10-30 只
-- 目标最大回撤: 15% (稳健型)
-- 再平衡频率: 90 天
+- 单只股票权重上限: 20%
+- 持仓数量: 6-30 只
+- 目标最大回撤: 20% (稳健型)
+- 再平衡频率: 30 天
 - 止损线: 15%
 
 支持三种风险偏好:
@@ -167,12 +166,14 @@ print(portfolio.summary())
 
 ```bash
 cd path/to/stockaskill
-cd path/to/stockaskill/scripts
-python -c "
-from advisor.diagnosis import StockDiagnosis
-r = StockDiagnosis('600519', 'A').full_report()
-print(f\"评分: {r['adjusted_score']}, 决策: {r['final_decision']}\")
-"
+python scripts/run.py diagnose 600519 --market A       # 深度诊断
+python scripts/run.py scan A --top 20                   # 全市场扫描
+python scripts/run.py alpha A --top 10                  # Alpha动量扫描
+python scripts/run.py analyze 600519 --market A         # 个股分析
+python scripts/run.py portfolio --codes 600519,000858   # 组合构建
+python scripts/run.py backtest                          # 回测验证
+python scripts/run.py fetch pool                        # 刷新数据池
+```
 
 ## 数据来源
 

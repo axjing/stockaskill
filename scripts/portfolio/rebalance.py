@@ -38,9 +38,8 @@ class Rebalancer:
         if self.method == "threshold":
             return self._threshold_check(portfolio)
         if self.method == "hybrid":
-            return (
-                self._calendar_check(last_rebalance)
-                or self._threshold_check(portfolio)
+            return self._calendar_check(last_rebalance) or self._threshold_check(
+                portfolio
             )
         return False
 
@@ -87,9 +86,7 @@ class Rebalancer:
             List of trade instructions.
         """
         trades = []
-        total_value = sum(
-            p.shares * p.current_price for p in portfolio.positions
-        )
+        total_value = sum(p.shares * p.current_price for p in portfolio.positions)
 
         for pos in portfolio.positions:
             target = new_weights.get(pos.code, 0)
@@ -101,11 +98,13 @@ class Rebalancer:
                 action = "BUY" if diff > 0 else "SELL"
                 shares = int(abs(diff) / max(pos.current_price, 1e-9) / 100) * 100
                 if shares > 0:
-                    trades.append({
-                        "code": pos.code,
-                        "action": action,
-                        "shares": shares,
-                        "reason": f"{action} {abs(diff):.0f} ({target * 100:.1f}%)",
-                    })
+                    trades.append(
+                        {
+                            "code": pos.code,
+                            "action": action,
+                            "shares": shares,
+                            "reason": f"{action} {abs(diff):.0f} ({target * 100:.1f}%)",
+                        }
+                    )
 
         return trades

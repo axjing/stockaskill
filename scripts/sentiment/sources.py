@@ -1,19 +1,20 @@
 """Sentiment data sources: East Money guba, market breadth, north flow."""
 
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-
-from cache import get_cache
-
 # Import the global AKShare lock to prevent Chromium allocator crashes
 # when multiple threads initialize AKShare simultaneously
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, Dict, List
+
+from cache import get_cache
+
 _de = str(Path(__file__).resolve().parent.parent)
 if _de not in sys.path:
     sys.path.insert(0, _de)
-from data_engine import _akshare_lock
-from sentiment.dictionary import analyze_sentiment
+from data_engine import _akshare_lock  # noqa: E402
+
+from sentiment.dictionary import analyze_sentiment  # noqa: E402
 
 _cache = get_cache()
 
@@ -31,6 +32,7 @@ def get_market_breadth() -> Dict[str, Any]:
 
     try:
         import akshare as ak
+
         with _akshare_lock:
             df = ak.stock_zh_a_spot_em()
         if df is not None and not df.empty:
@@ -53,8 +55,11 @@ def get_market_breadth() -> Dict[str, Any]:
         pass
 
     return {
-        "advancers": 0, "decliners": 0, "ratio": 0.5,
-        "sentiment_score": 0.5, "date": datetime.now().strftime("%Y-%m-%d"),
+        "advancers": 0,
+        "decliners": 0,
+        "ratio": 0.5,
+        "sentiment_score": 0.5,
+        "date": datetime.now().strftime("%Y-%m-%d"),
     }
 
 
@@ -74,16 +79,19 @@ def get_north_flow(days: int = 20) -> List[Dict[str, Any]]:
     records = []
     try:
         import akshare as ak
-        start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
-        end = datetime.now().strftime("%Y%m%d")
+
+        _start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+        _end = datetime.now().strftime("%Y%m%d")
         with _akshare_lock:
             df = ak.stock_hsgt_hist_em(symbol="沪股通")
         if df is not None and not df.empty:
             for _, row in df.iterrows():
-                records.append({
-                    "date": str(row.get("日期", "")),
-                    "net_flow": float(row.get("当日成交净买入额", 0) or 0),
-                })
+                records.append(
+                    {
+                        "date": str(row.get("日期", "")),
+                        "net_flow": float(row.get("当日成交净买入额", 0) or 0),
+                    }
+                )
     except Exception:
         pass
 

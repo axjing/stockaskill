@@ -4,14 +4,15 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from config import get as cfg_get
-from data_engine import get_kline, get_fundamentals
+from data_engine import get_fundamentals, get_kline
+
 from factors.base import Factor
-from factors.value import ValueFactor
-from factors.quality import QualityFactor
 from factors.growth import GrowthFactor
-from factors.momentum import MomentumFactor
 from factors.low_vol import LowVolFactor
+from factors.momentum import MomentumFactor
+from factors.quality import QualityFactor
 from factors.size import SizeFactor
+from factors.value import ValueFactor
 
 _FACTORIES = [
     ValueFactor,
@@ -39,8 +40,9 @@ class CompositeAnalyzer:
         Returns:
             Dict with total_score, factors (name->score), f_score, details.
         """
-        fundamentals = get_fundamentals(self.code, self.market, cached_only=cached_only) 
-        or {}
+        fundamentals = (
+            get_fundamentals(self.code, self.market, cached_only=cached_only) or {}
+        )
         kline = get_kline(self.code, self.market, days=365, cached_only=cached_only)
 
         factor_weights = cfg_get("factor_weights", {})

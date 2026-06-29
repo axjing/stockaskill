@@ -1,6 +1,6 @@
 """Risk metrics: drawdown, VaR, CVaR, Sharpe, Sortino."""
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 

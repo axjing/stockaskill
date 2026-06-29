@@ -1,8 +1,5 @@
 """Position sizing models: Kelly formula and fixed fraction."""
 
-import math
-from typing import Any, Dict
-
 from models import Position
 
 
@@ -28,7 +25,8 @@ def kelly_fraction(win_prob: float, avg_win: float, avg_loss: float) -> float:
 
 
 def fixed_fraction(
-    capital: float, risk_per_trade: float = 0.02,
+    capital: float,
+    risk_per_trade: float = 0.02,
     stop_loss_pct: float = 0.05,
 ) -> float:
     """Calculate position size using fixed fraction method.
@@ -47,8 +45,11 @@ def fixed_fraction(
 
 
 def compute_position(
-    code: str, name: str, market: str,
-    capital: float, score: float,
+    code: str,
+    name: str,
+    market: str,
+    capital: float,
+    score: float,
     current_price: float,
     method: str = "kelly",
     max_weight: float = 0.20,
@@ -70,8 +71,13 @@ def compute_position(
     """
     if current_price <= 0:
         return Position(
-            code=code, name=name, market=market,
-            weight=0, shares=0, cost=0, current_price=0,
+            code=code,
+            name=name,
+            market=market,
+            weight=0,
+            shares=0,
+            cost=0,
+            current_price=0,
         )
 
     if method == "kelly":
@@ -90,7 +96,11 @@ def compute_position(
     shares = (shares // 100) * 100
 
     return Position(
-        code=code, name=name, market=market,
-        weight=weight, shares=shares,
-        cost=current_price, current_price=current_price,
+        code=code,
+        name=name,
+        market=market,
+        weight=weight,
+        shares=shares,
+        cost=current_price,
+        current_price=current_price,
     )

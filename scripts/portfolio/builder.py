@@ -1,12 +1,13 @@
 """Portfolio builder: construct portfolio from stock list."""
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 from data_engine import get_kline
 from models import Portfolio, Position
-from portfolio.position import compute_position
+
 from portfolio.allocator import signal_weighted
+from portfolio.position import compute_position
 from portfolio.risk import RiskMetrics
 
 
@@ -42,14 +43,16 @@ class PortfolioBuilder:
         pool = self._get_stock_info(code, market)
         name = pool.get("name", code) if pool else code
 
-        self._candidates.append({
-            "code": code,
-            "name": name,
-            "market": market,
-            "score": score,
-            "current_price": current_price,
-            "manual_weight": weight,
-        })
+        self._candidates.append(
+            {
+                "code": code,
+                "name": name,
+                "market": market,
+                "score": score,
+                "current_price": current_price,
+                "manual_weight": weight,
+            }
+        )
 
     def build(
         self,
@@ -72,12 +75,13 @@ class PortfolioBuilder:
         scores = [c["score"] for c in self._candidates]
 
         if method == "signal":
-            weights = signal_weighted(scores)
+            _ = signal_weighted(scores)
         elif method == "equal":
             from portfolio.allocator import equal_weights
-            weights = equal_weights(len(self._candidates))
+
+            _ = equal_weights(len(self._candidates))
         else:
-            weights = signal_weighted(scores)
+            _ = signal_weighted(scores)
 
         positions: List[Position] = []
         for i, cand in enumerate(self._candidates):
@@ -140,5 +144,6 @@ class PortfolioBuilder:
     def _get_stock_info(code: str, market: str) -> Optional[Dict[str, Any]]:
         """Get stock info from cached pool."""
         from data_engine import get_stock_pool
+
         pool = get_stock_pool(market)
         return next((s for s in pool if s["code"] == code), None)
