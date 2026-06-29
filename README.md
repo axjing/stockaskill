@@ -4,13 +4,19 @@ A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股�
 
 ## 适用框架
 
-兼容以下智能体框架:
+兼容以下智能体框架, 均使用标准 `SKILL.md` 格式:
 
-- [opencode](https://opencode.ai)
-- [claudecode](https://docs.anthropic.com/en/docs/claude-code/overview)
-- OpenClaw
-- Codex
-- 其他支持 `SKILL.md` 或 Python 脚本调用的 Agent 框架
+| 框架 | 技能路径 | 加载方式 | 调用方式 |
+|------|---------|---------|---------|
+| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` 或 `~/.config/opencode/skills/stockaskill/` | 按需加载 (skill 工具) | 自动匹配用户意图 / `skill stockaskill` |
+| [claudecode](https://docs.anthropic.com/en/docs/claude-code/overview) | `.claude/skills/stockaskill/` 或 `~/.claude/skills/stockaskill/` | 按需加载 (描述匹配) | 自动触发 / `/stockaskill` |
+| [codex](https://developers.openai.com/codex) | `.agents/skills/stockaskill/` (项目) 或 `~/.agents/skills/stockaskill/` (全局) | 按需加载 (描述匹配) | 自动触发 / `$stockaskill` / `/skills` |
+| [openclaw](https://docs.openclaw.ai) | `<workspace>/skills/stockaskill/` 或 `~/.openclaw/skills/stockaskill/` 或 `.agents/skills/stockaskill/` | 会话启动时加载 (支持 gating 过滤) | 自动注入 / `/stockaskill` |
+| Cursor | `.cursor/rules/stockaskill.mdc` | 按规则匹配 | 自动匹配文件上下文 |
+| Windsurf | `.windsurf/rules/` | 会话启动时加载 | 自动注入 |
+| 其他 | 参照对应框架的 skill 放置说明 | — | — |
+
+> 所有框架共享同一份 `SKILL.md`, 只需将 `stockaskill/` 目录复制到对应路径即可。
 
 ## 快速开始
 
@@ -22,11 +28,137 @@ pip install akshare pandas numpy
 
 ### 安装
 
-将 `stockaskill/` 目录放入框架技能的搜索路径:
+#### 一键安装 (推荐)
 
-- **opencode**: `~/.opencode/skills/stockaskill/`
-- **claudecode**: `~/.claude/skills/stockaskill/`
-- **其他框架**: 参照对应框架的 skill 放置说明
+使用 [Agent Skills CLI](https://github.com/vercel-labs/skills) 自动检测已安装的框架并安装到对应路径:
+
+```bash
+# 全局安装 (当前用户所有项目可用)
+npx skills add axjing/stockaskill --skill stockaskill -g
+
+# 或项目级安装 (仅当前项目)
+npx skills add axjing/stockaskill --skill stockaskill
+
+# 仅安装到指定框架
+npx skills add axjing/stockaskill --skill stockaskill -a claude-code -a opencode -a codex -g
+```
+
+`npx skills add` 自动识别以下框架:
+
+| 框架 | 目标路径 |
+|------|---------|
+| opencode | `~/.config/opencode/skills/stockaskill/` |
+| claudecode | `~/.claude/skills/stockaskill/` |
+| codex | `~/.agents/skills/stockaskill/` |
+| openclaw | `~/.openclaw/skills/stockaskill/` |
+| Cursor | `.cursor/rules/stockaskill.mdc` |
+| 全部 (ClawHub) | 发布后支持 `openclaw skills install @axjing/stockaskill` |
+
+> 详细命令选项: `npx skills add --help` 或查看 [Agent Skills CLI 文档](https://github.com/vercel-labs/skills)。
+
+#### 手动安装 (按框架)
+
+以下为各框架的手动安装方法, 适用于无法使用 `npx skills add` 的环境。
+
+##### opencode
+
+```bash
+# 全局安装 (所有项目可用)
+mkdir -p ~/.config/opencode/skills
+cp -r stockaskill ~/.config/opencode/skills/stockaskill
+
+# 或项目级安装
+mkdir -p .opencode/skills
+cp -r stockaskill .opencode/skills/stockaskill
+```
+
+opencode 也兼容 `.claude/skills/` 路径, 可直接复用 claudecode 配置。
+
+##### claudecode
+
+```bash
+# 全局安装
+mkdir -p ~/.claude/skills
+cp -r stockaskill ~/.claude/skills/stockaskill
+
+# 或项目级安装
+mkdir -p .claude/skills
+cp -r stockaskill .claude/skills/stockaskill
+```
+
+claudecode 会自动发现 `.claude/skills/*/SKILL.md` 中的技能。
+
+##### codex (OpenAI Codex CLI)
+
+```bash
+# 项目安装 (推荐, 按路径发现)
+mkdir -p .agents/skills
+cp -r stockaskill .agents/skills/stockaskill
+
+# 或全局安装
+mkdir -p ~/.agents/skills
+cp -r stockaskill ~/.agents/skills/stockaskill
+```
+
+codex 从当前目录向上扫描 `.agents/skills/` 直至仓库根目录。也可在 `~/.codex/config.toml` 中配置技能路径:
+
+```toml
+[[skills.config]]
+path = "/path/to/stockaskill"
+enabled = true
+```
+
+##### openclaw
+
+```bash
+# 工作区安装 (推荐)
+cp -r stockaskill ./skills/stockaskill
+
+# 或个人全局安装
+cp -r stockaskill ~/.openclaw/skills/stockaskill
+
+# 或用 ClawHub 发布后安装
+# clawhub install stockaskill
+```
+
+也可通过 `~/.openclaw/openclaw.json` 的 `skills.load.extraDirs` 添加自定义搜索路径:
+
+```json5
+{
+  skills: {
+    load: {
+      extraDirs: ["/path/to/stockaskill"]
+    }
+  }
+}
+```
+
+##### Cursor
+
+```bash
+mkdir -p .cursor/rules
+# 将 SKILL.md 复制为 Cursor 规则
+cp stockaskill/SKILL.md .cursor/rules/stockaskill.mdc
+```
+
+##### Windsurf
+
+```bash
+mkdir -p .windsurf/rules
+cp stockaskill/SKILL.md .windsurf/rules/stockaskill.md
+```
+
+#### 通过 ClawHub 发布后安装
+
+当 stockaskill 发布到 [ClawHub](https://clawhub.ai) 后, 可使用 OpenClaw 原生命令安装:
+
+```bash
+# 安装到当前工作区
+openclaw skills install @axjing/stockaskill
+
+# 或全局安装 (所有项目可用)
+openclaw skills install @axjing/stockaskill --global
+```
 
 ### 首次运行
 
@@ -125,9 +257,121 @@ pip install akshare pandas numpy
 
 ## 与框架集成
 
-### opencode 集成
+### opencode
 
-将 `stockaskill/` 放入 `~/.opencode/skills/` 后, opencode 会自动识别 SKILL.md 并根据用户自然语言路由到对应功能。
+将 `stockaskill/` 放入技能路径后, opencode 自动发现 SKILL.md 并根据用户自然语言路由到对应功能。
+
+**验证加载**:
+```bash
+opencode -e 'skill list'
+# 或在会话中询问 "可用的技能有哪些?"
+```
+
+**权限配置** (可选, 在 `opencode.json` 中):
+```json
+{
+  "permission": {
+    "skill": {
+      "stockaskill": "allow"
+    }
+  }
+}
+```
+
+**使用方式**:
+- 直接输入分析需求 (如 "分析 600519", "扫描 A 股 top 20")
+- 或在对话中加载技能: `skill stockaskill`
+
+### claudecode
+
+**验证加载**:
+```bash
+# 在 claudecode 会话中运行
+/skills
+# 应看到 stockaskill 出现在技能列表中
+```
+
+**使用方式**:
+- 自动触发: 当你的问题匹配 SKILL.md 中的 `description` 时, claudecode 自动加载并执行
+- 手动调用: 在会话中输入 `/stockaskill` 直接调用技能
+- claudecode 仅加载技能的名称和描述到上下文, 完整指令按需注入
+
+**禁用自动调用** (可选):
+在 SKILL.md 前部添加 `disable-model-invocation: true` 可阻止自动触发, 仅允许 `/stockaskill` 手动调用。
+
+### codex (OpenAI Codex CLI)
+
+**验证加载**:
+```bash
+# codex 会话中查看可用技能
+/skills
+# 或列出所有技能
+ls .agents/skills/
+```
+
+**使用方式**:
+- 自动触发: 任务描述匹配技能 `description` 时自动加载
+- 显式调用: 在提示中使用 `$stockaskill` 或 `/skills` 选择技能
+- 项目指令: 在仓库根目录创建 `CODEX.md` 或 `AGENTS.md` 编写持久化项目指引
+- 全局指令: `~/.codex/AGENTS.md` 用于个人默认设置
+
+**禁用技能** (在 `~/.codex/config.toml` 中):
+```toml
+[[skills.config]]
+path = "/path/to/stockaskill/SKILL.md"
+enabled = false
+```
+
+### openclaw
+
+**验证加载**:
+```bash
+# 新会话启动时自动加载
+# 或检查技能状态
+openclaw skills list
+```
+
+**使用方式**:
+- 会话启动时自动注入到 agent 上下文
+- 手动调用: `/stockaskill`
+- 通过 `~/.openclaw/openclaw.json` 中的 `skills.entries` 控制启用/禁用
+
+**配置示例** (`~/.openclaw/openclaw.json`):
+```json5
+{
+  skills: {
+    entries: {
+      stockaskill: { enabled: true }
+    }
+  }
+}
+```
+
+**Gating 条件** (可选, 在 SKILL.md frontmatter 中):
+```yaml
+metadata:
+  openclaw: '{"requires":{"bins":["python"]}}'
+```
+
+只有满足 gating 条件时, openclaw 才加载该技能。
+
+### Cursor / Windsurf
+
+**Cursor**:
+```bash
+# 将 SKILL.md 复制为 Cursor 规则
+cp stockaskill/SKILL.md .cursor/rules/stockaskill.mdc
+# 在规则文件头添加 paths 过滤:
+# ---
+# description: A-share stock analysis
+# paths: "**/*.py"
+# ---
+```
+
+**Windsurf**:
+```bash
+cp stockaskill/SKILL.md .windsurf/rules/stockaskill.md
+```
 
 ### 直接使用 Python 脚本
 
