@@ -1,5 +1,14 @@
 """Batch fetch full K-line history for more A-share stocks."""
 
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "akshare>=1.10.0",
+#     "pandas>=2.0.0",
+#     "numpy>=1.24.0",
+# ]
+# ///
+
 import sqlite3
 import sys
 import time
@@ -51,7 +60,7 @@ def fetch_and_upsert(code: str, market: str = "A") -> int:
             _cache.upsert_daily_price(rows)
         return len(rows)
     except Exception as exc:
-        print(f"    Error: {exc}")
+        print(f"    Error: {exc}", file=sys.stderr)
         return 0
 
 

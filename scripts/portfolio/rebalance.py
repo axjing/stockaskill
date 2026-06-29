@@ -23,12 +23,14 @@ class Rebalancer:
         self,
         portfolio: Portfolio,
         last_rebalance: str = "",
+        target_weights: Dict[str, float] | None = None,
     ) -> bool:
         """Check if portfolio needs rebalancing.
 
         Args:
             portfolio: Current portfolio state.
             last_rebalance: Date of last rebalance (YYYY-MM-DD).
+            target_weights: Target weights by stock code (used for threshold method).
 
         Returns:
             True if rebalancing is needed.
@@ -36,10 +38,10 @@ class Rebalancer:
         if self.method == "calendar":
             return self._calendar_check(last_rebalance)
         if self.method == "threshold":
-            return self._threshold_check(portfolio)
+            return self._threshold_check(portfolio, target_weights)
         if self.method == "hybrid":
             return self._calendar_check(last_rebalance) or self._threshold_check(
-                portfolio
+                portfolio, target_weights
             )
         return False
 
@@ -61,12 +63,17 @@ class Rebalancer:
             return True
         return False
 
-    def _threshold_check(self, portfolio: Portfolio) -> bool:
+    def _threshold_check(
+        self,
+        portfolio: Portfolio,
+        target_weights: Dict[str, float] | None = None,
+    ) -> bool:
         if not portfolio.positions:
             return False
-        target_weight = 1.0 / len(portfolio.positions)
+        equal_weight = 1.0 / len(portfolio.positions)
         for pos in portfolio.positions:
-            deviation = abs(pos.weight - target_weight)
+            expected = target_weights.get(pos.code, equal_weight) if target_weights else equal_weight
+            deviation = abs(pos.weight - expected)
             if deviation > self.threshold:
                 return True
         return False

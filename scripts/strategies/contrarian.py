@@ -34,10 +34,9 @@ class ContrarianStrategy(Strategy):
             }
 
         closes = [row.get("close", 0) for row in kline[:120]]
+        current = closes[0] if closes else 0
         closes = [c for c in closes if c > 0]
         volumes = [row.get("volume", 0) for row in kline[:120]]
-
-        current = closes[0]
         high_60 = max(closes[:60]) if len(closes) >= 60 else current
         drawdown = (high_60 - current) / max(high_60, 1e-9)
 

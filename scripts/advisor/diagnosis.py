@@ -45,7 +45,8 @@ class StockDiagnosis:
 
         # Combine into final decision
         final_decision = self._final_decision(
-            strategy_result, sentiment_result, factor_result
+            strategy_result, sentiment_result, factor_result,
+            risk_result, technical_result,
         )
 
         return {
@@ -178,7 +179,8 @@ class StockDiagnosis:
             closes = [r.get("close", 0) for r in kline[:120]]
             closes = [c for c in closes if c > 0]
             if len(closes) >= 60:
-                returns = np.diff(np.array(closes[:60])) / np.array(closes[1:60])
+                closes_asc = list(reversed(closes[:60]))
+                returns = np.diff(np.array(closes_asc)) / np.array(closes_asc[:-1])
                 vol = np.std(returns)
                 if vol > 0.03:
                     risks.append("high_volatility")
@@ -196,6 +198,8 @@ class StockDiagnosis:
         strategy: Dict[str, Any],
         sentiment: Dict[str, Any],
         factors: Dict[str, Any],
+        risk: Dict[str, Any] | None = None,
+        technical: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Generate final BUY/SELL/HOLD decision."""
         base_score = strategy.get("final_score", 50)
@@ -204,9 +208,8 @@ class StockDiagnosis:
         adjusted_score = base_score * adj_factor
 
         # Risk adjustment
-        risk_count = 0
-        if "risks" in factors:
-            risk_count = len(factors.get("risks", []))
+        risk_data = risk or {}
+        risk_count = risk_data.get("risk_count", 0)
         if risk_count >= 2:
             adjusted_score *= 0.85
 
@@ -219,8 +222,10 @@ class StockDiagnosis:
         else:
             signal = "HOLD"
 
-        # Stop-loss / take-profit references
-        tech = self._technical_analysis(get_kline(self.code, self.market, days=365))
+        # Stop-loss / take-profit references (use pre-computed technical if available)
+        tech = technical or self._technical_analysis(
+            get_kline(self.code, self.market, days=365)
+        )
         current_price = tech.get("current_price", 0)
         support = tech.get("support_20d", current_price * 0.9)
 

@@ -33,6 +33,7 @@ class MATrendStrategy(Strategy):
             }
 
         closes = [row.get("close", 0) for row in kline[:120]]
+        current = closes[0] if closes else 0
         closes = [c for c in closes if c > 0]
 
         if len(closes) < 60:
@@ -64,11 +65,10 @@ class MATrendStrategy(Strategy):
             checks.append("bearish_alignment")
 
         # Golden/death cross (MA5 vs MA10)
-        _ = closes[0]
-        if ma5 > ma10 and closes[0] > ma5:
+        if ma5 > ma10 and current > ma5:
             score += 10
             checks.append("golden_cross")
-        elif ma5 < ma10 and closes[0] < ma5:
+        elif ma5 < ma10 and current < ma5:
             score -= 10
             checks.append("death_cross")
 

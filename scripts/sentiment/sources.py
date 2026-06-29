@@ -36,15 +36,16 @@ def get_market_breadth() -> Dict[str, Any]:
         with _akshare_lock:
             df = ak.stock_zh_a_spot_em()
         if df is not None and not df.empty:
+            total = len(df)
             advancers = len(df[df.get("涨跌幅", 0) > 0])
             decliners = len(df[df.get("涨跌幅", 0) < 0])
-            total = advancers + decliners
+            flat = total - advancers - decliners
             ratio = advancers / max(total, 1)
 
             result = {
                 "advancers": advancers,
                 "decliners": decliners,
-                "flat": total - advancers - decliners,
+                "flat": flat,
                 "ratio": round(ratio, 3),
                 "sentiment_score": round(ratio, 3),
                 "date": datetime.now().strftime("%Y-%m-%d"),

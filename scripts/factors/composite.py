@@ -130,12 +130,13 @@ class CompositeAnalyzer:
         # 6. Good liquidity
         if curr > 1:
             score += 1
-        # 7. No dilution (always +1 as simplified)
-        score += 1
-        # 8. Gross margin improvement
+        # 7. Revenue growth > 0 (proxy for no economic deterioration)
+        if fundamentals.get("revenue_growth", 0) or 0 > 0:
+            score += 1
+        # 8. Gross margin > 20% (proxy for margin quality)
         if gm > 0.2:
             score += 1
-        # 9. Net margin positive
+        # 9. Net margin > 0 (proxy for asset efficiency)
         if net_m > 0:
             score += 1
 

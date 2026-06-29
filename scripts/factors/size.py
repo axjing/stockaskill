@@ -27,10 +27,11 @@ class SizeFactor(Factor):
         if mcap <= 0:
             return 0.5
 
-        # Typical A-share range: 10B - 3T RMB
         log_mcap = math.log(mcap)
-        # Normalize: 10B -> 1, 3T -> 0
-        log_min = math.log(1e10)  # 10 billion
-        log_max = math.log(3e12)  # 3 trillion
-        size_score = max(0, min(1, 1 - (log_mcap - log_min) / (log_max - log_min)))
+        log_min, log_max = self._range("mcap", market)
+        log_range = log_max - log_min
+        if log_range <= 0:
+            return 0.5
+        # Smaller cap -> higher score
+        size_score = max(0, min(1, 1 - (log_mcap - log_min) / log_range))
         return size_score

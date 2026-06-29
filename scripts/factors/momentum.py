@@ -25,27 +25,22 @@ class MomentumFactor(Factor):
         market: str = "A",
     ) -> float:
         if len(kline) < 120:
-            return 0.5  # Not enough data, neutral
+            return 0.5
 
         closes = [row.get("close", 0) for row in kline]
         closes = [c for c in closes if c > 0]
         if len(closes) < 120:
             return 0.5
 
-        # 6-month momentum, excluding last month (~20 trading days)
-        _ = closes[0]
         m1_ago = closes[20] if len(closes) > 20 else closes[0]
         m6_ago = closes[120] if len(closes) > 120 else closes[-1]
-
-        # Skip recent month to avoid reversal effect
         ret_6m = (m1_ago - m6_ago) / max(m6_ago, 1e-9)
 
-        # Typical A-share 6m return range: -40% to 80%
-        mom_score = max(0, min(1, (ret_6m + 0.4) / 1.2))
+        ret_min, ret_max = self._range("ret_6m", market)
+        ret_span = ret_max - ret_min
+        mom_score = max(0, min(1, (ret_6m - ret_min) / ret_span)) if ret_span > 0 else 0.5
 
-        # MA alignment bonus
         ma_bonus = self._ma_alignment(closes)
-
         return min(1, max(0, mom_score * 0.7 + ma_bonus * 0.3))
 
     @staticmethod

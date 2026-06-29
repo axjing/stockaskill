@@ -92,7 +92,7 @@ def is_new(list_date: str, threshold_days: int = 60) -> bool:
         ld = datetime.strptime(clean, "%Y%m%d")
         return (datetime.now() - ld).days < threshold_days
     except (ValueError, TypeError):
-        return False
+        return True  # conservative: treat unknown as new
 
 
 def is_suspended(code: str, kline_data: list | None) -> bool:

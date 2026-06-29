@@ -1,7 +1,7 @@
 """Base factor class and normalization utilities."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from config import get as cfg_get
@@ -60,6 +60,27 @@ class Factor(ABC):
             score = self.compute(fund, kline, market)
             raw_scores[code] = score
         return self._normalize(raw_scores)
+
+    def _range(self, metric: str, market: str = "A") -> Tuple[float, float]:
+        """Get [min, max] normalization range for a metric in a market.
+
+        Falls back to A-share defaults if no config found for the given
+        market or metric.
+
+        Args:
+            metric: Metric name (e.g. 'pe', 'roe', 'vol').
+            market: Market identifier ('A', 'HK', 'US').
+
+        Returns:
+            (min_val, max_val) tuple.
+        """
+        ranges = cfg_get(f"factor_ranges.{self.name}", {})
+        market_ranges = ranges.get(market, {}) if isinstance(ranges, dict) else {}
+        if market_ranges:
+            entry = market_ranges.get(metric)
+            if isinstance(entry, (list, tuple)) and len(entry) == 2:
+                return (float(entry[0]), float(entry[1]))
+        return (0.0, 1.0)
 
     @staticmethod
     def _normalize(scores: Dict[str, float]) -> Dict[str, float]:

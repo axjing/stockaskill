@@ -169,7 +169,8 @@ class TestStrategyAggregator:
         assert "ma_trend" in names
         assert "contrarian" in names
         assert "alpha_momentum" in names
-        assert len(result["signals"]) == 6
+        assert "momentum_enhanced" in names
+        assert len(result["signals"]) == 7
 
     def test_confidence_positive(self):
         result = StrategyAggregator("601318").analyze_all()

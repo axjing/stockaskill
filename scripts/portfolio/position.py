@@ -81,10 +81,10 @@ def compute_position(
         )
 
     if method == "kelly":
-        # Estimate win_prob from score
+        from config import get as cfg_get
         win_prob = min(0.9, max(0.1, score / 100))
-        avg_win = 0.15  # Assume 15% avg win
-        avg_loss = 0.08  # Assume 8% avg loss
+        avg_win = cfg_get("kelly_avg_win", 0.15)
+        avg_loss = cfg_get("kelly_avg_loss", 0.08)
         weight = kelly_fraction(win_prob, avg_win, avg_loss)
     else:
         weight = score / 100 * 0.20  # Max 20% for perfect score

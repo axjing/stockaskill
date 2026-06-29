@@ -118,11 +118,12 @@ class BacktestEngine:
             day_data = next((r for r in kline if r.get("date") == date), None)
             if not day_data:
                 continue
-            price = day_data.get("close", 0) * (1 + self.slippage)
+            close_price = day_data.get("close", 0)
 
             if sig.get("signal") == "SELL" and code in self.positions:
+                sell_price = close_price * (1 - self.slippage)
                 shares = self.positions.pop(code)
-                revenue = shares * price * (1 - self.commission - self.stamp_tax)
+                revenue = shares * sell_price * (1 - self.commission - self.stamp_tax)
                 self.capital += revenue
                 self.trade_log.append(
                     {
@@ -130,14 +131,15 @@ class BacktestEngine:
                         "code": code,
                         "action": "SELL",
                         "shares": shares,
-                        "price": price,
+                        "price": sell_price,
                     }
                 )
             elif sig.get("signal") == "BUY" and code not in self.positions:
+                buy_price = close_price * (1 + self.slippage)
                 alloc = portfolio_value * 0.10 / max(len(signals), 1)
-                shares = int(alloc / price / 100) * 100
+                shares = int(alloc / buy_price / 100) * 100
                 if shares > 0:
-                    cost = shares * price * (1 + self.commission)
+                    cost = shares * buy_price * (1 + self.commission)
                     if cost <= self.capital:
                         self.positions[code] = shares
                         self.capital -= cost
@@ -147,7 +149,7 @@ class BacktestEngine:
                                 "code": code,
                                 "action": "BUY",
                                 "shares": shares,
-                                "price": price,
+                                "price": buy_price,
                             }
                         )
 

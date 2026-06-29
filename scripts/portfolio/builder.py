@@ -71,17 +71,20 @@ class PortfolioBuilder:
         if not self._candidates:
             return Portfolio(name=self.name, capital=self.capital)
 
-        # Get scores and compute weights
+        # Compute allocation weights
         scores = [c["score"] for c in self._candidates]
 
         if method == "signal":
-            _ = signal_weighted(scores)
+            weights = signal_weighted(scores)
         elif method == "equal":
             from portfolio.allocator import equal_weights
 
-            _ = equal_weights(len(self._candidates))
+            weights = equal_weights(len(self._candidates))
         else:
-            _ = signal_weighted(scores)
+            weights = signal_weighted(scores)
+
+        if not weights:
+            weights = [1.0 / len(scores)] * len(scores)
 
         positions: List[Position] = []
         for i, cand in enumerate(self._candidates):
@@ -89,7 +92,7 @@ class PortfolioBuilder:
                 code=cand["code"],
                 name=cand["name"],
                 market=cand["market"],
-                capital=self.capital,
+                capital=self.capital * weights[i],
                 score=cand["score"],
                 current_price=cand["current_price"],
                 method=position_method,

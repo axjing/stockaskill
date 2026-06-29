@@ -85,32 +85,31 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     else:
         print("  Fundamentals: not available (using cached/computed)")
 
-    # Run factor analysis
     try:
         from factors.composite import CompositeAnalyzer
-
         analyzer = CompositeAnalyzer(code, market)
         result = analyzer.analyze()
         score = result.get("total_score", 0)
-        print(f"  Composite Score: {score:.1f}/100")
+        badge = "##" if score >= 70 else ("!!" if score >= 40 else "!!")
+        print(f"  Composite Score: {score:.1f}/100 {badge}")
         for factor_name, factor_score in result.get("factors", {}).items():
-            print(f"    {factor_name}: {factor_score:.1f}")
+            fb = "##" if factor_score >= 70 else ("==" if factor_score >= 40 else "--")
+            print(f"    {fb} {factor_name}: {factor_score:.1f}")
         report_data["factor_analysis"] = result
     except Exception as exc:
-        print(f"  Factor analysis: {exc}")
+        print(f"  Factor analysis: {exc}", file=sys.stderr)
 
-    # Run strategy analysis
     try:
         from strategies.aggregator import StrategyAggregator
-
         agg = StrategyAggregator(code, market)
         signals = agg.analyze_all()
         final = signals.get("final_signal", "HOLD")
         final_score = signals.get("final_score", 0)
-        print(f"  Strategy Signal: {final} (score={final_score:.1f})")
+        sig_badge = {"BUY": "##", "SELL": "!!"}.get(final, "--")
+        print(f"  Strategy Signal: {sig_badge} {final} (score={final_score:.1f})")
         report_data["strategy"] = signals
     except Exception as exc:
-        print(f"  Strategy analysis: {exc}")
+        print(f"  Strategy analysis: {exc}", file=sys.stderr)
 
     _save_report(f"analyze_{code}_{market}", fmt, output_dir, data=report_data,
                   metadata={"command": "analyze"})
@@ -135,7 +134,7 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
         _save_report(f"diagnose_{code}_{market}", fmt, output_dir,
                       data=report, md=md, metadata={"command": "diagnose"})
     except Exception as exc:
-        print(f"Diagnosis failed: {exc}")
+        print(f"Diagnosis failed: {exc}", file=sys.stderr)
 
 
 def cmd_scan(args: argparse.Namespace) -> None:
@@ -148,6 +147,9 @@ def cmd_scan(args: argparse.Namespace) -> None:
     if market == "FUND":
         print("Scanning funds...")
         funds = get_fund_pool()
+        if not funds:
+            print("  No funds found. Run 'python scripts/run.py fetch pool' first.", file=sys.stderr)
+            return
         print(f"Found {len(funds)} funds")
         for f in funds[:top_n]:
             print(f"  {f.get('code', '?')} {f.get('name', '?')}")
@@ -167,19 +169,21 @@ def cmd_scan(args: argparse.Namespace) -> None:
             print(
                 "  No results returned (run 'python scripts/run.py fetch pool'"
                 " to refresh data).",
+                file=sys.stderr,
                 flush=True,
             )
         for i, r in enumerate(results, 1):
             score = r.get("total_score", 0)
             name = r.get("name", r["code"])
             f_score = r.get("f_score", 0)
-            print(f"  {i:3d}. {r['code']} {name}: {score:.1f} (F={f_score})")
+            badge = "##" if score >= 70 else ("==" if score >= 40 else "--")
+            print(f"  {badge} {i:3d}. {r['code']} {name}: {score:.1f} (F={f_score})")
 
         _save_report(f"scan_{market}", fmt, output_dir,
                       data={"market": market, "top_n": top_n, "results": results},
                       metadata={"command": "scan", "market": market, "top_n": top_n})
     except Exception as exc:
-        print(f"Scan failed: {exc}")
+        print(f"Scan failed: {exc}", file=sys.stderr)
 
 
 def cmd_portfolio(args: argparse.Namespace) -> None:
@@ -218,7 +222,7 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
                       data=port_data, md=md,
                       metadata={"command": "portfolio", "market": market})
     except Exception as exc:
-        print(f"Portfolio build failed: {exc}")
+        print(f"Portfolio build failed: {exc}", file=sys.stderr)
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
@@ -300,20 +304,21 @@ def cmd_alpha(args: argparse.Namespace) -> None:
                     results.append(result)
 
         results.sort(key=lambda x: x[2], reverse=True)
-        header = f"{'排名':<4} {'代码':<10} {'名称':<10} "
+        header = f"{'#':<4} {'代码':<10} {'名称':<10} "
         header += f"{'得分':<6} {'信号':<6} {'F':<4}"
         print(f"\n{header}")
         print("-" * 45)
         top_results = results[:top_n]
         for i, (code, name, score, signal, fsc, _) in enumerate(top_results, 1):
-            print(f"{i:<4} {code:<10} {name:<10} {score:<6.1f} {signal:<6} {fsc:<4}")
+            sig_badge = {"BUY": "##", "SELL": "!!"}.get(signal, "--")
+            print(f"{i:<4} {code:<10} {name:<10} {score:<6.1f} {sig_badge:<6} {fsc:<4}")
 
-        print("\n推荐买入 (BUY信号):")
+        print("\n## BUY signals:")
         buys = [(c, n, s, f) for c, n, s, sig, f, _ in top_results if sig == "BUY"]
         for c, n, s, f in buys:
-            print(f"  {c} {n} (得分={s:.1f}, F={f})")
+            print(f"  ## {c} {n} (score={s:.1f}, F={f})")
         if not buys:
-            print("  当前无BUY信号")
+            print("  -- No BUY signals")
 
         ranked = []
         for code, name, score, signal, fsc, factors in top_results:
@@ -325,7 +330,7 @@ def cmd_alpha(args: argparse.Namespace) -> None:
                       data={"market": market, "top_n": top_n, "results": ranked, "buys": buys},
                       metadata={"command": "alpha", "market": market, "top_n": top_n})
     except Exception as exc:
-        print(f"Alpha scan failed: {exc}")
+        print(f"Alpha scan failed: {exc}", file=sys.stderr)
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
@@ -359,11 +364,10 @@ def cmd_backtest(args: argparse.Namespace) -> None:
         print(f"  Max Drawdown: {mdd_val * 100:.2f}%")
         print(f"  Monthly Avg: {monthly_avg:.2f}%")
 
-        cagr = result.get("cagr", 0)
         if cagr > 0.12:
-            print(f"  Result: PASS (CAGR {cagr * 100:.2f}% > 12% target)")
+            print(f"  Result: ## PASS (CAGR {cagr * 100:.2f}% > 12% target)")
         else:
-            print(f"  Result: FAIL (CAGR {cagr * 100:.2f}% < 12% target)")
+            print(f"  Result: !! FAIL (CAGR {cagr * 100:.2f}% < 12% target)")
 
         md = format_backtest_summary(result, "Alpha Momentum Backtest (2018-2026)")
         _save_report("backtest", fmt, output_dir, data=result, md=md,

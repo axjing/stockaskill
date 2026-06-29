@@ -111,7 +111,7 @@ class CacheManager:
 
     @contextmanager
     def _conn(self):
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=5.0)
         try:
             yield conn
             conn.commit()
@@ -511,7 +511,7 @@ class CacheManager:
                 (today, api_name),
             )
             row = cur2.fetchone()
-            if row and row[0] <= limit:
+            if row and row[0] < limit:
                 return True
             # Roll back the increment if it exceeded limit
             conn.execute(

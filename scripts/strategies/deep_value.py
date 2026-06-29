@@ -63,12 +63,13 @@ class DeepValueStrategy(Strategy):
         elif f_score >= 5:
             score += 15
 
-        # Safety margin estimate (simplified Graham number)
-        if pe > 0 and self._safe(fund.get("bvps", 0)) > 0:
-            graham_num = (22.5 * pe * self._safe(fund.get("bvps", 0))) ** 0.5
-            _ = self._safe(fund.get("market_cap", 0))
-            # Simplified: use PE*BV as proxy
-            safety = (graham_num - pe) / max(pe, 1)
+        # Safety margin estimate (Graham Number: sqrt(22.5 * EPS * BVPS))
+        eps_val = self._safe(fund.get("eps", 0))
+        bvps_val = self._safe(fund.get("bvps", 0))
+        current_price = kline[0].get("close", 0) if kline and len(kline) > 0 else 0
+        if eps_val > 0 and bvps_val > 0 and current_price > 0:
+            graham_num = (22.5 * eps_val * bvps_val) ** 0.5
+            safety = (graham_num - current_price) / current_price
             if safety > 0.3:
                 checks.append("safety_margin")
 

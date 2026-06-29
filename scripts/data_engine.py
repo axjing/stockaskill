@@ -307,8 +307,8 @@ def get_kline(
         if new_data:
             _cache.upsert_daily_price(new_data)
             cached = _cache.get_daily_price(code)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("get_kline fetch failed for %s: %s", code, exc)
 
     return cached[:days] if cached else []
 
@@ -465,8 +465,8 @@ def get_fundamentals(
         if snapshot:
             _cache.upsert_factor_snapshot([snapshot])
             return snapshot
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("get_fundamentals fetch failed for %s: %s", code, exc)
     return cached
 
 
@@ -490,7 +490,7 @@ def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any
             df = ak.stock_financial_us_report_em(symbol=code)
         else:
             return None
-        if df is None or df.empty:
+        if df is None or df.empty or len(df.columns) < 3:
             return None
         today = datetime.now().strftime("%Y-%m-%d")
         result = {

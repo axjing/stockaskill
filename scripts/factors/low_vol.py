@@ -25,14 +25,13 @@ class LowVolFactor(Factor):
         market: str = "A",
     ) -> float:
         if len(kline) < 240:
-            return 0.5  # Not enough data
+            return 0.5
 
         closes = [row.get("close", 0) for row in kline[:250]]
         closes = [c for c in closes if c > 0]
         if len(closes) < 240:
             return 0.5
 
-        # Daily returns
         returns = np.diff(np.array(closes)) / np.array(closes[1:])
         returns = returns[~np.isnan(returns)]
         returns = returns[~np.isinf(returns)]
@@ -42,12 +41,16 @@ class LowVolFactor(Factor):
 
         vol = np.std(returns)
 
-        # Typical A-share daily vol range: 1% - 5%
+        vol_min, vol_max = self._range("vol", market)
+        drop_min, drop_max = self._range("max_drop", market)
+        vol_range = vol_max - vol_min
+        drop_range = drop_max - drop_min
+
         # Lower vol = higher score
-        vol_score = max(0, min(1, 1 - (vol - 0.01) / 0.04))
+        vol_score = max(0, min(1, 1 - (vol - vol_min) / vol_range)) if vol_range > 0 else 0.5
 
         # Max daily drop penalty
         max_drop = abs(np.min(returns)) if len(returns) > 0 else 0
-        drop_penalty = max(0, min(1, 1 - (max_drop - 0.03) / 0.07))
+        drop_penalty = max(0, min(1, 1 - (max_drop - drop_min) / drop_range)) if drop_range > 0 else 0.5
 
         return min(1, max(0, vol_score * 0.7 + drop_penalty * 0.3))

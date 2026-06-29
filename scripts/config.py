@@ -48,6 +48,38 @@ _DEFAULTS: Dict[str, Any] = {
     "commission": 0.0003,
     "stamp_tax": 0.001,
     "slippage": 0.001,
+    "factor_ranges": {
+        "value": {
+            "A": {"pe": [5, 80], "pb": [0.5, 10], "dy": [0, 6]},
+            "HK": {"pe": [2, 60], "pb": [0.2, 8], "dy": [0, 8]},
+            "US": {"pe": [5, 100], "pb": [0.5, 15], "dy": [0, 4]},
+        },
+        "size": {
+            "A": {"mcap": [23.03, 28.73]},
+            "HK": {"mcap": [22.33, 29.53]},
+            "US": {"mcap": [24.63, 31.93]},
+        },
+        "low_vol": {
+            "A": {"vol": [0.01, 0.05], "max_drop": [0.03, 0.10]},
+            "HK": {"vol": [0.015, 0.06], "max_drop": [0.03, 0.12]},
+            "US": {"vol": [0.015, 0.07], "max_drop": [0.04, 0.15]},
+        },
+        "growth": {
+            "A": {"revenue": [-0.5, 1.0], "profit": [-0.8, 2.0], "accel": [-0.3, 0.3]},
+            "HK": {"revenue": [-0.6, 1.0], "profit": [-1.0, 2.0], "accel": [-0.3, 0.3]},
+            "US": {"revenue": [-0.4, 1.0], "profit": [-0.8, 1.5], "accel": [-0.2, 0.4]},
+        },
+        "quality": {
+            "A": {"roe": [-0.2, 0.4], "gross_margin": [0, 0.8], "debt": [0, 1], "net_margin": [-0.1, 0.3]},
+            "HK": {"roe": [-0.15, 0.35], "gross_margin": [0, 0.7], "debt": [0, 1], "net_margin": [-0.1, 0.4]},
+            "US": {"roe": [-0.25, 0.5], "gross_margin": [0, 0.85], "debt": [0, 1], "net_margin": [-0.15, 0.35]},
+        },
+        "momentum": {
+            "A": {"ret_6m": [-0.4, 0.8]},
+            "HK": {"ret_6m": [-0.5, 0.9]},
+            "US": {"ret_6m": [-0.5, 1.0]},
+        },
+    },
 }
 
 _cache: Dict[str, Any] | None = None
