@@ -4,8 +4,9 @@ Provides consistent file-saving and formatting for all analysis outputs.
 Reports saved as JSON + Markdown with timestamped filenames.
 
 Usage:
-    from report_generator import save_report
-    report = save_report(data, "analyze", code="600519", market="A")
+    from report_generator import save_report, ReportMetadata
+    md = ReportMetadata(command="analyze", market="A")
+    report = save_report(data, "analyze", metadata=asdict(md))
     print(f"Report saved to {report['json_path']}")
 """
 
@@ -17,11 +18,26 @@ Usage:
 import json
 import os
 import sys
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 SCHEMA_VERSION = "1.0"
+
+
+@dataclass
+class ReportMetadata:
+    """Structured metadata for analysis reports.
+
+    Provides a typed contract for report metadata,
+    ensuring consistent field names across all reports.
+    """
+    command: str = ""
+    market: str = ""
+    top_n: int = 0
+    engine: str = ""
+    extra: Optional[Dict[str, Any]] = None
 
 
 def _ensure_dir(output_dir: str) -> str:

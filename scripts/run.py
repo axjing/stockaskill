@@ -27,7 +27,16 @@ _scripts_root = str(Path(__file__).resolve().parent)
 if _scripts_root not in sys.path:
     sys.path.insert(0, _scripts_root)
 
-from config import get as cfg_get  # noqa: E402
+_SCORE_BADGES = [(70, "##"), (40, "==")]
+_DEFAULT_BADGE = "--"
+
+def _badge(score: float) -> str:
+    for threshold, b in _SCORE_BADGES:
+        if score >= threshold:
+            return b
+    return _DEFAULT_BADGE
+
+from cache import get_cache  # noqa: E402
 from data_engine import (  # noqa: E402
     get_fund_pool,
     get_fundamentals,
@@ -90,11 +99,9 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         analyzer = CompositeAnalyzer(code, market)
         result = analyzer.analyze()
         score = result.get("total_score", 0)
-        badge = "##" if score >= 70 else ("!!" if score >= 40 else "!!")
-        print(f"  Composite Score: {score:.1f}/100 {badge}")
+        print(f"  Composite Score: {score:.1f}/100 {_badge(score)}")
         for factor_name, factor_score in result.get("factors", {}).items():
-            fb = "##" if factor_score >= 70 else ("==" if factor_score >= 40 else "--")
-            print(f"    {fb} {factor_name}: {factor_score:.1f}")
+            print(f"    {_badge(factor_score)} {factor_name}: {factor_score:.1f}")
         report_data["factor_analysis"] = result
     except Exception as exc:
         print(f"  Factor analysis: {exc}", file=sys.stderr)
@@ -176,7 +183,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
             score = r.get("total_score", 0)
             name = r.get("name", r["code"])
             f_score = r.get("f_score", 0)
-            badge = "##" if score >= 70 else ("==" if score >= 40 else "--")
+            badge = _badge(score)
             print(f"  {badge} {i:3d}. {r['code']} {name}: {score:.1f} (F={f_score})")
 
         _save_report(f"scan_{market}", fmt, output_dir,
@@ -472,6 +479,32 @@ def cmd_scheduler(args: argparse.Namespace) -> None:
         print(f"Watching: {', '.join(watchlist)}")
 
 
+def cmd_cache(args: argparse.Namespace) -> None:
+    """Cache management: stats, cleanup."""
+    action = args.action
+    cache = get_cache()
+
+    if action == "stats":
+        s = cache.stats()
+        print(f"DB size: {s['db_size_mb']:.1f} MB")
+        print(f"API calls today: {s['api_calls_today']}")
+        print("Table row counts:")
+        for tbl, cnt in sorted(s.items()):
+            if tbl in ("db_size_mb", "api_calls_today"):
+                continue
+            print(f"  {tbl}: {cnt}")
+    elif action == "cleanup":
+        days = getattr(args, "days", 30)
+        removed = cache.cleanup(max_age_days=days)
+        total = sum(removed.values())
+        print(f"Cleaned up {total} old entries:")
+        for tbl, cnt in removed.items():
+            if cnt:
+                print(f"  {tbl}: {cnt} rows removed")
+    else:
+        print(f"Unknown cache action: {action}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AKShare Stock Selection System")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -567,6 +600,15 @@ def main() -> None:
     p = sub.add_parser("scheduler", help="Run scheduled analysis")
     p.add_argument("--run-now", action="store_true")
     p.set_defaults(func=cmd_scheduler)
+
+    # cache
+    p = sub.add_parser("cache", help="Cache management")
+    cache_sub = p.add_subparsers(dest="action", required=True)
+    p_stats = cache_sub.add_parser("stats", help="Show cache statistics")
+    p_stats.set_defaults(func=cmd_cache)
+    p_clean = cache_sub.add_parser("cleanup", help="Clean old cache entries")
+    p_clean.add_argument("--days", type=int, default=30, help="Max age in days")
+    p_clean.set_defaults(func=cmd_cache)
 
     args = parser.parse_args()
     args.func(args)

@@ -1,8 +1,28 @@
 """Deep value strategy: low PE/PB + high F-Score + high dividend."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from strategies.base import Strategy
+
+_PE_BRACKETS: List[Tuple[float, int, str]] = [
+    (15, 30, "low_pe"),
+    (25, 15, "moderate_pe"),
+]
+
+_PB_BRACKETS: List[Tuple[float, int, str]] = [
+    (1.5, 25, "low_pb"),
+    (2.5, 10, ""),
+]
+
+_DY_BRACKETS: List[Tuple[float, int, str]] = [
+    (3, 20, "high_dividend"),
+    (1.5, 10, ""),
+]
+
+_FSCORE_BRACKETS: List[Tuple[int, int, str]] = [
+    (7, 25, "high_fscore"),
+    (5, 15, ""),
+]
 
 
 class DeepValueStrategy(Strategy):
@@ -35,33 +55,36 @@ class DeepValueStrategy(Strategy):
         checks = []
 
         # PE check: lower is better
-        if pe > 0 and pe < 15:
-            score += 30
-            checks.append("low_pe")
-        elif pe > 0 and pe < 25:
-            score += 15
-            checks.append("moderate_pe")
+        for ceiling, pts, label in _PE_BRACKETS:
+            if 0 < pe < ceiling:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # PB check
-        if pb > 0 and pb < 1.5:
-            score += 25
-            checks.append("low_pb")
-        elif pb > 0 and pb < 2.5:
-            score += 10
+        for ceiling, pts, label in _PB_BRACKETS:
+            if 0 < pb < ceiling:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # Dividend yield
-        if dy >= 3:
-            score += 20
-            checks.append("high_dividend")
-        elif dy >= 1.5:
-            score += 10
+        for threshold, pts, label in _DY_BRACKETS:
+            if dy >= threshold:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # F-Score
-        if f_score >= 7:
-            score += 25
-            checks.append("high_fscore")
-        elif f_score >= 5:
-            score += 15
+        for threshold, pts, label in _FSCORE_BRACKETS:
+            if f_score >= threshold:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # Safety margin estimate (Graham Number: sqrt(22.5 * EPS * BVPS))
         eps_val = self._safe(fund.get("eps", 0))

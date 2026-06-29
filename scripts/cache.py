@@ -568,6 +568,26 @@ class CacheManager:
             row = cur.fetchone()
             return row[0] if row else None
 
+    def stats(self) -> Dict[str, Any]:
+        """Get cache statistics: table row counts, size, API usage."""
+        stats_dict: Dict[str, Any] = {}
+        tables = [
+            "stock_pool", "daily_price", "factor_snapshot",
+            "computed_factors", "sentiment", "fund_info",
+            "fund_nav", "market_index", "api_usage",
+        ]
+        with self._conn() as conn:
+            for tbl in tables:
+                try:
+                    cur = conn.execute(f"SELECT COUNT(*) FROM {tbl}")
+                    stats_dict[tbl] = cur.fetchone()[0]
+                except Exception:
+                    stats_dict[tbl] = -1
+        db_size = os.path.getsize(self.db_path) / (1024 * 1024)
+        stats_dict["db_size_mb"] = round(db_size, 2)
+        stats_dict["api_calls_today"] = self.get_api_usage_today()
+        return stats_dict
+
     def cleanup(self, max_age_days: int = 30, max_size_mb: int = 500) -> Dict[str, int]:
         """Clean up old cache entries to prevent unbounded growth.
 

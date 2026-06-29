@@ -1,10 +1,21 @@
 """Contrarian strategy: oversold + undervalued + volume stabilization."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 from strategies.base import Strategy
+
+_OVERSOLD_BRACKETS: List[Tuple[float, int, str]] = [
+    (0.25, 35, "deep_oversold"),
+    (0.15, 25, "oversold"),
+    (0.08, 10, ""),
+]
+
+_CHEAP_PE_BRACKETS: List[Tuple[float, int, str]] = [
+    (12, 20, "cheap_pe"),
+    (20, 10, ""),
+]
 
 
 class ContrarianStrategy(Strategy):
@@ -47,21 +58,20 @@ class ContrarianStrategy(Strategy):
         checks = []
 
         # Oversold: down > 15% from 60-day high
-        if drawdown > 0.25:
-            score += 35
-            checks.append("deep_oversold")
-        elif drawdown > 0.15:
-            score += 25
-            checks.append("oversold")
-        elif drawdown > 0.08:
-            score += 10
+        for threshold, pts, label in _OVERSOLD_BRACKETS:
+            if drawdown > threshold:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # Low valuation
-        if pe > 0 and pe < 12:
-            score += 20
-            checks.append("cheap_pe")
-        elif pe > 0 and pe < 20:
-            score += 10
+        for ceiling, pts, label in _CHEAP_PE_BRACKETS:
+            if 0 < pe < ceiling:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         if pb > 0 and pb < 1.2:
             score += 15

@@ -1,8 +1,23 @@
 """GARP strategy: Growth at a Reasonable Price."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from strategies.base import Strategy
+
+_PEG_BRACKETS: List[Tuple[float, int, str]] = [
+    (1, 30, "low_peg"),
+    (1.5, 15, ""),
+]
+
+_ROE_BRACKETS: List[Tuple[float, int, str]] = [
+    (0.15, 25, "high_roe"),
+    (0.1, 10, ""),
+]
+
+_REVGROWTH_BRACKETS: List[Tuple[float, int, str]] = [
+    (0.10, 25, "revenue_growth"),
+    (0.05, 10, ""),
+]
 
 
 class GARPStrategy(Strategy):
@@ -34,25 +49,28 @@ class GARPStrategy(Strategy):
         checks = []
 
         # PEG < 1 is ideal
-        if peg < 1:
-            score += 30
-            checks.append("low_peg")
-        elif peg < 1.5:
-            score += 15
+        for ceiling, pts, label in _PEG_BRACKETS:
+            if peg < ceiling:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # ROE > 15%
-        if roe > 0.15:
-            score += 25
-            checks.append("high_roe")
-        elif roe > 0.1:
-            score += 10
+        for threshold, pts, label in _ROE_BRACKETS:
+            if roe > threshold:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # Revenue growth > 10%
-        if rev_growth > 0.10:
-            score += 25
-            checks.append("revenue_growth")
-        elif rev_growth > 0.05:
-            score += 10
+        for threshold, pts, label in _REVGROWTH_BRACKETS:
+            if rev_growth > threshold:
+                score += pts
+                if label:
+                    checks.append(label)
+                break
 
         # Growth consistency (profit growth > 0 as proxy)
         if profit_growth > 0:

@@ -86,10 +86,21 @@ def validate(skill_dir: str = ".") -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate stockaskill structure")
-    parser.add_argument("--dir", default=".", help="Skill directory (default: cwd)")
+    parser.add_argument("dir", nargs="?", default=".", help="Skill directory or '-' for stdin")
+    parser.add_argument("--dir", dest="dir_alt", help="(deprecated) use positional arg instead")
     args = parser.parse_args()
 
-    errors = validate(args.dir)
+    skill_dir = args.dir
+    if skill_dir == "-":
+        text = sys.stdin.read()
+        front = _parse_frontmatter(text)
+        if front is None:
+            print("FAIL: invalid or missing frontmatter (stdin)")
+            sys.exit(1)
+        print(f"PASS (stdin): name={front.get('name','?')}, description={front.get('description','?')}")
+        return
+
+    errors = validate(skill_dir)
     if errors:
         print(f"FAIL ({len(errors)} issue(s)):")
         for e in errors:
