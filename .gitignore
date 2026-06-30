@@ -8,7 +8,7 @@ __pycache__/
 vs
 reports
 .cache
-
+.vscode
 3rdparty
 
 # Distribution / packaging

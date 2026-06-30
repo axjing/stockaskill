@@ -38,7 +38,7 @@ _DEFAULTS: Dict[str, Any] = {
         "fund_nav": 3600,
         "scan_snapshot": 86400,
     },
-    "daily_api_limit": 500,
+    "daily_api_limit": 15000,
     "scan_max_candidates": 200,
     "data_readiness": {
         "analysis_history_days": 365,

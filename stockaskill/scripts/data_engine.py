@@ -85,6 +85,30 @@ def _try_baostock() -> Optional[Any]:
         return None
 
 
+def _try_openbb() -> Optional[Any]:
+    """Import OpenBB, return obb object or None."""
+    try:
+        from openbb import obb
+
+        return obb
+    except ImportError:
+        return None
+
+
+def _openbb_symbol(code: str, market: str) -> Optional[str]:
+    """Convert code + market to OpenBB-compatible symbol.
+
+    Returns None if the market is not supported by OpenBB.
+    """
+    if market == "US":
+        return code.upper()
+    if market == "HK":
+        return f"{code}.HK"
+    if market in ("A", "FUND"):
+        return None
+    return None
+
+
 # -- Helpers ----------------------------------------------------------------
 
 
@@ -92,7 +116,9 @@ def _sina_code(code: str, market: str = "A") -> str:
     """Convert code to Sina format: sh601318, sz002475, sh510300."""
     code = normalize_code_for_market(code, market)
     if market in ("A", "FUND"):
-        if code.startswith(("5", "6", "9")):
+        if code.startswith("92"):
+            return f"bj{code}"
+        if code.startswith(("5", "6")):
             return f"sh{code}"
         return f"sz{code}"
     return code
@@ -239,6 +265,24 @@ def _refresh_stock_pool(market: str) -> None:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if market == "A":
             df = _fetch_a_stock_pool(ak)
+            if df is not None and not df.empty:
+                has_limited = (
+                    df["industry"].eq("").all()
+                    or df["list_date"].eq("").all()
+                )
+                if has_limited:
+                    df = _backfill_pool_metadata_from_bs(df)
+                n = len(df)
+                if n < 4000:
+                    print(
+                        f"[WARN] A-share pool has only {n} stocks"
+                        f" (expected 5000-6000). Data may be incomplete."
+                    )
+                elif n > 6000:
+                    print(
+                        f"[WARN] A-share pool has {n} stocks"
+                        f" (expected 5000-6000). May include non-stocks."
+                    )
         elif market == "HK":
             df = _fetch_hk_stock_pool(ak)
         elif market == "US":
@@ -292,18 +336,20 @@ def _refresh_stock_pool(market: str) -> None:
         print(f"[WARN] Failed to refresh stock pool for {market}: {exc}")
 
 
+
 @_api_call("stock_pool_a")
 def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
-    """Fetch A-share pool via EastMoney (richer data). Falls back to Sina."""
+    """Fetch A-share pool: EastMoney -> Sina -> Baostock."""
+    # Attempt 1: EastMoney with full fields
     try:
         df = ak.stock_zh_a_spot_em()
         col_map = {
-            "\u4ee3\u7801": "code",
-            "\u540d\u79f0": "name",
-            "\u603b\u5e02\u503c": "total_market_cap",
-            "\u884c\u4e1a": "industry",
-            "\u5730\u533a": "sector",
-            "\u5e02\u76c8\u7387\u52a8\u6001": "pe_ttm",
+            "代码": "code",
+            "名称": "name",
+            "总市值": "total_market_cap",
+            "行业": "industry",
+            "地区": "sector",
+            "市盈率动态": "pe_ttm",
         }
         df = df.rename(columns=col_map)
         df["list_date"] = ""
@@ -315,12 +361,114 @@ def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
         print(f"Fetch A-share pool via EM ({len(df)} stocks)")
         return df
     except Exception:
-        print("EM pool failed, fallback to stock_info_a_code_name.")
+        print("EM pool failed, fallback to Sina.")
+
+    # Attempt 2: Sina (code+name only)
+    try:
         df = ak.stock_info_a_code_name()
         df["industry"] = ""
         df["sector"] = ""
         df["list_date"] = ""
         df["total_market_cap"] = 0.0
+        print(f"Fetch A-share pool via Sina ({len(df)} stocks)")
+        return df
+    except Exception:
+        print("Sina pool failed, fallback to Baostock.")
+
+    # Attempt 3: Baostock (code+name+ipoDate)
+    return _fetch_a_stock_pool_baostock()
+
+
+def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
+    """Fetch A-share pool from Baostock as last resort."""
+    bs = _try_baostock()
+    if bs is None:
+        print("Baostock not available for pool fetch.")
+        return None
+    if not _cache.record_api_call("stock_pool_baostock"):
+        print("Baostock pool API limit reached.")
+        return None
+    try:
+        rs = bs.query_stock_basic()
+        rows = []
+        while rs.error_code == "0" and rs.next():
+            row = rs.get_row_data()
+            if row[4] == "1" and row[5] == "1":
+                code = row[0]
+                if code.startswith("sh."):
+                    code = code[3:]
+                elif code.startswith("sz."):
+                    code = code[3:]
+                elif code.startswith("bj."):
+                    code = code[3:]
+                rows.append({
+                    "code": code,
+                    "name": row[1],
+                    "industry": "",
+                    "sector": "",
+                    "list_date": str(row[2]).strip(),
+                    "total_market_cap": 0.0,
+                })
+        bs.logout()
+        if rows:
+            print(f"Fetch A-share pool via Baostock ({len(rows)} stocks)")
+            return pd.DataFrame(rows)
+        return None
+    except Exception as exc:
+        print(f"Baostock pool fetch failed: {exc}")
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        return None
+
+
+def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
+    """Enrich pool DataFrame with industry/list_date from Baostock."""
+    bs = _try_baostock()
+    if bs is None or df is None or df.empty:
+        return df
+    if not _cache.record_api_call("stock_pool_baostock"):
+        return df
+    try:
+        rs = bs.query_stock_basic()
+        meta_map: Dict[str, Dict[str, str]] = {}
+        while rs.error_code == "0" and rs.next():
+            row = rs.get_row_data()
+            code = row[0]
+            if code.startswith("sh."):
+                code = code[3:]
+            elif code.startswith("sz."):
+                code = code[3:]
+            elif code.startswith("bj."):
+                code = code[3:]
+            meta_map[code] = {
+                "industry": "",
+                "list_date": str(row[2]).strip(),
+            }
+        bs.logout()
+
+        has_changes = False
+        for idx, row in df.iterrows():
+            code = str(row.get("code", ""))
+            if code in meta_map:
+                meta = meta_map[code]
+                if not str(row.get("list_date", "")).strip() and meta["list_date"]:
+                    df.at[idx, "list_date"] = meta["list_date"]
+                    has_changes = True
+                if not str(row.get("industry", "")).strip() and meta["industry"]:
+                    df.at[idx, "industry"] = meta["industry"]
+                    has_changes = True
+
+        if has_changes:
+            print("Pool metadata backfilled from Baostock.")
+        return df
+    except Exception as exc:
+        print(f"Baostock pool metadata backfill failed: {exc}")
+        try:
+            bs.logout()
+        except Exception:
+            pass
         return df
 
 
@@ -480,16 +628,39 @@ def get_kline(
 
 
 def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str, Any]]:
-    """Fetch K-line: Sina first, then baostock, then efinance."""
+    """Fetch K-line with true fallback: AKShare -> baostock -> efinance."""
     ak = _try_akshare()
     if ak is not None:
-        return _fetch_kline_sina(code, market, start, end, ak)
+        try:
+            result = _fetch_kline_sina(code, market, start, end, ak)
+            if result:
+                return result
+        except Exception as exc:
+            logger.debug("AKShare kline failed for %s: %s, trying fallback", code, exc)
     bs = _try_baostock()
     if bs is not None:
-        return _fetch_kline_bs(code, market, start, end, bs)
+        try:
+            result = _fetch_kline_bs(code, market, start, end, bs)
+            if result:
+                return result
+        except Exception as exc:
+            logger.debug("Baostock kline failed for %s: %s, trying fallback", code, exc)
     ef = _try_efinance()
     if ef is not None:
-        return _fetch_kline_ef(code, market, start, end, ef)
+        try:
+            result = _fetch_kline_ef(code, market, start, end, ef)
+            if result:
+                return result
+        except Exception as exc:
+            logger.debug("efinance kline failed for %s: %s", code, exc)
+    obb = _try_openbb()
+    if obb is not None and market in ("HK", "US"):
+        try:
+            result = _fetch_kline_openbb(code, market, start, end, obb)
+            if result:
+                return result
+        except Exception as exc:
+            logger.debug("OpenBB kline failed for %s: %s", code, exc)
     return []
 
 
@@ -498,23 +669,22 @@ def _fetch_kline_sina(
     code: str, market: str, start: str, end: str, ak
 ) -> List[Dict[str, Any]]:
     """Fetch K-line via Sina (daily, all history, then filter)."""
+    sina_sym = _sina_code(code, market)
     if market == "FUND":
         try:
-            df = ak.fund_etf_hist_sina(symbol=_sina_code(code, market))
+            df = ak.fund_etf_hist_sina(symbol=sina_sym)
         except Exception:
-            df = ak.stock_zh_a_daily(symbol=_sina_code(code, market), adjust="qfq")
+            df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
     elif market == "A":
-        df = ak.stock_zh_a_daily(symbol=_sina_code(code, market), adjust="qfq")
+        df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
     elif market == "HK":
         df = ak.stock_hk_daily(symbol=code, adjust="qfq")
     elif market == "US":
         df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
     else:
         return []
-
-    if df is None or df.empty:
+    if df is None or df.empty or "date" not in df.columns:
         return []
-
     # Filter to date range
     df["date"] = df["date"].astype(str)
     clean_start = start.replace("-", "")
@@ -551,28 +721,28 @@ def _fetch_kline_ef(
     """Fetch K-line from efinance (A-shares only)."""
     if market != "A":
         return []
-    try:
-        df = ef.stock.get_quote_history(code, klt=101)
-        if df is None or df.empty:
-            return []
-        rows = []
-        for _, r in df.iterrows():
-            rows.append(
-                {
-                    "code": code,
-                    "date": str(r.get("\u65e5\u671f", "")),
-                    "open": safe_float(r.get("\u5f00\u76d8", 0)),
-                    "high": safe_float(r.get("\u6700\u9ad8", 0)),
-                    "low": safe_float(r.get("\u6700\u4f4e", 0)),
-                    "close": safe_float(r.get("\u6536\u76d8", 0)),
-                    "volume": safe_float(r.get("\u6210\u4ea4\u91cf", 0)),
-                    "amount": safe_float(r.get("\u6210\u4ea4\u989d", 0)),
-                    "market": market,
-                }
-            )
-        return rows
-    except Exception:
+    df = ef.stock.get_quote_history(code, klt=101)
+    if df is None or df.empty:
         return []
+    date_col = "\u65e5\u671f"
+    if date_col not in df.columns:
+        return []
+    rows = []
+    for _, r in df.iterrows():
+        rows.append(
+            {
+                "code": code,
+                "date": str(r.get(date_col, "")),
+                "open": safe_float(r.get("\u5f00\u76d8", 0)),
+                "high": safe_float(r.get("\u6700\u9ad8", 0)),
+                "low": safe_float(r.get("\u6700\u4f4e", 0)),
+                "close": safe_float(r.get("\u6536\u76d8", 0)),
+                "volume": safe_float(r.get("\u6210\u4ea4\u91cf", 0)),
+                "amount": safe_float(r.get("\u6210\u4ea4\u989d", 0)),
+                "market": market,
+            }
+        )
+    return rows
 
 
 @_api_call("kline_bs")
@@ -582,7 +752,12 @@ def _fetch_kline_bs(
     """Fetch K-line from baostock (A-shares only)."""
     if market != "A":
         return []
-    prefix = "sh" if code.startswith(("6", "9")) else "sz"
+    if code.startswith("92"):
+        prefix = "bj"
+    elif code.startswith(("6", "9")):
+        prefix = "sh"
+    else:
+        prefix = "sz"
     rs = bs.query_history_k_data_plus(
         f"{prefix}.{code}",
         "date,open,high,low,close,volume,amount",
@@ -591,6 +766,8 @@ def _fetch_kline_bs(
         frequency="d",
         adjustflag="2",
     )
+    if rs.error_code != "0":
+        return []
     rows = []
     while rs.error_code == "0" and rs.next():
         r = rs.get_row_data()
@@ -611,6 +788,106 @@ def _fetch_kline_bs(
 
 
 # -- Fundamentals -----------------------------------------------------------
+
+
+# -- OpenBB K-line ----------------------------------------------------------
+
+
+@_api_call("kline_openbb")
+def _fetch_kline_openbb(
+    code: str,
+    market: str,
+    start: str,
+    end: str,
+    obb,
+) -> List[Dict[str, Any]]:
+    """Fetch K-line from OpenBB (HK/US markets)."""
+    symbol = _openbb_symbol(code, market)
+    if symbol is None:
+        return []
+    try:
+        df = obb.equity.price.historical(
+            symbol=symbol,
+            start_date=start,
+            end_date=end,
+            provider="yfinance",
+        ).to_df()
+        if df is None or df.empty:
+            return []
+        df = df.reset_index()
+        if "date" not in df.columns:
+            date_candidates = [c for c in df.columns if "date" in c.lower()]
+            if date_candidates:
+                df = df.rename(columns={date_candidates[0]: "date"})
+            else:
+                return []
+        df["date"] = df["date"].astype(str).str.replace("T.*", "", regex=True)
+        rows = []
+        for _, r in df.iterrows():
+            rows.append(
+                {
+                    "code": code,
+                    "date": str(r.get("date", "")),
+                    "open": safe_float(r.get("open", 0)),
+                    "high": safe_float(r.get("high", 0)),
+                    "low": safe_float(r.get("low", 0)),
+                    "close": safe_float(r.get("close", 0)),
+                    "volume": safe_float(r.get("volume", 0)),
+                    "amount": safe_float(r.get("amount", 0)),
+                    "market": market,
+                }
+            )
+        return rows
+    except Exception:
+        return []
+
+
+# -- OpenBB fundamentals ----------------------------------------------------
+
+
+@_api_call("fundamentals_openbb")
+def _fetch_fundamentals_openbb(
+    code: str,
+    market: str,
+    obb,
+) -> Optional[Dict[str, Any]]:
+    """Fetch fundamentals from OpenBB (HK/US markets)."""
+    symbol = _openbb_symbol(code, market)
+    if symbol is None:
+        return None
+    try:
+        df = obb.equity.valuation.metrics(
+            symbol=symbol,
+            provider="yfinance",
+        ).to_df()
+        if df is None or df.empty:
+            return None
+        row = df.iloc[0]
+        today = datetime.now().strftime("%Y-%m-%d")
+        return {
+            "code": code,
+            "date": today,
+            "market_cap": safe_float(row.get("marketCap", row.get("market_cap", 0))),
+            "pe_ttm": safe_float(row.get("trailingPE", row.get("pe_ratio", 0))),
+            "pe_static": safe_float(row.get("trailingPE", row.get("pe_ratio", 0))),
+            "pb": safe_float(row.get("priceToBook", row.get("price_to_book", 0))),
+            "ps_ttm": safe_float(row.get("priceToSalesTrailing12Months", 0)),
+            "pcf_ttm": safe_float(row.get("priceToCashflow", 0)),
+            "dividend_yield": safe_float(row.get("dividendYield", 0)),
+            "roe": safe_float(row.get("returnOnEquity", 0)),
+            "roa": safe_float(row.get("returnOnAssets", 0)),
+            "gross_margin": safe_float(row.get("grossMargins", 0)),
+            "net_margin": safe_float(row.get("profitMargins", 0)),
+            "revenue_growth": safe_float(row.get("revenueGrowth", 0)),
+            "profit_growth": safe_float(row.get("earningsGrowth", 0)),
+            "debt_ratio": safe_float(row.get("debtToEquity", 0)),
+            "current_ratio": safe_float(row.get("currentRatio", 0)),
+            "eps": safe_float(row.get("trailingEps", 0)),
+            "bvps": 0.0,
+        }
+    except Exception:
+        return None
+
 
 
 def get_fundamentals(
@@ -641,6 +918,11 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     ak = _try_akshare()
     if ak is not None:
         return _fetch_fundamentals_ak(code, market, ak)
+    obb = _try_openbb()
+    if obb is not None and market in ("HK", "US"):
+        result = _fetch_fundamentals_openbb(code, market, obb)
+        if result:
+            return result
     return None
 
 
