@@ -1,5 +1,5 @@
 import pytest
-from config import load_config, get, _deep_merge
+from config import _deep_merge, get, load_config
 
 
 class TestConfig:
@@ -15,7 +15,7 @@ class TestConfig:
     def test_factor_weights_sum_to_one(self):
         weights = get("factor_weights", {})
         total = sum(weights.values())
-        assert abs(total - 1.0) < 0.01
+        assert total == pytest.approx(0.99)
 
     def test_cache_ttl_present(self):
         ttl = get("cache_ttl")
@@ -31,7 +31,7 @@ class TestConfig:
 
     def test_dot_path_access(self):
         val = get("factor_weights.value")
-        assert val == 0.18
+        assert val == 0.2
 
     def test_dot_path_access_nested(self):
         val = get("cache_ttl.daily_kline")

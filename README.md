@@ -23,7 +23,7 @@ A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股�
 ### 环境准备
 
 ```bash
-pip install akshare pandas numpy
+pip install akshare efinance baostock pandas numpy scipy
 ```
 
 ### 安装
@@ -165,14 +165,22 @@ openclaw skills install @axjing/stockaskill --global
 首次使用时本地尚无数据, 系统会自动执行以下操作:
 
 1. 创建 `.cache/quant_cache.db` (SQLite 数据库)
-2. 调用 AKShare 获取全市场股票池
-3. 按需分批拉取个股 K 线、财务数据
+2. 按市场获取股票池/基金池元数据
+3. 按当前任务范围分批拉取缺失的 K 线、财务数据、基金净值、指数数据
 
-首次全量拉取因受 API 限速保护 (500 次/天), 约需几天完成全部数据积累。在此期间功能正常可用, 仅未缓存的数据会实时拉取。
+系统遵循“本地优先”原则:
+
+- 已缓存且仍然新鲜的数据不会重复调用 API
+- `analyze` / `diagnose` 会先补齐单标的所需历史与基本面
+- `scan` / `alpha` 会先补齐候选池的必要数据, 再做本地评分
+- `backtest` 只会对缺失历史做有上限的预热, 不会每次都全市场全历史重拉
+
+首次完整积累多市场历史数据仍会受到 API 限速保护 (500 次/天) 影响, 但不影响日常使用; 未缓存部分才会触发增量抓取。
 
 ### 后续使用
 
-个股分析数据优先从本地读取, 仅缺失数据触发增量 API 调用。
+个股分析、市场扫描、基金筛选、组合构建、回测都优先从本地读取。
+缓存命中不足时, 系统只补当前任务必需的数据, 然后立即继续分析。
 
 ## 核心功能
 
@@ -235,7 +243,7 @@ openclaw skills install @axjing/stockaskill --global
 
 | 表 | 内容 | 更新策略 |
 |:---|:-----|:---------|
-| `stock_pool` | 全市场股票池 (A/ HK/ US) | 按 TTL 过期更新 |
+| `stock_pool` | 全市场股票池 (A / HK / US / FUND) | 按市场独立 TTL 更新 |
 | `daily_price` | 个股日 K 线 (前复权) | 按需增量, 只有缺失区间才拉取 |
 | `factor_snapshot` | 基本面快照 (PE/PB/ROE/增速) | 按 TTL 过期更新 |
 | `computed_factors` | 计算因子值 | 本地计算, 无需 API |
@@ -246,14 +254,15 @@ openclaw skills install @axjing/stockaskill --global
 ### API 调用策略
 
 - 个股分析: 0-2 次 API (数据已缓存则 0 次)
-- 全市场选股: 0 次 (纯本地计算)
-- 组合优化: 0 次 (纯本地计算)
+- 全市场选股: 候选数据齐备时 0 次, 冷缓存时按候选集补齐
+- 组合优化: 数据齐备时 0 次, 否则按持仓标的增量补齐
+- 回测: 仅对缺失历史执行有上限的批量预热
 - 失败退避: 2^n 秒, 最多 3 次重试
 - 日配额上限: 500 次 (硬限制, 超出后返回本地数据)
 
 ## 配置参数
 
-直接在 `scripts/config.py` 中修改 `_DEFAULTS` 字典。
+直接在 `stockaskill/scripts/config.py` 中修改 `_DEFAULTS` 字典。
 
 ## 与框架集成
 
@@ -378,7 +387,7 @@ cp stockaskill/SKILL.md .windsurf/rules/stockaskill.md
 ```python
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "stockaskill" / "scripts"))
 
 from advisor.diagnosis import StockDiagnosis
 from factors.composite import CompositeAnalyzer
@@ -387,7 +396,7 @@ from portfolio.builder import PortfolioBuilder
 from data_engine import get_stock_pool, get_kline
 
 # 1. 获取股票池
-pool = get_stock_pool(market='A')
+pool = get_stock_pool(market="A")
 
 # 2. 个股深度分析 - 返回完整诊断报告
 diagnosis = StockDiagnosis("600519", "A").full_report()
@@ -410,13 +419,13 @@ print(portfolio.summary())
 
 ```bash
 cd path/to/stockaskill
-python scripts/run.py diagnose 600519 --market A       # 深度诊断
-python scripts/run.py scan A --top 20                   # 全市场扫描
-python scripts/run.py alpha A --top 10                  # Alpha动量扫描
-python scripts/run.py analyze 600519 --market A         # 个股分析
-python scripts/run.py portfolio --codes 600519,000858   # 组合构建
-python scripts/run.py backtest                          # 回测验证
-python scripts/run.py fetch pool                        # 刷新数据池
+python stockaskill/scripts/run.py diagnose 600519 --market A       # 深度诊断
+python stockaskill/scripts/run.py scan A --top 20                  # 全市场扫描
+python stockaskill/scripts/run.py alpha A --top 10                 # Alpha动量扫描
+python stockaskill/scripts/run.py analyze 600519 --market A        # 个股分析
+python stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
+python stockaskill/scripts/run.py backtest                         # 回测验证
+python stockaskill/scripts/run.py fetch pool                       # 刷新数据池
 ```
 
 ## 数据来源

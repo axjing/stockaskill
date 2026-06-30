@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "stockaskill"
@@ -41,3 +41,6 @@ select = ["E", "F", "W", "I"]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.setuptools]
+packages = []

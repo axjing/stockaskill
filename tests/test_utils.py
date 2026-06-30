@@ -1,10 +1,19 @@
-import pytest
-from utils import (
-    normalize_code, detect_market, code_to_akshare_symbol,
-    code_to_xq_symbol, exchange_suffix, is_st, is_new,
-    is_suspended, safe_float, safe_int, percentile_rank,
-)
 from datetime import datetime
+
+from utils import (
+    code_to_akshare_symbol,
+    code_to_xq_symbol,
+    detect_market,
+    exchange_suffix,
+    is_new,
+    is_st,
+    is_suspended,
+    normalize_code,
+    normalize_code_for_market,
+    percentile_rank,
+    safe_float,
+    safe_int,
+)
 
 
 class TestNormalizeCode:
@@ -19,6 +28,11 @@ class TestNormalizeCode:
 
     def test_with_prefix(self):
         assert normalize_code("sh601318") == "601318"
+
+    def test_market_specific_normalization(self):
+        assert normalize_code_for_market("AAPL", "US") == "AAPL"
+        assert normalize_code_for_market("700", "HK") == "00700"
+        assert normalize_code_for_market("SZ002475", "A") == "002475"
 
 
 class TestDetectMarket:

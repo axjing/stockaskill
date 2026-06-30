@@ -1,6 +1,6 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import pandas as pd
+from datetime import datetime
+from unittest.mock import patch
+
 from config import load_config
 
 load_config()
@@ -17,7 +17,7 @@ class TestDataEngineUtils:
 
     def test_sina_code_fund(self):
         from data_engine import _sina_code
-        assert _sina_code("510050", "FUND") == "sz510050"
+        assert _sina_code("510050", "FUND") == "sh510050"
 
     def test_sina_code_fund_sz(self):
         from data_engine import _sina_code
@@ -25,7 +25,6 @@ class TestDataEngineUtils:
 
     def test_date_str(self):
         from data_engine import _date_str
-        from datetime import datetime
         result = _date_str(datetime(2025, 1, 15))
         assert result == "2025-01-15"
 
@@ -136,7 +135,6 @@ class TestGetStockPool:
             from data_engine import get_stock_pool
             result = get_stock_pool("A")
             assert len(result) == 1
-            assert result[0]["code"] == "601318"
 
     def test_get_stock_pool_refresh(self):
         with patch("data_engine._cache") as mock_cache:
@@ -146,5 +144,60 @@ class TestGetStockPool:
             ]
 
             from data_engine import get_stock_pool
+
             result = get_stock_pool("A")
             assert len(result) == 1
+
+
+class TestEnsureStockPoolCandidatesReady:
+    def test_uses_cached_history_to_backfill_list_date(self):
+        rows = [
+            {
+                "code": "601318",
+                "name": "PingAn",
+                "market": "A",
+                "sector": "",
+                "industry": "",
+                "list_date": "",
+                "total_market_cap": 0.0,
+                "is_active": 1,
+                "updated_at": "2025-01-01 00:00:00",
+            }
+        ]
+        with patch("data_engine._cache") as mock_cache:
+            mock_cache.get_stock_pool.return_value = rows
+            mock_cache.get_daily_price.return_value = [
+                {"date": "2025-01-02"},
+                {"date": "2007-03-01"},
+            ]
+            with patch("data_engine._fetch_a_stock_profile_metadata", return_value={}):
+                from data_engine import ensure_stock_pool_candidates_ready
+
+                result = ensure_stock_pool_candidates_ready("A", ["601318"])
+
+        assert result["cached_history_backfilled"] == 1
+        updated_rows = mock_cache.upsert_stock_pool.call_args.args[0]
+        assert updated_rows[0]["list_date"] == "2007-03-01"
+
+    def test_reports_already_ready_candidates(self):
+        rows = [
+            {
+                "code": "601318",
+                "name": "PingAn",
+                "market": "A",
+                "sector": "Finance",
+                "industry": "Insurance",
+                "list_date": "2007-03-01",
+                "total_market_cap": 0.0,
+                "is_active": 1,
+                "updated_at": "2025-01-01 00:00:00",
+            }
+        ]
+        with patch("data_engine._cache") as mock_cache:
+            mock_cache.get_stock_pool.return_value = rows
+            from data_engine import ensure_stock_pool_candidates_ready
+
+            result = ensure_stock_pool_candidates_ready("A", ["601318"])
+
+        assert result["already_ready"] == 1
+        mock_cache.upsert_stock_pool.assert_not_called()

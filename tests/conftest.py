@@ -1,16 +1,17 @@
 import sys
 from pathlib import Path
+from typing import Any, Dict, List
 
-_scripts = Path(__file__).resolve().parent.parent / "scripts"
+import pytest
+
+_repo_root = Path(__file__).resolve().parent.parent
+_scripts = _repo_root / "stockaskill" / "scripts"
+_skill_root = _repo_root / "stockaskill"
+
 if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
-_parent = _scripts.parent
-if str(_parent) not in sys.path:
-    sys.path.insert(0, str(_parent))
-
-from typing import Any, Dict, List
-import pytest
-from models import FactorSnapshot, KlineData
+if str(_skill_root) not in sys.path:
+    sys.path.insert(0, str(_skill_root))
 
 
 @pytest.fixture

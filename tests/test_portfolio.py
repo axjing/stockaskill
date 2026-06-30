@@ -1,5 +1,7 @@
-import pytest
+from unittest.mock import patch
+
 import numpy as np
+import pytest
 from models import Portfolio, Position
 
 
@@ -198,7 +200,11 @@ class TestBacktestEngine:
         bt = BacktestEngine()
         kline = {
             "A": [{"date": "2025-01-01"}, {"date": "2025-01-02"}],
-            "B": [{"date": "2025-01-01"}, {"date": "2025-01-02"}, {"date": "2025-01-03"}],
+            "B": [
+                {"date": "2025-01-01"},
+                {"date": "2025-01-02"},
+                {"date": "2025-01-03"},
+            ],
         }
         dates = bt._get_common_dates(kline)
         assert "2025-01-01" in dates
@@ -210,6 +216,40 @@ class TestBacktestEngine:
         bt = BacktestEngine()
         result = bt.run([])
         assert "error" in result
+
+
+class TestPortfolioBuilder:
+    @patch("portfolio.builder.ensure_symbol_analysis_ready")
+    @patch("portfolio.builder.PortfolioBuilder._get_stock_info")
+    @patch("portfolio.builder.get_kline")
+    @patch("strategies.aggregator.StrategyAggregator.analyze_all")
+    def test_manual_weight_overrides_auto(
+        self,
+        mock_analyze_all,
+        mock_get_kline,
+        mock_get_stock_info,
+        mock_ready,
+    ):
+        mock_analyze_all.side_effect = [
+            {"final_score": 90},
+            {"final_score": 30},
+        ]
+        mock_get_kline.return_value = [{"close": 1.0}]
+        mock_get_stock_info.side_effect = [
+            {"name": "A"},
+            {"name": "B"},
+        ]
+
+        from portfolio.builder import PortfolioBuilder
+
+        builder = PortfolioBuilder("Test", capital=100000)
+        builder.add_from_strategy("AAA", weight=0.8)
+        builder.add_from_strategy("BBB")
+
+        portfolio = builder.build(method="signal", position_method="fixed")
+        weights = {position.code: position.weight for position in portfolio.positions}
+        assert weights["AAA"] == pytest.approx(0.8, abs=1e-3)
+        assert weights["BBB"] == pytest.approx(0.2, abs=1e-3)
 
 
 class TestRebalancer:
@@ -250,7 +290,15 @@ class TestRebalancer:
     def test_rebalance_generates_trades(self):
         from portfolio.rebalance import Rebalancer
         rb = Rebalancer()
-        pos = [Position(code="A", name="Stock A", weight=0.5, shares=1000, current_price=100)]
+        pos = [
+            Position(
+                code="A",
+                name="Stock A",
+                weight=0.5,
+                shares=1000,
+                current_price=100,
+            )
+        ]
         portfolio = Portfolio(name="Test", positions=pos)
         trades = rb.rebalance(portfolio, {"A": 0.3})
         assert isinstance(trades, list)
