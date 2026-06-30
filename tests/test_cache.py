@@ -1,7 +1,6 @@
-import pytest
-import time
 from datetime import datetime, timedelta
-from pathlib import Path
+
+import pytest
 from cache import CacheManager
 
 _TODAY = datetime.now().strftime("%Y-%m-%d")
@@ -24,6 +23,7 @@ class TestCacheManager:
         assert "stock_pool" in tables
         assert "daily_price" in tables
         assert "factor_snapshot" in tables
+        assert "market_scan_snapshot" in tables
         assert "cache_meta" in tables
         assert "api_usage" in tables
         assert "kv_store" in tables
@@ -50,6 +50,17 @@ class TestCacheManager:
 
     def test_pool_needs_refresh_empty(self, cache):
         assert cache.pool_needs_refresh() is True
+
+    def test_pool_needs_refresh_per_market(self, cache):
+        rows = [
+            {"code": "601318", "name": "PingAn", "market": "A",
+             "sector": "Finance", "industry": "Insurance",
+             "list_date": "2007-03-01", "total_market_cap": 1.2e12,
+             "is_active": 1, "updated_at": "2025-01-01"},
+        ]
+        cache.upsert_stock_pool(rows)
+        assert cache.pool_needs_refresh("A") is False
+        assert cache.pool_needs_refresh("HK") is True
 
     # -- Daily Price --
 
@@ -129,6 +140,69 @@ class TestCacheManager:
 
     def test_computed_factors_empty(self, cache):
         assert cache.get_computed_factors("missing") == {}
+
+    def test_market_scan_snapshot_roundtrip(self, cache):
+        rows = [
+            {
+                "market": "A",
+                "trade_date": "2026-06-30",
+                "code": "601318",
+                "eligible": 1,
+                "composite_score": 82.5,
+                "f_score": 7,
+                "value_score": 0.7,
+                "quality_score": 0.8,
+                "growth_score": 0.75,
+                "momentum_score": 0.72,
+                "low_vol_score": 0.68,
+                "size_score": 0.55,
+                "has_list_date": 1,
+                "has_fundamentals": 1,
+                "has_history": 1,
+                "is_st": 0,
+                "is_bj": 0,
+                "is_new_listing": 0,
+                "rank_score": 1.0,
+                "ineligible_reason": "",
+                "created_at": "2026-06-30 09:00:00",
+            },
+            {
+                "market": "A",
+                "trade_date": "2026-06-30",
+                "code": "000001",
+                "eligible": 0,
+                "composite_score": 0.0,
+                "f_score": 0,
+                "value_score": 0.0,
+                "quality_score": 0.0,
+                "growth_score": 0.0,
+                "momentum_score": 0.0,
+                "low_vol_score": 0.0,
+                "size_score": 0.0,
+                "has_list_date": 0,
+                "has_fundamentals": 1,
+                "has_history": 1,
+                "is_st": 0,
+                "is_bj": 0,
+                "is_new_listing": 0,
+                "rank_score": 1000001.0,
+                "ineligible_reason": "missing_list_date",
+                "created_at": "2026-06-30 09:00:00",
+            },
+        ]
+
+        cache.upsert_market_scan_snapshot(rows)
+
+        latest = cache.get_market_scan_snapshot("A", limit=5)
+        summary = cache.get_market_scan_snapshot_summary("A")
+
+        assert len(latest) == 1
+        assert latest[0]["code"] == "601318"
+        assert summary is not None
+        assert summary["eligible_count"] == 1
+        assert summary["filtered_count"] == 1
+        assert summary["missing_list_date_count"] == 1
+        assert cache.market_scan_snapshot_needs_refresh("A") is False
 
     # -- Sentiment --
 
@@ -235,3 +309,13 @@ class TestCacheManager:
 
     def test_api_usage_today_empty(self, cache):
         assert cache.get_api_usage_today() == 0
+
+    def test_cleanup_does_not_raise(self, cache):
+        rows = [
+            {"code": "601318", "date": "2020-01-01", "open": 60.0,
+             "high": 61.0, "low": 59.5, "close": 60.5,
+             "volume": 1e7, "amount": 6.05e8, "market": "A"},
+        ]
+        cache.upsert_daily_price(rows)
+        removed = cache.cleanup(max_age_days=30, max_size_mb=0)
+        assert "daily_price" in removed

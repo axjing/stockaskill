@@ -1,5 +1,6 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+from cache import CacheManager
 from config import load_config
 
 load_config()
@@ -32,18 +33,38 @@ mock_fundamentals = {
 
 class TestMarketScanner:
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
-    @patch("advisor.scanner.get_kline", return_value=mock_kline)
-    @patch("advisor.scanner.get_fundamentals", return_value=mock_fundamentals)
-    def test_scan_top_returns_list(self, mock_fund, mock_k, mock_pool_fn):
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_top_returns_list(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_pool_fn,
+    ):
+        mock_analyzer.return_value.analyze.return_value = {
+            "total_score": 72,
+            "factors": {"quality": 0.8},
+            "f_score": 6,
+        }
         from advisor.scanner import MarketScanner
         scanner = MarketScanner()
         results = scanner.scan_top("A", top_n=10)
         assert isinstance(results, list)
 
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
-    @patch("advisor.scanner.get_kline", return_value=mock_kline)
-    @patch("advisor.scanner.get_fundamentals", return_value=mock_fundamentals)
-    def test_scan_top_result_has_keys(self, mock_fund, mock_k, mock_pool_fn):
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_top_result_has_keys(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_pool_fn,
+    ):
+        mock_analyzer.return_value.analyze.return_value = {
+            "total_score": 72,
+            "factors": {"quality": 0.8},
+            "f_score": 6,
+        }
         from advisor.scanner import MarketScanner
         scanner = MarketScanner()
         results = scanner.scan_top("A", top_n=10)
@@ -63,9 +84,18 @@ class TestMarketScanner:
         assert results == []
 
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
-    @patch("advisor.scanner.get_kline", return_value=mock_kline)
-    @patch("advisor.scanner.get_fundamentals", return_value=mock_fundamentals)
-    def test_scan_sorted_by_score(self, mock_fund, mock_k, mock_pool_fn):
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_sorted_by_score(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_pool_fn,
+    ):
+        mock_analyzer.return_value.analyze.side_effect = [
+            {"total_score": 90, "factors": {"quality": 0.9}, "f_score": 8},
+            {"total_score": 60, "factors": {"quality": 0.6}, "f_score": 5},
+        ]
         from advisor.scanner import MarketScanner
         scanner = MarketScanner()
         results = scanner.scan_top("A", top_n=10)
@@ -74,23 +104,263 @@ class TestMarketScanner:
             assert scores == sorted(scores, reverse=True)
 
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
-    @patch("advisor.scanner.get_kline", return_value=mock_kline)
-    @patch("advisor.scanner.get_fundamentals", return_value=mock_fundamentals)
-    def test_scan_by_sector(self, mock_fund, mock_k, mock_pool_fn):
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_by_sector(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_pool_fn,
+    ):
+        mock_analyzer.return_value.analyze.return_value = {
+            "total_score": 72,
+            "factors": {"quality": 0.8},
+            "f_score": 6,
+        }
         from advisor.scanner import MarketScanner
         scanner = MarketScanner()
         result = scanner.scan_by_sector("A", top_n=5)
         assert isinstance(result, dict)
 
+    @patch("advisor.scanner.get_stock_pool")
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_top_keeps_candidates_with_unknown_list_date(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_meta_ready,
+        mock_pool_fn,
+    ):
+        mock_pool_fn.side_effect = [
+            [
+                {
+                    "code": "601318",
+                    "name": "PingAn",
+                    "market": "A",
+                    "sector": "Finance",
+                    "industry": "Insurance",
+                    "list_date": "",
+                    "total_market_cap": 0.0,
+                }
+            ],
+            [
+                {
+                    "code": "601318",
+                    "name": "PingAn",
+                    "market": "A",
+                    "sector": "Finance",
+                    "industry": "Insurance",
+                    "list_date": "",
+                    "total_market_cap": 0.0,
+                }
+            ],
+        ]
+        mock_meta_ready.return_value = {
+            "requested": 1,
+            "already_ready": 0,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 1,
+            "missing_market_cap": 1,
+        }
+        mock_analyzer.return_value.analyze.return_value = {
+            "total_score": 72,
+            "factors": {"quality": 0.8},
+            "f_score": 6,
+        }
+
+        from advisor.scanner import MarketScanner
+
+        scanner = MarketScanner()
+        results = scanner.scan_top("A", top_n=10)
+
+        assert len(results) == 1
+        mock_meta_ready.assert_called_once()
+
+    @patch("advisor.scanner.get_stock_pool")
+    @patch("advisor.scanner.get_cache")
+    def test_scan_snapshot_reads_cached_rows(
+        self,
+        mock_cache_factory,
+        mock_pool_fn,
+        tmp_path,
+    ):
+        cache = CacheManager(tmp_path / "snapshot.db")
+        cache.upsert_market_scan_snapshot(
+            [
+                {
+                    "market": "A",
+                    "trade_date": "2026-06-30",
+                    "code": "601318",
+                    "eligible": 1,
+                    "composite_score": 82.1,
+                    "f_score": 7,
+                    "value_score": 0.7,
+                    "quality_score": 0.8,
+                    "growth_score": 0.75,
+                    "momentum_score": 0.73,
+                    "low_vol_score": 0.66,
+                    "size_score": 0.54,
+                    "has_list_date": 1,
+                    "has_fundamentals": 1,
+                    "has_history": 1,
+                    "is_st": 0,
+                    "is_bj": 0,
+                    "is_new_listing": 0,
+                    "rank_score": 1.0,
+                    "ineligible_reason": "",
+                    "created_at": "2026-06-30 09:00:00",
+                }
+            ]
+        )
+        mock_cache_factory.return_value = cache
+        mock_pool_fn.return_value = [
+            {
+                "code": "601318",
+                "name": "PingAn",
+                "market": "A",
+                "sector": "Finance",
+                "industry": "Insurance",
+                "list_date": "2007-03-01",
+                "total_market_cap": 1.2e12,
+            }
+        ]
+
+        from advisor.scanner import MarketScanner
+
+        scanner = MarketScanner()
+        payload = scanner.scan_snapshot("A", top_n=5)
+
+        assert payload["summary"] is not None
+        assert payload["results"][0]["code"] == "601318"
+        assert payload["results"][0]["name"] == "PingAn"
+        assert payload["results"][0]["factors"]["quality"] == 0.8
+
+    @patch("advisor.scanner.get_fundamentals")
+    @patch("advisor.scanner.get_kline")
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
+    @patch("advisor.scanner.get_stock_pool")
+    @patch("advisor.scanner.get_cache")
+    def test_refresh_snapshot_marks_ineligible_reasons(
+        self,
+        mock_cache_factory,
+        mock_pool_fn,
+        mock_meta_ready,
+        mock_get_kline,
+        mock_get_fundamentals,
+        tmp_path,
+    ):
+        cache = CacheManager(tmp_path / "refresh_snapshot.db")
+        mock_cache_factory.return_value = cache
+        pool = [
+            {
+                "code": "601318",
+                "name": "PingAn",
+                "market": "A",
+                "sector": "Finance",
+                "industry": "Insurance",
+                "list_date": "2007-03-01",
+                "total_market_cap": 1.2e12,
+            },
+            {
+                "code": "000001",
+                "name": "NoDateGap",
+                "market": "A",
+                "sector": "Finance",
+                "industry": "Bank",
+                "list_date": "",
+                "total_market_cap": 8e11,
+            },
+            {
+                "code": "000002",
+                "name": "NoFundamentals",
+                "market": "A",
+                "sector": "RealEstate",
+                "industry": "Developer",
+                "list_date": "2005-01-01",
+                "total_market_cap": 0.0,
+            },
+            {
+                "code": "000003",
+                "name": "ShortBars",
+                "market": "A",
+                "sector": "Tech",
+                "industry": "Software",
+                "list_date": "2010-01-01",
+                "total_market_cap": 5e11,
+            },
+        ]
+        mock_pool_fn.return_value = pool
+        mock_meta_ready.return_value = {
+            "requested": 4,
+            "already_ready": 3,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 1,
+            "missing_market_cap": 1,
+        }
+
+        full_history = mock_kline[:250]
+        short_history = mock_kline[:100]
+
+        def fake_kline(code, market="A", days=365, cached_only=False):
+            if code == "000003":
+                return short_history
+            return full_history
+
+        def fake_fundamentals(code, market="A", force_refresh=False, cached_only=False):
+            if code == "000002":
+                return {}
+            payload = dict(mock_fundamentals)
+            payload["code"] = code
+            payload["market_cap"] = 1.2e12 if code == "601318" else 5e11
+            return payload
+
+        mock_get_kline.side_effect = fake_kline
+        mock_get_fundamentals.side_effect = fake_fundamentals
+
+        from advisor.scanner import MarketScanner
+
+        scanner = MarketScanner()
+        summary = scanner.refresh_snapshot("A")
+        snapshot_rows = cache.get_market_scan_snapshot(
+            "A",
+            trade_date=summary["trade_date"],
+            include_ineligible=True,
+        )
+        row_by_code = {row["code"]: row for row in snapshot_rows}
+
+        assert summary["eligible_count"] == 1
+        assert summary["filtered_count"] == 3
+        assert summary["cache_reused_count"] == 1
+        assert summary["missing_list_date_count"] == 1
+        assert summary["missing_fundamentals_count"] == 1
+        assert summary["missing_history_count"] == 1
+        assert row_by_code["000001"]["ineligible_reason"] == "missing_list_date"
+        assert row_by_code["000002"]["ineligible_reason"] == "missing_fundamentals"
+        assert row_by_code["000003"]["ineligible_reason"] == "missing_history"
+
 
 class TestStockDiagnosis:
+    @patch("advisor.diagnosis.ensure_symbol_analysis_ready")
     @patch("advisor.diagnosis.get_kline", return_value=mock_kline)
     @patch("advisor.diagnosis.get_fundamentals", return_value=mock_fundamentals)
     @patch("advisor.diagnosis.StrategyAggregator")
     @patch("advisor.diagnosis.CompositeAnalyzer")
     @patch("advisor.diagnosis.SentimentAggregator")
-    def test_full_report_keys(self, mock_sent, mock_factors, mock_strat,
-                              mock_fund, mock_k):
+    def test_full_report_keys(
+        self,
+        mock_sent,
+        mock_factors,
+        mock_strat,
+        mock_fund,
+        mock_k,
+        mock_ready,
+    ):
         mock_strat_instance = MagicMock()
         mock_strat_instance.analyze_all.return_value = {
             "final_signal": "BUY", "final_score": 72, "confidence": 0.7,
@@ -115,6 +385,7 @@ class TestStockDiagnosis:
         from advisor.diagnosis import StockDiagnosis
         diag = StockDiagnosis("601318")
         report = diag.full_report()
+        mock_ready.assert_called_once_with("601318", "A")
         assert "final_decision" in report
         assert "strategy" in report
         assert "factors" in report
