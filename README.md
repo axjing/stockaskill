@@ -29,8 +29,16 @@ A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股�
 ### 环境准备
 
 ```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
 pip install akshare efinance baostock pandas numpy scipy
 ```
+
+要求 Python `>=3.10`。
+
+如果仓库里的 `.venv/` 是另一台机器生成的 Windows 风格环境
+(`.venv/Scripts/` 而不是 `.venv/bin/`), 不要直接复用; 请在当前系统重建本地 venv。
 
 ### 安装
 
@@ -188,7 +196,7 @@ openclaw skills install @axjing/stockaskill --global
 - HK/US 元数据质量信号: `metadata_source` / `metadata_status` / `metadata_completeness`
 - HK/US 低质量元数据在 realtime scan 中会被轻量降权, 但不会被粗暴硬过滤
 
-首次完整积累多市场历史数据仍会受到 API 限速保护 (500 次/天) 影响, 但不影响日常使用; 未缓存部分才会触发增量抓取。
+首次完整积累多市场历史数据仍会受到上游数据源限速和本地 API 配额保护影响, 但不影响日常使用; 未缓存部分才会触发增量抓取。
 
 ### 后续使用
 
@@ -275,7 +283,7 @@ openclaw skills install @axjing/stockaskill --global
 - 组合优化: 数据齐备时 0 次, 否则按持仓标的增量补齐
 - 回测: 仅对缺失历史执行有上限的批量预热
 - 失败退避: 2^n 秒, 最多 3 次重试
-- 日配额上限: 500 次 (硬限制, 超出后返回本地数据)
+- 日配额上限: 默认 `500` 次, 可由 `daily_api_limit` 配置调整; 超出后返回本地缓存结果
 
 ## 当前支持边界
 
@@ -283,6 +291,9 @@ openclaw skills install @axjing/stockaskill --global
 - HK / US: 支持有界候选池、watchlist、portfolio、scan-universe 工作流
 - ETF: 一等支持对象, 当前通过 `FUND` / `etf` 路径使用
 - 广义公募基金: 暂不作为核心路线, 不建议按“全市场基金平台”理解当前项目
+
+对 Python API 而言, 新代码应优先使用 `get_etf_pool()` / `get_etf_nav()`。
+`get_fund_pool()` / `get_fund_nav()` 目前只是 ETF-oriented FUND 路径的兼容名字。
 
 ## 元数据质量说明
 
@@ -460,7 +471,9 @@ print(portfolio.summary())
 ```bash
 cd path/to/stockaskill
 python stockaskill/scripts/run.py diagnose 600519 --market A       # 深度诊断
-python stockaskill/scripts/run.py scan A --top 20                  # 全市场扫描
+python stockaskill/scripts/run.py scan A --top 20                  # 默认 auto: 优先快照, 缺失时回退有界 realtime
+python stockaskill/scripts/run.py scan A --mode snapshot --top 20  # 仅读取全市场快照
+python stockaskill/scripts/run.py scan A --mode realtime --top 20  # 有界候选实时扫描
 python stockaskill/scripts/run.py alpha A --top 10                 # Alpha动量扫描
 python stockaskill/scripts/run.py analyze 600519 --market A        # 个股分析
 python stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
@@ -482,6 +495,12 @@ python stockaskill/scripts/run.py sync portfolio --codes AAPL,MSFT --market US
 python stockaskill/scripts/run.py sync scan-universe --market A --limit 200
 python stockaskill/scripts/run.py sync etf --codes 510300,159915
 ```
+
+`scan` 现在默认使用 `--mode auto`:
+
+- 本地快照新鲜时直接读快照
+- 快照缺失或过期时自动回退到 bounded realtime candidate scan
+- 只有显式 `refresh-scan` 或 `scan --refresh --mode snapshot` 才会先构建全市场快照
 
 查看数据状态与元数据健康度:
 

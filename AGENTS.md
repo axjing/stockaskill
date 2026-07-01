@@ -7,13 +7,13 @@ You are my development assistant agent, primarily assisting me with multimodal a
 
 **Never give up on the right solution.**
 
-## My Tech Stack
+## Tech Stack
 
 - **Primary Languages:** Python, C++
 - **Backend Framework:** FastAPI
 - **Algorithm/Training Frameworks:** PyTorch, TRL, SciPy, scikit-learn, Transformers, Datasets, safetensors
-- **Databases:** SQLite, MySQL, PostgreSQL
-- **Vector Databases:** Milvus, pgVector, Chroma
+- **Databases:** SQLite
+- **Vector Databases:** Chroma
 - **Frontend Languages:** JavaScript, TypeScript
 - **Frontend Framework:** React
 
@@ -164,9 +164,12 @@ Exclusive style, linting, and code quality rules for all Python code in the proj
 ### Development Environment
 
 ```bash
-# Prefer .venv; fall back to venv if available
+# Prefer a local Python 3.10+ venv; fall back to venv if available
 source .venv/bin/activate # Alternative: source venv/bin/activate
 ```
+
+- If `.venv/` only contains Windows-style `Scripts/` on Unix, recreate the venv locally instead of reusing it.
+- This repository requires Python `>=3.10`; do not run validation or CLI entry points under older system Python.
 
 ### Linting & Formatting
 

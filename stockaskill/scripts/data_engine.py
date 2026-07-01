@@ -277,6 +277,8 @@ def _api_call(api_name: str):
             retry_max = cfg_get("retry_max", 3)
             retry_base = cfg_get("retry_base", 2)
             interval = cfg_get("request_interval", [0.5, 2.0])
+            mul = cfg_get("retry_backoff_multiplier", 2)
+            cap = cfg_get("retry_max_delay", 30)
             for attempt in range(retry_max):
                 try:
                     time.sleep(interval[0])
@@ -285,7 +287,7 @@ def _api_call(api_name: str):
                 except Exception:
                     if attempt == retry_max - 1:
                         raise
-                    delay = min(retry_base**attempt * 2, 30)
+                    delay = min(retry_base**attempt * mul, cap)
                     time.sleep(delay)
             return None
 
@@ -575,12 +577,14 @@ def _refresh_stock_pool(market: str) -> None:
                 if has_limited:
                     df = _backfill_pool_metadata_from_bs(df)
                 n = len(df)
-                if n < 4000:
+                warn_min = cfg_get("pool_size_warn_min", 4000)
+                warn_max = cfg_get("pool_size_warn_max", 6000)
+                if n < warn_min:
                     print(
                         f"[WARN] A-share pool has only {n} stocks"
-                        f" (expected 5000-6000). Data may be incomplete."
+                        f" (expected {warn_min}-{warn_max}). Data may be incomplete."
                     )
-                elif n > 6000:
+                elif n > warn_max:
                     print(
                         f"[WARN] A-share pool has {n} stocks"
                         f" (expected 5000-6000). May include non-stocks."
@@ -1683,7 +1687,11 @@ def sync_etf_data(
 
 
 def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Get ETF/fund pool. Auto-refreshes if cache is empty or expired."""
+    """Get the ETF-oriented FUND pool.
+
+    The current FUND path is ETF-first. Broad mutual-fund coverage is not
+    guaranteed by this cache or source path.
+    """
     if force_refresh or _cache.pool_needs_refresh("FUND"):
         _refresh_fund_pool()
     funds = _cache.get_stock_pool("FUND")
@@ -1738,7 +1746,7 @@ def _refresh_fund_pool() -> None:
 
 
 def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
-    """Get fund NAV history. Uses Sina daily for ETFs."""
+    """Get ETF-style NAV/history for the ETF-oriented FUND path."""
     cached = _cache.get_fund_nav(code, days)
     if cached:
         return cached
@@ -1769,6 +1777,11 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
     except Exception:
         pass
     return []
+
+
+def get_etf_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
+    """Return ETF NAV/history via the current ETF-oriented FUND path."""
+    return get_fund_nav(code, days)
 
 
 # -- Market index -----------------------------------------------------------

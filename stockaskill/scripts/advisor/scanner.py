@@ -735,23 +735,28 @@ class MarketScanner:
         fund_type: str = "ETF",
         top_n: int = 20,
     ) -> List[Dict[str, Any]]:
-        """Scan funds by type.
+        """Scan the ETF-oriented FUND cache.
 
         Args:
-            fund_type: 'ETF', 'LOF', 'Index', 'Active'.
+            fund_type: ETF-only at present. Non-ETF values return no results.
             top_n: Number of results.
 
         Returns:
             List of fund dicts with code, name, nav, scale.
         """
-        from data_engine import get_fund_pool
+        from data_engine import get_etf_pool
 
-        funds = get_fund_pool()
+        requested_type = str(fund_type or "ETF").strip().upper()
+        if requested_type != "ETF":
+            return []
+
+        funds = get_etf_pool()
         if not funds:
             return []
 
-        # Filter by type
-        filtered = [f for f in funds if f.get("fund_type", "") == fund_type]
+        filtered = [
+            f for f in funds if str(f.get("fund_type", "")).strip().upper() == "ETF"
+        ]
 
         # Sort by scale descending
         filtered.sort(key=lambda x: float(x.get("scale", 0) or 0), reverse=True)

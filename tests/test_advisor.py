@@ -33,14 +33,28 @@ mock_fundamentals = {
 
 class TestMarketScanner:
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
     @patch("advisor.scanner.ensure_market_scan_ready")
     @patch("advisor.scanner.CompositeAnalyzer")
     def test_scan_top_returns_list(
         self,
         mock_analyzer,
         mock_ready,
+        mock_meta_ready,
         mock_pool_fn,
     ):
+        mock_meta_ready.return_value = {
+            "requested": 2,
+            "already_ready": 2,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 0,
+            "missing_market_cap": 0,
+            "metadata_complete": 2,
+            "metadata_partial": 0,
+            "inactive_count": 0,
+        }
         mock_ready.return_value = {
             "requested": 2,
             "ready": 2,
@@ -60,14 +74,28 @@ class TestMarketScanner:
         assert isinstance(results, list)
 
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
     @patch("advisor.scanner.ensure_market_scan_ready")
     @patch("advisor.scanner.CompositeAnalyzer")
     def test_scan_top_result_has_keys(
         self,
         mock_analyzer,
         mock_ready,
+        mock_meta_ready,
         mock_pool_fn,
     ):
+        mock_meta_ready.return_value = {
+            "requested": 2,
+            "already_ready": 2,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 0,
+            "missing_market_cap": 0,
+            "metadata_complete": 2,
+            "metadata_partial": 0,
+            "inactive_count": 0,
+        }
         mock_ready.return_value = {
             "requested": 2,
             "ready": 2,
@@ -93,12 +121,14 @@ class TestMarketScanner:
             assert "f_score" in item
 
     @patch("advisor.scanner.get_stock_pool")
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
     @patch("advisor.scanner.ensure_market_scan_ready")
     @patch("advisor.scanner.CompositeAnalyzer")
     def test_scan_top_skips_inactive_symbols(
         self,
         mock_analyzer,
         mock_ready,
+        mock_meta_ready,
         mock_pool_fn,
     ):
         mock_pool_fn.return_value = [
@@ -123,6 +153,18 @@ class TestMarketScanner:
                 "is_active": 0,
             },
         ]
+        mock_meta_ready.return_value = {
+            "requested": 1,
+            "already_ready": 1,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 0,
+            "missing_market_cap": 0,
+            "metadata_complete": 1,
+            "metadata_partial": 0,
+            "inactive_count": 0,
+        }
         mock_ready.return_value = {
             "requested": 1,
             "ready": 1,
@@ -212,14 +254,28 @@ class TestMarketScanner:
         assert results == []
 
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
     @patch("advisor.scanner.ensure_market_scan_ready")
     @patch("advisor.scanner.CompositeAnalyzer")
     def test_scan_sorted_by_score(
         self,
         mock_analyzer,
         mock_ready,
+        mock_meta_ready,
         mock_pool_fn,
     ):
+        mock_meta_ready.return_value = {
+            "requested": 2,
+            "already_ready": 2,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 0,
+            "missing_market_cap": 0,
+            "metadata_complete": 2,
+            "metadata_partial": 0,
+            "inactive_count": 0,
+        }
         mock_ready.return_value = {
             "requested": 2,
             "ready": 2,
@@ -240,14 +296,28 @@ class TestMarketScanner:
             assert scores == sorted(scores, reverse=True)
 
     @patch("advisor.scanner.get_stock_pool", return_value=mock_pool)
+    @patch("advisor.scanner.ensure_stock_pool_candidates_ready")
     @patch("advisor.scanner.ensure_market_scan_ready")
     @patch("advisor.scanner.CompositeAnalyzer")
     def test_scan_by_sector(
         self,
         mock_analyzer,
         mock_ready,
+        mock_meta_ready,
         mock_pool_fn,
     ):
+        mock_meta_ready.return_value = {
+            "requested": 2,
+            "already_ready": 2,
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": 0,
+            "missing_market_cap": 0,
+            "metadata_complete": 2,
+            "metadata_partial": 0,
+            "inactive_count": 0,
+        }
         mock_ready.return_value = {
             "requested": 2,
             "ready": 2,
@@ -265,6 +335,21 @@ class TestMarketScanner:
         scanner = MarketScanner()
         result = scanner.scan_by_sector("A", top_n=5)
         assert isinstance(result, dict)
+
+    @patch("data_engine.get_etf_pool")
+    def test_scan_funds_is_etf_only(self, mock_get_etf_pool):
+        mock_get_etf_pool.return_value = [
+            {"code": "510300", "fund_type": "ETF", "scale": 100.0},
+            {"code": "159915", "fund_type": "ETF", "scale": 80.0},
+        ]
+        from advisor.scanner import MarketScanner
+
+        scanner = MarketScanner()
+
+        assert scanner.scan_funds("LOF", top_n=5) == []
+        etfs = scanner.scan_funds("ETF", top_n=5)
+
+        assert [item["code"] for item in etfs] == ["510300", "159915"]
 
     @patch("advisor.scanner.get_stock_pool")
     @patch("advisor.scanner.ensure_stock_pool_candidates_ready")

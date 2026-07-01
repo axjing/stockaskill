@@ -124,7 +124,7 @@ class Portfolio:
 class FundInfo:
     code: str
     name: str
-    fund_type: str = ""  # ETF/LOF/Active/Index
+    fund_type: str = ""  # ETF-first in the current FUND workflow
     nav: float = 0.0
     acc_nav: float = 0.0
     scale: float = 0.0

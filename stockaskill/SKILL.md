@@ -82,7 +82,13 @@ Present results:
 ### 3. Market scan
 
     python stockaskill/scripts/run.py scan A --top 20
+    # default mode=auto: prefer fresh snapshot, else fallback to bounded realtime
     # Also: scan HK --top 10, scan US --top 15, scan FUND --top 20
+
+Explicit modes:
+
+    python stockaskill/scripts/run.py scan A --mode snapshot --top 20
+    python stockaskill/scripts/run.py scan A --mode realtime --top 20
 
 If scan returns all zeros, fall back to alpha mode:
 
@@ -130,8 +136,9 @@ They do not force a full-market historical sync on every run.
 
 For deeper programmatic access:
 
-    from data_engine import get_etf_pool, get_fund_nav
+    from data_engine import get_etf_pool, get_etf_nav
     funds = get_etf_pool()
+    nav = get_etf_nav("510300", days=365)
 
 Current `FUND` behavior is ETF-first. Broad mutual-fund NAV ingestion is not a
 core supported workflow yet.
@@ -188,7 +195,7 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 |---|---|---|
 | ModuleNotFoundError: No module named config | Wrong working directory | Run from project root and call `python stockaskill/scripts/run.py ...` |
 | Scan returns 0 results | Cache empty or candidate history missing | run `python stockaskill/scripts/run.py fetch pool` once, then retry |
-| Daily API limit reached | AKShare rate limit (500/day) | Wait; use cached data |
+| Daily API limit reached | Local API budget or upstream throttling reached | Wait; use cached data |
 | No BUY signals | Market weakness or cold cache | Run diagnose on individual stocks |
 | import akshare fails | Not installed | pip install akshare efinance baostock |
 | Code not found | Pool not fetched for that market | `python stockaskill/scripts/run.py fetch pool` |

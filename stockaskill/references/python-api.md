@@ -12,13 +12,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 ```python
 from data_engine import get_stock_pool, get_kline, get_fundamentals
-from data_engine import get_fund_pool, get_fund_nav
+from data_engine import get_etf_pool, get_etf_nav
 
 pool = get_stock_pool("A")
 kline = get_kline("600519", "A", days=365)
 fund = get_fundamentals("600519", "A")
-nav = get_fund_nav("510300", days=365)
+etfs = get_etf_pool()
+nav = get_etf_nav("510300", days=365)
 ```
+
+Current note:
+
+- The `FUND` path is ETF-first.
+- Prefer `get_etf_pool()` / `get_etf_nav()` in new code.
+- Legacy `get_fund_pool()` / `get_fund_nav()` remain as compatibility aliases for the current ETF-oriented path.
 
 ## Analysis
 

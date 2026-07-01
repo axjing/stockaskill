@@ -16,7 +16,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 # Force UTF-8 output for CJK support on Windows
 if sys.platform == "win32":
@@ -31,6 +31,29 @@ if _scripts_root not in sys.path:
 
 _SCORE_BADGES = [(70, "##"), (40, "==")]
 _DEFAULT_BADGE = "--"
+_MIN_PYTHON = (3, 10)
+
+
+def _require_supported_python() -> None:
+    """Exit early with a clear message on unsupported Python versions."""
+    if sys.version_info >= _MIN_PYTHON:
+        return
+    required = ".".join(str(part) for part in _MIN_PYTHON)
+    current = ".".join(str(part) for part in sys.version_info[:3])
+    print(
+        "stockaskill requires Python >= "
+        f"{required}; current interpreter is {current}.",
+        file=sys.stderr,
+    )
+    print(
+        "Use a Python 3.10+ environment or run via 'uv run"
+        " python stockaskill/scripts/run.py ...'.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+
+_require_supported_python()
 
 
 def _badge(score: float) -> str:
@@ -39,6 +62,7 @@ def _badge(score: float) -> str:
         if score >= threshold:
             return b
     return _DEFAULT_BADGE
+
 
 from cache import get_cache  # noqa: E402
 from config import get as cfg_get  # noqa: E402
@@ -69,9 +93,12 @@ from utils import normalize_code_for_market  # noqa: E402
 
 
 def _save_report(
-    name: str, fmt: str, output_dir: str,
-    data: dict | None = None, md: str | None = None,
-    metadata: dict | None = None,
+    name: str,
+    fmt: str,
+    output_dir: str,
+    data: Optional[dict] = None,
+    md: Optional[str] = None,
+    metadata: Optional[dict] = None,
 ) -> None:
     """Save report in requested formats."""
     if fmt == "none":
@@ -169,6 +196,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 
     try:
         from factors.composite import CompositeAnalyzer
+
         analyzer = CompositeAnalyzer(code, market)
         result = analyzer.analyze()
         score = result.get("total_score", 0)
@@ -181,6 +209,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 
     try:
         from strategies.aggregator import StrategyAggregator
+
         agg = StrategyAggregator(code, market)
         signals = agg.analyze_all()
         final = signals.get("final_signal", "HOLD")
@@ -191,8 +220,13 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     except Exception as exc:
         print(f"  Strategy analysis: {exc}", file=sys.stderr)
 
-    _save_report(f"analyze_{code}_{market}", fmt, output_dir, data=report_data,
-                  metadata={"command": "analyze"})
+    _save_report(
+        f"analyze_{code}_{market}",
+        fmt,
+        output_dir,
+        data=report_data,
+        metadata={"command": "analyze"},
+    )
 
 
 def cmd_diagnose(args: argparse.Namespace) -> None:
@@ -211,8 +245,14 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
         print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
 
         md = format_diagnosis_summary(report)
-        _save_report(f"diagnose_{code}_{market}", fmt, output_dir,
-                      data=report, md=md, metadata={"command": "diagnose"})
+        _save_report(
+            f"diagnose_{code}_{market}",
+            fmt,
+            output_dir,
+            data=report,
+            md=md,
+            metadata={"command": "diagnose"},
+        )
     except Exception as exc:
         print(f"Diagnosis failed: {exc}", file=sys.stderr)
 
@@ -254,7 +294,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
         from advisor.scanner import MarketScanner
 
         scanner = MarketScanner()
-        mode = getattr(args, "mode", "snapshot")
+        mode = getattr(args, "mode", "auto")
         refreshed = False
         summary = None
         if mode == "realtime":
@@ -270,7 +310,30 @@ def cmd_scan(args: argparse.Namespace) -> None:
             )
         else:
             status = scanner.get_snapshot_status(market)
-            if status["status"] != "fresh" and not getattr(args, "refresh", False):
+            if mode == "auto" and status["status"] != "fresh":
+                reason = "缺失" if status["status"] == "missing" else "过期"
+                print(
+                    f"  本地全市场快照{reason}，回退到有界 realtime candidate scan。",
+                    flush=True,
+                )
+                print(
+                    "  如需构建完整本地快照，可执行:"
+                    f" python stockaskill/scripts/run.py refresh-scan {market}",
+                    flush=True,
+                )
+                results = scanner.scan_top(
+                    market,
+                    top_n,
+                    max_candidates=getattr(args, "candidates", 0),
+                )
+                summary = {
+                    **status,
+                    "fallback_mode": "realtime",
+                    "requested_mode": mode,
+                }
+            elif mode == "snapshot" and status["status"] != "fresh" and not getattr(
+                args, "refresh", False
+            ):
                 reason = "缺失" if status["status"] == "missing" else "过期"
                 print(f"  本地全市场快照{reason}。", flush=True)
                 print(
@@ -278,7 +341,10 @@ def cmd_scan(args: argparse.Namespace) -> None:
                     f" python stockaskill/scripts/run.py refresh-scan {market}",
                     flush=True,
                 )
-                print("  或追加 --refresh 自动先构建快照。", flush=True)
+                print(
+                    "  或改用默认 auto / 显式 realtime 做有界候选扫描。",
+                    flush=True,
+                )
                 results = []
                 _save_report(
                     f"scan_{market}",
@@ -295,24 +361,34 @@ def cmd_scan(args: argparse.Namespace) -> None:
                     metadata={"command": "scan", "market": market, "top_n": top_n},
                 )
                 return
-            if getattr(args, "refresh", False) or status["status"] != "fresh":
+            elif getattr(args, "refresh", False) or status["status"] != "fresh":
                 print("  Refreshing full-market snapshot first...", flush=True)
                 summary = scanner.refresh_snapshot(
                     market,
                     include_incomplete=getattr(args, "include_incomplete", False),
                 )
                 refreshed = True
-            snapshot = scanner.scan_snapshot(
-                market,
-                top_n=top_n,
-                include_incomplete=getattr(args, "include_incomplete", False),
-            )
-            results = snapshot["results"]
-            summary = snapshot["summary"] or summary
-            if summary:
-                _print_snapshot_summary(summary, refreshed=refreshed)
-                if refreshed:
-                    _print_refresh_summary(summary)
+                snapshot = scanner.scan_snapshot(
+                    market,
+                    top_n=top_n,
+                    include_incomplete=getattr(args, "include_incomplete", False),
+                )
+                results = snapshot["results"]
+                summary = snapshot["summary"] or summary
+                if summary:
+                    _print_snapshot_summary(summary, refreshed=refreshed)
+                    if refreshed:
+                        _print_refresh_summary(summary)
+            else:
+                snapshot = scanner.scan_snapshot(
+                    market,
+                    top_n=top_n,
+                    include_incomplete=getattr(args, "include_incomplete", False),
+                )
+                results = snapshot["results"]
+                summary = snapshot["summary"] or summary
+                if summary:
+                    _print_snapshot_summary(summary, refreshed=refreshed)
         if not results:
             print(
                 "  No results returned (run 'python stockaskill/scripts/run.py"
@@ -439,10 +515,15 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
 
         positions_data = []
         for p in portfolio.positions:
-            positions_data.append({
-                "code": p.code, "name": p.name, "weight": p.weight,
-                "shares": p.shares, "cost": p.cost,
-            })
+            positions_data.append(
+                {
+                    "code": p.code,
+                    "name": p.name,
+                    "weight": p.weight,
+                    "shares": p.shares,
+                    "cost": p.cost,
+                }
+            )
         port_data = {
             "name": portfolio.name,
             "capital": capital,
@@ -570,9 +651,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
         }
     elif sync_type == "etf":
         codes = [c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()]
-        print(
-            f"Synchronizing ETFs ({len(codes)} symbols, days={history_days})..."
-        )
+        print(f"Synchronizing ETFs ({len(codes)} symbols, days={history_days})...")
         result = sync_etf_data(
             codes,
             history_days=history_days,
@@ -765,7 +844,7 @@ def _normalized_watchlist(market: str) -> list[str]:
     ]
 
 
-def _scan_universe_codes(market: str, limit: int) -> list[str]:
+def _scan_universe_codes(market: str, limit: int) -> List[str]:
     """Return normalized codes for a bounded scan universe."""
     if market == "FUND":
         pool = get_etf_pool()
@@ -778,9 +857,13 @@ def _scan_universe_codes(market: str, limit: int) -> list[str]:
     ]
 
 
-def _collect_symbol_scope_rows(cache: Any, codes: list[str], market: str) -> list[dict]:
+def _collect_symbol_scope_rows(
+    cache: Any,
+    codes: List[str],
+    market: str,
+) -> List[dict]:
     """Collect symbol sync-state rows for a bounded scope."""
-    rows: list[dict] = []
+    rows: List[dict] = []
     for code in codes:
         rows.extend(
             cache.get_sync_state(
@@ -794,9 +877,9 @@ def _collect_symbol_scope_rows(cache: Any, codes: list[str], market: str) -> lis
 
 
 def _scope_pool_rows(
-    codes: list[str],
+    codes: List[str],
     market: str,
-) -> list[dict]:
+) -> List[dict]:
     """Return cached pool rows for the provided scope codes."""
     if market == "FUND":
         pool = get_etf_pool()
@@ -810,7 +893,7 @@ def _scope_pool_rows(
     return [pool_by_code[code] for code in codes if code in pool_by_code]
 
 
-def _print_market_metadata_summary(pool_rows: list[dict], label: str) -> None:
+def _print_market_metadata_summary(pool_rows: List[dict], label: str) -> None:
     """Print a compact metadata-quality summary for a market scope."""
     if not pool_rows:
         return
@@ -819,8 +902,8 @@ def _print_market_metadata_summary(pool_rows: list[dict], label: str) -> None:
     low = 0
     inactive = 0
     total_completeness = 0.0
-    source_counts: dict[str, int] = {}
-    status_counts: dict[str, int] = {}
+    source_counts: Dict[str, int] = {}
+    status_counts: Dict[str, int] = {}
     for row in pool_rows:
         completeness = float(row.get("metadata_completeness", 0) or 0)
         total_completeness += completeness
@@ -866,12 +949,12 @@ def _status_freshness(row: dict) -> str:
     return "fresh" if (time.time() - timestamp) <= ttl else "stale"
 
 
-def _print_status_summary(rows: list[dict], label: str, requested: int) -> None:
+def _print_status_summary(rows: List[dict], label: str, requested: int) -> None:
     """Print aggregate freshness/error summary for a scope."""
     if not rows:
         print(f"  Scope {label}: no symbol sync rows found")
         return
-    by_code: dict[str, list[dict]] = {}
+    by_code: Dict[str, List[dict]] = {}
     stale = 0
     fresh = 0
     errors = 0
@@ -969,10 +1052,16 @@ def cmd_alpha(args: argparse.Namespace) -> None:
 
         ranked = []
         for code, name, score, signal, fsc, factors in top_results:
-            ranked.append({
-                "code": code, "name": name, "score": score,
-                "signal": signal, "f_score": fsc, "factors": factors,
-            })
+            ranked.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "score": score,
+                    "signal": signal,
+                    "f_score": fsc,
+                    "factors": factors,
+                }
+            )
         _save_report(
             f"alpha_{market}",
             fmt,
@@ -993,13 +1082,17 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     """Run Alpha Momentum backtest (2018-2026)."""
     output_dir = getattr(args, "output_dir", "reports")
     fmt = getattr(args, "format", "both")
-    print("Running Alpha Momentum backtest...")
+    market = getattr(args, "market", "A") or "A"
+    print(f"Running Alpha Momentum backtest ({market})...")
     try:
         from portfolio.backtest_engine import AlphaMomentumBacktest
 
         engine = AlphaMomentumBacktest(
             capital=cfg_get("backtest_capital", 1_000_000),
             low_vol_min=cfg_get("low_vol_min", 0.4),
+            top_k=cfg_get("alpha_momentum.top_k", 6),
+            max_per_board=cfg_get("alpha_momentum.max_per_board", 3),
+            market=market,
         )
         result = engine.run()
 
@@ -1021,13 +1114,9 @@ def cmd_backtest(args: argparse.Namespace) -> None:
         print(f"  Monthly Avg: {monthly_avg:.2f}%")
 
         if cagr_val > 0.12:
-            print(
-                f"  Result: ## PASS (CAGR {cagr_val * 100:.2f}% > 12% target)"
-            )
+            print(f"  Result: ## PASS (CAGR {cagr_val * 100:.2f}% > 12% target)")
         else:
-            print(
-                f"  Result: !! FAIL (CAGR {cagr_val * 100:.2f}% < 12% target)"
-            )
+            print(f"  Result: !! FAIL (CAGR {cagr_val * 100:.2f}% < 12% target)")
 
         md = format_backtest_summary(result)
         _save_report(
@@ -1112,10 +1201,15 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
 
         positions_data = []
         for p in portfolio.positions:
-            positions_data.append({
-                "code": p.code, "name": p.name, "weight": p.weight,
-                "shares": p.shares, "cost": p.cost,
-            })
+            positions_data.append(
+                {
+                    "code": p.code,
+                    "name": p.name,
+                    "weight": p.weight,
+                    "shares": p.shares,
+                    "cost": p.cost,
+                }
+            )
         port_data = {
             "name": "Core-Satellite",
             "capital": capital,
@@ -1196,8 +1290,12 @@ def main() -> None:
     p.add_argument("code", help="Stock code")
     p.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_analyze)
 
     # diagnose
@@ -1205,8 +1303,12 @@ def main() -> None:
     p.add_argument("code", help="Stock code")
     p.add_argument("--market", default="A", help="Market (A/HK/US)")
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_diagnose)
 
     # scan
@@ -1221,9 +1323,12 @@ def main() -> None:
     )
     p.add_argument(
         "--mode",
-        choices=["snapshot", "realtime"],
-        default="snapshot",
-        help="Snapshot reads the latest full-market cache; realtime is approximate.",
+        choices=["auto", "snapshot", "realtime"],
+        default="auto",
+        help=(
+            "Auto prefers a fresh full-market snapshot and falls back to bounded "
+            "realtime candidate scoring when needed."
+        ),
     )
     p.add_argument(
         "--refresh",
@@ -1236,8 +1341,12 @@ def main() -> None:
         help="Include ineligible/incomplete rows in snapshot output for debugging.",
     )
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_scan)
 
     # refresh-scan
@@ -1253,8 +1362,12 @@ def main() -> None:
         help="Include ineligible/incomplete rows in snapshot output for debugging.",
     )
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_refresh_scan)
 
     # portfolio
@@ -1263,8 +1376,12 @@ def main() -> None:
     p.add_argument("--capital", type=float, default=1000000)
     p.add_argument("--market", default="A")
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_portfolio)
 
     # fetch
@@ -1534,15 +1651,29 @@ def main() -> None:
         "--candidates", type=int, default=0, help="Max candidates to evaluate (0=auto)"
     )
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_alpha)
 
     # backtest
     p = sub.add_parser("backtest", help="Run Alpha Momentum backtest (2018-2026)")
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p.add_argument(
+        "--market",
+        default="A",
+        choices=["A", "HK", "US"],
+        help="Market to backtest",
+    )
     p.set_defaults(func=cmd_backtest)
 
     # backtest-enhanced
@@ -1550,8 +1681,12 @@ def main() -> None:
         "backtest-enhanced", help="Run Enhanced Core-Satellite backtest (2018-2026)"
     )
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_backtest_enhanced)
 
     # portfolio-enhanced
@@ -1560,8 +1695,12 @@ def main() -> None:
     )
     p.add_argument("--capital", type=float, default=1000000)
     p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument("--format", choices=["json", "md", "both", "none"], default="both",
-                    help="Report output format")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
     p.set_defaults(func=cmd_portfolio_enhanced)
 
     # scheduler

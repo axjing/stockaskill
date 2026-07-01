@@ -17,9 +17,32 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import List, Optional, Set
+
+_MIN_PYTHON = (3, 10)
+_PATH_CODE_PATTERN = re.compile(
+    r"`((?:references|scripts|agents|assets)/[^`\s]+)`"
+)
 
 
-def _parse_frontmatter(text: str) -> dict | None:
+def _require_supported_python() -> None:
+    """Exit early with a clear message on unsupported Python versions."""
+    if sys.version_info >= _MIN_PYTHON:
+        return
+    required = ".".join(str(part) for part in _MIN_PYTHON)
+    current = ".".join(str(part) for part in sys.version_info[:3])
+    print(
+        "stockaskill validation requires Python >= "
+        f"{required}; current interpreter is {current}.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+
+_require_supported_python()
+
+
+def _parse_frontmatter(text: str) -> Optional[dict]:
     m = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
     if not m:
         return None
@@ -31,8 +54,23 @@ def _parse_frontmatter(text: str) -> dict | None:
     return front
 
 
-def validate(skill_dir: str = ".") -> list[str]:
-    errors: list[str] = []
+def _extract_reference_paths(text: str) -> Set[str]:
+    """Extract local skill reference paths from markdown and inline code."""
+    refs: Set[str] = set()
+    for match in re.finditer(r"\[([^\]]+)\]\(([^)]+)\)", text):
+        ref_path = match.group(2)
+        if ref_path.startswith("http"):
+            continue
+        refs.add(ref_path)
+    for match in re.finditer(r"\[\[([^\]]+)\]\]", text):
+        refs.add(match.group(1))
+    for match in _PATH_CODE_PATTERN.finditer(text):
+        refs.add(match.group(1))
+    return refs
+
+
+def validate(skill_dir: str = ".") -> List[str]:
+    errors: List[str] = []
     root = Path(skill_dir).resolve()
     skill_md = root / "SKILL.md"
 
@@ -44,7 +82,10 @@ def validate(skill_dir: str = ".") -> list[str]:
     text = skill_md.read_text(encoding="utf-8")
     front = _parse_frontmatter(text)
     if front is None:
-        errors.append("SKILL.md: missing or invalid YAML frontmatter (must start with ---)")
+        errors.append(
+            "SKILL.md: missing or invalid YAML frontmatter "
+            "(must start with ---)"
+        )
     else:
         name = front.get("name", "")
         if not name:
@@ -56,16 +97,7 @@ def validate(skill_dir: str = ".") -> list[str]:
             errors.append("SKILL.md: frontmatter 'description' is empty")
 
     # Check reference file paths ([[ref]] or [text](path) patterns)
-    refs = set()
-    for m in re.finditer(r"\[([^\]]+)\]\(([^)]+)\)", text):
-        ref_path = m.group(2)
-        if ref_path.startswith("http"):
-            continue
-        refs.add(ref_path)
-    for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
-        refs.add(m.group(1))
-
-    for ref in sorted(refs):
+    for ref in sorted(_extract_reference_paths(text)):
         ref_file = root / ref
         if not ref_file.exists():
             errors.append(f"Reference not found: {ref}")
@@ -86,8 +118,17 @@ def validate(skill_dir: str = ".") -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate stockaskill structure")
-    parser.add_argument("dir", nargs="?", default=".", help="Skill directory or '-' for stdin")
-    parser.add_argument("--dir", dest="dir_alt", help="(deprecated) use positional arg instead")
+    parser.add_argument(
+        "dir",
+        nargs="?",
+        default=".",
+        help="Skill directory or '-' for stdin",
+    )
+    parser.add_argument(
+        "--dir",
+        dest="dir_alt",
+        help="(deprecated) use positional arg instead",
+    )
     args = parser.parse_args()
 
     skill_dir = args.dir
@@ -97,7 +138,11 @@ def main() -> None:
         if front is None:
             print("FAIL: invalid or missing frontmatter (stdin)")
             sys.exit(1)
-        print(f"PASS (stdin): name={front.get('name','?')}, description={front.get('description','?')}")
+        print(
+            "PASS (stdin):"
+            f" name={front.get('name', '?')},"
+            f" description={front.get('description', '?')}"
+        )
         return
 
     errors = validate(skill_dir)

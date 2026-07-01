@@ -320,3 +320,14 @@ class TestSyncEtfData:
         mock_get_fund_nav.assert_called_once_with("510300", 365)
         upsert_rows = mock_cache.upsert_sync_state.call_args_list[0].args[0]
         assert upsert_rows[0]["data_kind"] == "nav"
+
+    def test_get_etf_nav_alias_delegates_to_fund_nav(self):
+        with patch("data_engine.get_fund_nav") as mock_get_fund_nav:
+            mock_get_fund_nav.return_value = [{"date": "2026-07-01", "nav": 4.0}]
+
+            from data_engine import get_etf_nav
+
+            result = get_etf_nav("510300", days=365)
+
+        assert result == [{"date": "2026-07-01", "nav": 4.0}]
+        mock_get_fund_nav.assert_called_once_with("510300", 365)

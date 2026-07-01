@@ -187,6 +187,47 @@ def test_cmd_scan_refresh_triggers_snapshot_build(capsys):
     assert "Local reuse/backfill" in output
 
 
+def test_cmd_scan_auto_falls_back_to_realtime_when_snapshot_missing(capsys):
+    from run import cmd_scan
+
+    args = type(
+        "Args",
+        (),
+        {
+            "market": "A",
+            "top": 1,
+            "mode": "auto",
+            "refresh": False,
+            "include_incomplete": False,
+            "candidates": 88,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+    scanner = patch("advisor.scanner.MarketScanner").start().return_value
+    scanner.get_snapshot_status.return_value = {
+        "market": "A",
+        "latest_trade_date": None,
+        "needs_refresh": True,
+        "status": "missing",
+    }
+    scanner.scan_top.return_value = [
+        {"code": "601318", "name": "PingAn", "total_score": 78.0, "f_score": 6}
+    ]
+
+    try:
+        with patch("run._save_report"):
+            cmd_scan(args)
+    finally:
+        patch.stopall()
+
+    scanner.scan_top.assert_called_once_with("A", 1, max_candidates=88)
+    scanner.refresh_snapshot.assert_not_called()
+    output = capsys.readouterr().out
+    assert "回退到有界 realtime candidate scan" in output
+    assert "601318 PingAn: 78.0" in output
+
+
 def test_cmd_scan_realtime_uses_candidate_mode(capsys):
     from run import cmd_scan
 
