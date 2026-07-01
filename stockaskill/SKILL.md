@@ -48,6 +48,18 @@ Activate on any of these user intents:
 
 ## Before you start
 
+Check the Python environment first:
+
+    python --version
+    uv pip list >/dev/null
+
+If `python` is not `>=3.10`, or `uv pip list` fails because the environment is
+missing, build a local environment with `uv`:
+
+    uv venv --python 3.10 .venv
+    source .venv/bin/activate
+    uv pip install akshare efinance baostock pandas numpy scipy
+
 Optional cold-start bootstrap:
 
     python stockaskill/scripts/run.py fetch pool
