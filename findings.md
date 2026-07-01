@@ -284,6 +284,11 @@ Improve bounded cross-market support after the base is safe.
 - `SKILL.md` needed explicit clarification that the skill is local-first and bounded-sync oriented, not a full-market sync platform.
 - `README.md` needed command-level documentation for `sync` / `status data` plus the new metadata-quality concepts, otherwise the implemented behavior remained discoverable only from code.
 - `AGENTS.md` benefits from explicit product-scope guardrails so future agents do not regress toward full-universe ingestion proposals by default.
+
+## Skill Definition Findings
+- The skill definition itself still over-triggered on broad fund language even after product docs were updated; the trigger surface needed to be narrowed to ETF-first requests explicitly.
+- Reducing `SKILL.md` frontmatter to the minimal `name` + `description` form lowers compatibility risk across skill hosts and matches the skill-creator guidance better.
+- Reference routing needed task-based guidance, not a flat file list, to make progressive disclosure actually work in practice.
 - Add methods for:
   - upserting market-aware pool rows
   - upserting market-aware price rows

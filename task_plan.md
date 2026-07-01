@@ -4,7 +4,7 @@
 Determine whether building incremental full-universe sync for HK stocks, US stocks, ETFs, and funds is reasonable for this repository, whether it aligns with the purpose of the current stock-investing and quant-trading skill, and define an optimization roadmap for the confirmed local-first, task-scoped data engine direction.
 
 ## Current Phase
-Phase 18
+Phase 19
 
 ## Phases
 
@@ -112,6 +112,13 @@ Phase 18
 - [x] Update `SKILL.md` to reflect local-first bounded sync and ETF-first scope
 - [x] Update `README.md` with new sync/status/metadata-quality behavior
 - [x] Update `AGENTS.md` with product-scope guardrails for future agents
+- **Status:** complete
+
+### Phase 19: Skill Definition Tightening
+- [x] Narrow trigger wording from broad fund claims to ETF-first semantics
+- [x] Reduce `SKILL.md` frontmatter to `name` + `description`
+- [x] Improve progressive-disclosure navigation and examples
+- [x] Align `agents/openai.yaml` with the tightened scope
 - **Status:** complete
 
 ## Key Questions

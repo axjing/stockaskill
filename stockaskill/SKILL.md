@@ -1,19 +1,15 @@
 ---
 name: stockaskill
 description: >-
-  Multi-market intelligent stock selection for A-share/HK/US stocks and
-  ETFs. Use when user asks about stock analysis, market scanning,
-  portfolio construction, factor screening, quantitative strategy
-  signals, fund screening, backtesting, or investment diagnosis.
-  Triggers on stock codes (600519, AAPL, 0700.HK), Chinese stock names
-  (贵州茅台), fund codes (510300), and queries with keywords like
-  分析, 选股, scan, portfolio, backtest, 因子, 评分, BUY/SELL/HOLD, or 诊断.
-license: MIT
-compatibility: Requires Python 3.10+, network access (free, no API key).
-metadata:
-  author: stockaskill-team
-  version: "1.3"
-  short-description: Multi-market intelligent stock selection with AKShare
+  Multi-market intelligent stock selection for A-share, HK, US, and
+  ETF-first workflows. Use when Codex needs to analyze individual
+  stocks, run market scans, build portfolios, backtest strategies,
+  diagnose BUY/SELL/HOLD signals, or warm bounded local market data.
+  Triggers on stock codes (600519, AAPL, 0700.HK), ETF codes
+  (510300, 159915), Chinese stock names (贵州茅台), and queries with
+  keywords like 分析, 选股, scan, portfolio, backtest, 因子, 评分, ETF,
+  场内基金, BUY/SELL/HOLD, or 诊断. Do not use for broad mutual-fund
+  platforms or full-universe market-data sync requests.
 ---
 
 # Smart Stock Selector
@@ -27,6 +23,13 @@ Use local cache first. Only fetch missing or stale pool, history, fundamentals, 
 Warm data by task scope, not by blind full-market full-history refresh.
 Do not treat this skill as a warehouse or full-market sync platform.
 
+## Scope boundary
+
+- Treat this skill as a local-first analysis and decision engine.
+- Prefer bounded sync for symbol, watchlist, portfolio, scan-universe, and ETF scopes.
+- Treat `FUND` as ETF-first behavior for now.
+- Do not use this skill as if it provided broad mutual-fund research or full-market daily sync orchestration.
+
 ## Triggers
 
 Activate on any of these user intents:
@@ -39,7 +42,7 @@ Activate on any of these user intents:
 | Ranking, alpha, momentum | Alpha momentum scan |
 | Portfolio, 组合, allocation | Portfolio construction |
 | Backtest, 回测, validation | Historical backtest |
-| ETF, 基金, Fund | ETF screening / ETF data sync |
+| ETF, 场内基金, 510300, 159915 | ETF screening / ETF data sync |
 | Sentiment, sentiment, 情绪 | Market sentiment check |
 | Refresh, 刷新, cache | Data operations |
 
@@ -87,7 +90,7 @@ If scan returns all zeros, fall back to alpha mode:
 
 For sector-filtered scanning:
 
-    python -c "from advisor.scanner import MarketScanner; MarketScanner().scan_by_sector(chr(39)+chr(39)+A+chr(39)+chr(39), top_n=5)"
+    python -c "from advisor.scanner import MarketScanner; print(MarketScanner().scan_by_sector('A', top_n=5))"
 
 ### 4. Alpha momentum scan
 
@@ -206,19 +209,29 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 
 ## Reference files
 
-Load only when needed:
+Load only the references needed for the current task:
 
-- **Factor weights and scoring**: references/factors.md
-- **Strategy weights and signals**: references/strategies.md
-- **Sentiment adjustment**: references/sentiment.md
-- **Python API and code**: references/python-api.md
-- **Enhanced Momentum**: references/enhanced-momentum.md
-- **Market sources**: references/market-source-playbook.md
-- **AKShare docs**: references/akshare_official_docs.md
-- **Output style**: references/output-style-and-language.md
-- **Research**: references/research-sources.md
-- **Risk and compliance**: references/risk-and-compliance.md
-- **Dialogue protocol**: references/serenity-dialogue-protocol.md
+- Single-stock analysis, diagnosis, or factor explanations:
+  `references/factors.md`, `references/strategies.md`
+- CLI/Python usage, programmatic integration, or code-level questions:
+  `references/python-api.md`
+- ETF/core-satellite workflows:
+  `references/enhanced-momentum.md`
+- Data-source coverage, market limitations, or cache/sync behavior:
+  `references/market-source-playbook.md`,
+  `references/akshare_official_docs.md`
+- Output wording and response style:
+  `references/output-style-and-language.md`
+- Sentiment-specific work:
+  `references/sentiment.md`
+- Research background:
+  `references/research-sources.md`
+- Risk, disclaimer, or policy-sensitive output:
+  `references/risk-and-compliance.md`
+- Dialogue constraints specific to this skill:
+  `references/serenity-dialogue-protocol.md`
+
+Skill version: `1.3`
 
 ## Output file specs
 

@@ -239,6 +239,22 @@
   - findings.md (updated)
   - progress.md (updated)
 
+### Phase 19: Skill Definition Tightening
+- **Status:** complete
+- Actions taken:
+  - Narrowed `stockaskill/SKILL.md` trigger wording from broad fund language to ETF-first semantics.
+  - Reduced `SKILL.md` frontmatter to the minimal `name` + `description` shape.
+  - Added an explicit scope-boundary section and task-based reference routing guidance.
+  - Replaced an awkward non-copyable sector-scan example with a direct runnable example.
+  - Aligned `stockaskill/agents/openai.yaml` short description and default prompt with bounded-sync ETF-first scope.
+  - Ran skill-level validation using both the local validator and the `skill-creator` quick validator.
+- Files created/modified:
+  - stockaskill/SKILL.md (updated)
+  - stockaskill/agents/openai.yaml (updated)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
 ## Test Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
@@ -261,6 +277,8 @@
 | Batch 6 lint | `source .venv/bin/activate && ruff check stockaskill/scripts/cache.py stockaskill/scripts/data_engine.py stockaskill/scripts/data_readiness.py stockaskill/scripts/run.py stockaskill/scripts/advisor/scanner.py tests/test_cache.py tests/test_data_engine.py tests/test_data_readiness.py tests/test_run.py tests/test_advisor.py` | No lint violations | All checks passed | PASS |
 | Batch 7 targeted suite | `source .venv/bin/activate && pytest tests/test_advisor.py tests/test_run.py -q` | Metadata-aware scan/status changes should pass targeted regression tests | `35 passed` | PASS |
 | Batch 7 lint | `source .venv/bin/activate && ruff check stockaskill/scripts/advisor/scanner.py stockaskill/scripts/run.py tests/test_advisor.py tests/test_run.py` | No lint violations | All checks passed | PASS |
+| Skill-level local validation | `source .venv/bin/activate && python stockaskill/scripts/validate_skill.py stockaskill` | Skill definition and local references/scripts should validate | `PASS: all validation checks OK` | PASS |
+| Skill-creator quick validation | `python3 /home/ji/.codex/skills/.system/skill-creator/scripts/quick_validate.py /home/ji/stockaskill/stockaskill` | Skill should satisfy generic skill structure checks | `Skill is valid!` | PASS |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -271,8 +289,8 @@
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 18 complete |
+| Where am I? | Phase 19 complete |
 | Where am I going? | Next implementation batch if requested |
 | What's the goal? | Improve the local-first task-scoped engine with bounded sync, clearer scan readiness, richer diagnostics, and safer market-aware cache semantics |
-| What have I learned? | Product-scope and bounded-sync assumptions need to be written into user-facing and agent-facing docs, not left implicit in code |
-| What have I done? | Implemented Batch 7 behavior changes, then aligned `SKILL.md`, `README.md`, and `AGENTS.md` with the optimized local-first ETF-first direction |
+| What have I learned? | Skill trigger surfaces and UI metadata need separate tightening from product docs, otherwise broad over-triggering persists |
+| What have I done? | Tightened the skill definition itself by narrowing triggers, simplifying frontmatter, improving reference routing, and aligning UI metadata |
