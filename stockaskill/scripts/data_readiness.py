@@ -6,12 +6,15 @@ from typing import Any, Dict, Iterable, List, Sequence
 from cache import get_cache
 from config import get as cfg_get
 from data_engine import (
-    get_fund_nav,
-    get_fund_pool,
-    get_fundamentals,
-    get_kline,
+    get_etf_pool,
     get_market_index,
     get_stock_pool,
+    sync_etf_data,
+    sync_portfolio_data,
+    sync_scan_universe_data,
+    sync_symbol_data,
+    sync_symbols_data,
+    sync_watchlist_data,
 )
 from utils import normalize_code_for_market
 
@@ -21,7 +24,7 @@ _cache = get_cache()
 def ensure_pool_ready(market: str) -> List[Dict[str, Any]]:
     """Ensure a market pool exists locally and return it."""
     if market == "FUND":
-        return get_fund_pool()
+        return get_etf_pool()
     return get_stock_pool(market)
 
 
@@ -48,58 +51,16 @@ def ensure_symbol_ready(
 ) -> Dict[str, Any]:
     """Ensure local cache is sufficient for a single symbol."""
     canonical_code = normalize_code_for_market(code, market)
-    history_before = _history_row_count(canonical_code)
-    history_after = history_before
-    fundamentals_before = _has_fresh_fundamentals(
-        canonical_code, fundamentals_max_age_days
+    result = sync_symbol_data(
+        canonical_code,
+        market,
+        history_days=history_days,
+        need_fundamentals=need_fundamentals,
+        full_history=full_history,
+        fundamentals_max_age_days=fundamentals_max_age_days,
     )
-    fundamentals_after = fundamentals_before
-
-    if market == "FUND":
-        if history_before < history_days:
-            get_kline(
-                code,
-                market,
-                days=history_days,
-                full_history=full_history,
-                force_refresh=full_history,
-            )
-            history_after = _history_row_count(canonical_code)
-        return {
-            "code": canonical_code,
-            "market": market,
-            "history_before": history_before,
-            "history_after": history_after,
-            "history_ready": history_after >= history_days,
-            "fundamentals_before": False,
-            "fundamentals_after": False,
-        }
-
-    if history_before < history_days:
-        get_kline(
-            code,
-            market,
-            days=history_days,
-            full_history=full_history,
-            force_refresh=full_history,
-        )
-        history_after = _history_row_count(canonical_code)
-
-    if need_fundamentals and not fundamentals_before:
-        get_fundamentals(code, market, force_refresh=False)
-        fundamentals_after = _has_fresh_fundamentals(
-            canonical_code, fundamentals_max_age_days
-        )
-
-    return {
-        "code": canonical_code,
-        "market": market,
-        "history_before": history_before,
-        "history_after": history_after,
-        "history_ready": history_after >= history_days,
-        "fundamentals_before": fundamentals_before,
-        "fundamentals_after": fundamentals_after,
-    }
+    result["covered_through"] = result.get("history_covered_through", "")
+    return result
 
 
 def ensure_symbols_ready(
@@ -112,27 +73,24 @@ def ensure_symbols_ready(
     limit: int = 0,
 ) -> Dict[str, Any]:
     """Ensure local cache is sufficient for a list of symbols."""
-    selected_codes = list(codes[:limit] if limit else codes)
-    per_symbol = [
-        ensure_symbol_ready(
-            code,
-            market,
-            history_days=history_days,
-            need_fundamentals=need_fundamentals,
-            full_history=full_history,
-            fundamentals_max_age_days=fundamentals_max_age_days,
-        )
-        for code in selected_codes
-    ]
-    return {
-        "market": market,
-        "requested": len(selected_codes),
-        "history_ready": sum(1 for item in per_symbol if item["history_ready"]),
-        "fundamentals_ready": sum(
-            1 for item in per_symbol if item.get("fundamentals_after", False)
-        ),
-        "symbols": per_symbol,
-    }
+    result = sync_symbols_data(
+        codes,
+        market,
+        history_days=history_days,
+        need_fundamentals=need_fundamentals,
+        full_history=full_history,
+        fundamentals_max_age_days=fundamentals_max_age_days,
+        limit=limit,
+    )
+    result["covered_through"] = max(
+        [
+            str(item.get("history_covered_through", "")).strip()
+            for item in result.get("symbols", [])
+            if str(item.get("history_covered_through", "")).strip()
+        ],
+        default="",
+    )
+    return result
 
 
 def ensure_market_scan_ready(
@@ -166,30 +124,109 @@ def ensure_market_scan_ready(
     )
 
 
+def ensure_watchlist_ready(
+    market: str = "A",
+    history_days: int | None = None,
+    need_fundamentals: bool | None = None,
+) -> Dict[str, Any]:
+    """Warm the configured watchlist within a bounded scope."""
+    target_history = history_days or cfg_get(
+        "data_readiness.analysis_history_days", 365
+    )
+    require_fundamentals = (
+        market != "FUND"
+        if need_fundamentals is None
+        else bool(need_fundamentals)
+    )
+    return sync_watchlist_data(
+        market=market,
+        history_days=target_history,
+        need_fundamentals=require_fundamentals,
+        fundamentals_max_age_days=cfg_get(
+            "data_readiness.analysis_fundamentals_max_age_days", 120
+        ),
+    )
+
+
+def ensure_portfolio_ready(
+    codes: Sequence[str],
+    market: str = "A",
+    history_days: int | None = None,
+    need_fundamentals: bool | None = None,
+) -> Dict[str, Any]:
+    """Warm a portfolio scope within a bounded set of symbols."""
+    target_history = history_days or cfg_get(
+        "data_readiness.analysis_history_days", 365
+    )
+    require_fundamentals = (
+        market != "FUND"
+        if need_fundamentals is None
+        else bool(need_fundamentals)
+    )
+    return sync_portfolio_data(
+        codes,
+        market=market,
+        history_days=target_history,
+        need_fundamentals=require_fundamentals,
+        fundamentals_max_age_days=cfg_get(
+            "data_readiness.analysis_fundamentals_max_age_days", 120
+        ),
+    )
+
+
+def ensure_scan_universe_ready(
+    market: str = "A",
+    limit: int | None = None,
+) -> Dict[str, Any]:
+    """Warm a bounded scan universe directly from the market pool."""
+    return sync_scan_universe_data(
+        market=market,
+        limit=limit or cfg_get(
+            "data_readiness.scan_prefetch_limit",
+            cfg_get("scan_max_candidates", 200),
+        ),
+        history_days=cfg_get("data_readiness.scan_history_days", 365),
+        need_fundamentals=bool(cfg_get("data_readiness.scan_fundamentals", True)),
+        fundamentals_max_age_days=cfg_get(
+            "data_readiness.analysis_fundamentals_max_age_days", 120
+        ),
+    )
+
+
+def ensure_etf_ready(
+    codes: Sequence[str],
+    history_days: int | None = None,
+    limit: int = 0,
+) -> Dict[str, Any]:
+    """Warm a bounded ETF code list using ETF-specific NAV/history semantics."""
+    target_days = history_days or cfg_get(
+        "data_readiness.fund_screen_history_days", 365
+    )
+    result = sync_etf_data(
+        codes,
+        history_days=target_days,
+        limit=limit,
+    )
+    result["covered_through"] = max(
+        [
+            str(item.get("history_covered_through", "")).strip()
+            for item in result.get("symbols", [])
+            if str(item.get("history_covered_through", "")).strip()
+        ],
+        default="",
+    )
+    return result
+
+
 def ensure_fund_screen_ready(
     funds: Sequence[Dict[str, Any]],
     history_days: int | None = None,
     limit: int = 0,
 ) -> Dict[str, Any]:
-    """Warm local NAV data for fund screening workflows."""
-    target_days = history_days or cfg_get(
-        "data_readiness.fund_screen_history_days", 365
-    )
+    """Warm ETF data for the current ETF-oriented fund screening workflow."""
     selected_funds = list(funds[:limit] if limit else funds)
-    warmed = 0
-    for fund in selected_funds:
-        code = str(fund.get("code", ""))
-        if not code:
-            continue
-        if len(_cache.get_fund_nav(code, target_days)) < target_days:
-            get_fund_nav(code, target_days)
-        if len(_cache.get_fund_nav(code, target_days)) >= target_days:
-            warmed += 1
-    return {
-        "requested": len(selected_funds),
-        "history_ready": warmed,
-        "history_days": target_days,
-    }
+    codes = [str(fund.get("code", "")).strip() for fund in selected_funds if fund]
+    return ensure_etf_ready(codes, history_days=history_days, limit=limit)
 
 
 def ensure_market_index_ready(
@@ -273,9 +310,9 @@ def _history_row_count(code: str) -> int:
     return len(_cache.get_daily_price(code))
 
 
-def _has_fresh_fundamentals(code: str, max_age_days: int) -> bool:
+def _has_fresh_fundamentals(code: str, max_age_days: int, market: str = "") -> bool:
     """Check whether cached fundamentals exist and are fresh enough."""
-    snapshot = _cache.get_latest_factor_snapshot(code)
+    snapshot = _cache.get_latest_factor_snapshot(code, market=market)
     if not snapshot:
         return False
     date_str = str(snapshot.get("date", ""))

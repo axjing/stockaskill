@@ -26,7 +26,7 @@ def test_cmd_backtest_uses_cagr_value(capsys):
     assert "15.00%" in output
 
 
-def test_cmd_scan_fund_warms_nav_history(capsys):
+def test_cmd_scan_fund_warms_etf_scope(capsys):
     from run import cmd_scan
 
     funds = [
@@ -44,14 +44,14 @@ def test_cmd_scan_fund_warms_nav_history(capsys):
         },
     )
 
-    with patch("run.get_fund_pool", return_value=funds):
-        with patch("run.ensure_fund_screen_ready") as mock_ready:
+    with patch("run.get_etf_pool", return_value=funds):
+        with patch("run.ensure_etf_ready") as mock_ready:
             with patch("run._save_report"):
                 cmd_scan(args)
 
-    mock_ready.assert_called_once_with(funds[:1], limit=1)
+    mock_ready.assert_called_once_with(["510300"], limit=1)
     output = capsys.readouterr().out
-    assert "Scanning funds..." in output
+    assert "Scanning ETFs..." in output
 
 
 def test_cmd_scan_snapshot_reads_cached_snapshot(capsys):
@@ -99,6 +99,7 @@ def test_cmd_scan_snapshot_reads_cached_snapshot(capsys):
             "st_count": 40,
             "bj_count": 50,
             "new_listing_count": 60,
+            "metadata_quality": {"complete": 100, "partial": 50, "low": 10},
         },
     }
 
@@ -112,6 +113,7 @@ def test_cmd_scan_snapshot_reads_cached_snapshot(capsys):
     scanner.scan_top.assert_not_called()
     output = capsys.readouterr().out
     assert "Snapshot date: 2026-06-30" in output
+    assert "Metadata quality: complete=100, partial=50, low=10" in output
     assert "601318 PingAn: 81.2" in output
 
 
@@ -216,3 +218,357 @@ def test_cmd_scan_realtime_uses_candidate_mode(capsys):
     scanner.scan_top.assert_called_once_with("A", 1, max_candidates=123)
     output = capsys.readouterr().out
     assert "Realtime mode is approximate" in output
+
+
+def test_cmd_sync_symbol_reports_summary(capsys):
+    from run import cmd_sync
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "symbol",
+            "code": "601318",
+            "market": "A",
+            "days": 365,
+            "skip_fundamentals": False,
+            "full_history": False,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+
+    with patch("run.sync_symbol_data") as mock_sync:
+        mock_sync.return_value = {
+            "code": "601318",
+            "market": "A",
+            "history_before": 10,
+            "history_after": 365,
+            "history_ready": True,
+            "history_covered_through": "2026-07-01",
+            "fundamentals_required": True,
+            "fundamentals_before": False,
+            "fundamentals_after": True,
+            "fundamentals_covered_through": "2026-07-01",
+            "ready": True,
+            "errors": [],
+        }
+        with patch("run._save_report"):
+            cmd_sync(args)
+
+    output = capsys.readouterr().out
+    assert "Synchronizing symbol 601318" in output
+    assert "History: before=10, after=365" in output
+    assert "Ready: yes" in output
+
+
+def test_cmd_sync_watchlist_reports_scope_summary(capsys):
+    from run import cmd_sync
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "watchlist",
+            "market": "A",
+            "days": 365,
+            "skip_fundamentals": False,
+            "full_history": False,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+
+    with patch("run.sync_watchlist_data") as mock_sync:
+        mock_sync.return_value = {
+            "requested": 3,
+            "ready": 2,
+            "cache_hits": 1,
+            "history_fetched_count": 2,
+            "fundamentals_fetched_count": 1,
+            "covered_through": "2026-07-01",
+            "missing_codes": ["600519"],
+            "symbols": [],
+        }
+        with patch("run._save_report"):
+            cmd_sync(args)
+
+    output = capsys.readouterr().out
+    assert "Synchronizing watchlist" in output
+    assert "Scope watchlist: requested=3, ready=2" in output
+    assert "Missing codes: 600519" in output
+
+
+def test_cmd_sync_portfolio_uses_codes(capsys):
+    from run import cmd_sync
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "portfolio",
+            "codes": "600519,000858",
+            "market": "A",
+            "days": 365,
+            "skip_fundamentals": False,
+            "full_history": False,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+
+    with patch("run.sync_portfolio_data") as mock_sync:
+        mock_sync.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "cache_hits": 2,
+            "history_fetched_count": 0,
+            "fundamentals_fetched_count": 0,
+            "covered_through": "2026-07-01",
+            "missing_codes": [],
+            "symbols": [],
+        }
+        with patch("run._save_report"):
+            cmd_sync(args)
+
+    mock_sync.assert_called_once_with(
+        ["600519", "000858"],
+        market="A",
+        history_days=365,
+        need_fundamentals=True,
+        full_history=False,
+    )
+
+
+def test_cmd_sync_etf_uses_etf_scope(capsys):
+    from run import cmd_sync
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "etf",
+            "codes": "510300,159915",
+            "days": 365,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+
+    with patch("run.sync_etf_data") as mock_sync:
+        mock_sync.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "cache_hits": 1,
+            "history_fetched_count": 1,
+            "fundamentals_fetched_count": 0,
+            "covered_through": "2026-07-01",
+            "missing_codes": [],
+            "symbols": [],
+        }
+        with patch("run._save_report"):
+            cmd_sync(args)
+
+    mock_sync.assert_called_once_with(
+        ["510300", "159915"],
+        history_days=365,
+    )
+    output = capsys.readouterr().out
+    assert "Synchronizing ETFs (2 symbols, days=365)" in output
+    assert "Scope etf: requested=2, ready=2" in output
+
+
+def test_cmd_status_symbol_reads_sync_state(capsys):
+    from run import cmd_status
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "symbol",
+            "code": "601318",
+            "market": "A",
+        },
+    )
+
+    with patch("run.get_cache") as mock_get_cache, patch(
+        "run.get_stock_pool"
+    ) as mock_pool:
+        mock_pool.return_value = [
+            {
+                "code": "601318",
+                "metadata_completeness": 1.0,
+                "metadata_source": "manual",
+                "metadata_status": "active",
+                "is_active": 1,
+            }
+        ]
+        mock_get_cache.return_value.get_sync_state.return_value = [
+            {
+                "data_kind": "history",
+                "code": "601318",
+                "status": "ok",
+                "last_covered_date": "2026-07-01",
+                "last_success_at": "2026-07-01 10:00:00",
+                "last_error": "",
+            }
+        ]
+        cmd_status(args)
+
+    output = capsys.readouterr().out
+    assert "Sync state for symbol" in output
+    assert "Metadata symbol: complete=1, partial=0, low=0" in output
+    assert "status=ok" in output
+
+
+def test_cmd_status_watchlist_prints_scope_summary(capsys):
+    from run import cmd_status
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "watchlist",
+            "market": "A",
+        },
+    )
+
+    with patch("run.get_cache") as mock_get_cache, patch(
+        "run.cfg_get"
+    ) as mock_cfg, patch("run.get_stock_pool") as mock_pool:
+        mock_cfg.side_effect = lambda key, default=None: {
+            "watchlist": ["600519", "000858"],
+            "cache_ttl.daily_kline": 3600,
+            "cache_ttl.financial": 604800,
+            "cache_ttl.fund_nav": 3600,
+        }.get(key, default)
+        mock_pool.return_value = [
+            {
+                "code": "600519",
+                "metadata_completeness": 1.0,
+                "metadata_source": "manual",
+                "metadata_status": "active",
+                "is_active": 1,
+            },
+            {
+                "code": "000858",
+                "metadata_completeness": 0.25,
+                "metadata_source": "manual",
+                "metadata_status": "active",
+                "is_active": 1,
+            },
+        ]
+        mock_get_cache.return_value.get_sync_state.side_effect = [
+            [
+                {
+                    "data_kind": "summary",
+                    "code": "",
+                    "status": "partial",
+                    "last_covered_date": "2026-07-01",
+                    "last_success_at": "2026-07-01 10:00:00",
+                    "last_error": "",
+                }
+            ],
+            [
+                {
+                    "data_kind": "history",
+                    "code": "600519",
+                    "status": "ok",
+                    "last_covered_date": "2026-07-01",
+                    "last_success_at": "2099-07-01 10:00:00",
+                    "last_error": "",
+                }
+            ],
+            [
+                {
+                    "data_kind": "history",
+                    "code": "000858",
+                    "status": "partial",
+                    "last_covered_date": "",
+                    "last_success_at": "",
+                    "last_error": "timeout",
+                }
+            ],
+        ]
+        cmd_status(args)
+
+    output = capsys.readouterr().out
+    assert "Scope watchlist: requested=2" in output
+    assert "Metadata watchlist: complete=1, partial=0, low=1" in output
+    assert "Top missing/problem symbols: 000858" in output
+
+
+def test_cmd_status_etf_prints_scope_summary(capsys):
+    from run import cmd_status
+
+    args = type(
+        "Args",
+        (),
+        {
+            "type": "etf",
+            "codes": "510300,159915",
+        },
+    )
+
+    with patch("run.get_cache") as mock_get_cache, patch(
+        "run.cfg_get"
+    ) as mock_cfg, patch("run.get_etf_pool") as mock_pool:
+        mock_cfg.side_effect = lambda key, default=None: {
+            "cache_ttl.daily_kline": 3600,
+            "cache_ttl.financial": 604800,
+            "cache_ttl.fund_nav": 3600,
+        }.get(key, default)
+        mock_pool.return_value = [
+            {
+                "code": "510300",
+                "metadata_completeness": 0.75,
+                "metadata_source": "akshare_fund_etf_spot_em",
+                "metadata_status": "active",
+                "is_active": 1,
+            },
+            {
+                "code": "159915",
+                "metadata_completeness": 0.25,
+                "metadata_source": "akshare_fund_etf_spot_em",
+                "metadata_status": "active",
+                "is_active": 1,
+            },
+        ]
+        mock_get_cache.return_value.get_sync_state.side_effect = [
+            [
+                {
+                    "data_kind": "summary",
+                    "code": "",
+                    "status": "partial",
+                    "last_covered_date": "2026-07-01",
+                    "last_success_at": "2026-07-01 10:00:00",
+                    "last_error": "",
+                }
+            ],
+            [
+                {
+                    "data_kind": "nav",
+                    "code": "510300",
+                    "status": "ok",
+                    "last_covered_date": "2026-07-01",
+                    "last_success_at": "2099-07-01 10:00:00",
+                    "last_error": "",
+                }
+            ],
+            [
+                {
+                    "data_kind": "nav",
+                    "code": "159915",
+                    "status": "partial",
+                    "last_covered_date": "",
+                    "last_success_at": "",
+                    "last_error": "timeout",
+                }
+            ],
+        ]
+        cmd_status(args)
+
+    output = capsys.readouterr().out
+    assert "Scope etf: requested=2" in output
+    assert "Metadata etf: complete=1, partial=0, low=1" in output
+    assert "Sync state for etf (market=FUND)" in output

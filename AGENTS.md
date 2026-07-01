@@ -27,6 +27,14 @@ You are my development assistant agent, primarily assisting me with multimodal a
 - When working with databases, prioritize scalability, query performance, and data consistency. prioritize the practical suitability of SQLite / PostgreSQL for the specific scenario.
 - When working with vector retrieval, prioritize the practical suitability of Milvus / pgVector / Chroma for the specific scenario.
 
+## Project-Specific Product Scope
+
+- This repository is a local-first, task-scoped investment analysis and quant decision engine.
+- Do not treat it as a full-market data warehouse, crawler platform, or background sync service unless the user explicitly changes product direction.
+- Prefer bounded sync for symbol, watchlist, portfolio, scan-universe, and ETF scopes over proposing or implementing full-universe ingestion.
+- Treat current `FUND` support as ETF-first semantics. Do not imply broad mutual-fund platform support unless the code truly adds NAV-centric workflows and the user approves that scope expansion.
+- For HK/US support, prioritize correctness, metadata visibility, and bounded usability over breadth. Soft metadata-quality signals are preferred before hard exclusions.
+
 ## Code Requirements
 
 ## General Universal Rules

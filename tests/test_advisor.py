@@ -41,6 +41,14 @@ class TestMarketScanner:
         mock_ready,
         mock_pool_fn,
     ):
+        mock_ready.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "history_ready": 2,
+            "fundamentals_ready": 2,
+            "cache_hits": 2,
+            "missing_codes": [],
+        }
         mock_analyzer.return_value.analyze.return_value = {
             "total_score": 72,
             "factors": {"quality": 0.8},
@@ -60,6 +68,14 @@ class TestMarketScanner:
         mock_ready,
         mock_pool_fn,
     ):
+        mock_ready.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "history_ready": 2,
+            "fundamentals_ready": 2,
+            "cache_hits": 2,
+            "missing_codes": [],
+        }
         mock_analyzer.return_value.analyze.return_value = {
             "total_score": 72,
             "factors": {"quality": 0.8},
@@ -75,6 +91,118 @@ class TestMarketScanner:
             assert "total_score" in item
             assert "factors" in item
             assert "f_score" in item
+
+    @patch("advisor.scanner.get_stock_pool")
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_top_skips_inactive_symbols(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_pool_fn,
+    ):
+        mock_pool_fn.return_value = [
+            {
+                "code": "601318",
+                "name": "PingAn",
+                "market": "A",
+                "sector": "Finance",
+                "industry": "Insurance",
+                "list_date": "2007-03-01",
+                "total_market_cap": 1.2e12,
+                "is_active": 1,
+            },
+            {
+                "code": "000001",
+                "name": "Delisted Test",
+                "market": "A",
+                "sector": "Finance",
+                "industry": "Bank",
+                "list_date": "2001-01-01",
+                "total_market_cap": 9e11,
+                "is_active": 0,
+            },
+        ]
+        mock_ready.return_value = {
+            "requested": 1,
+            "ready": 1,
+            "history_ready": 1,
+            "fundamentals_ready": 1,
+            "cache_hits": 1,
+            "missing_codes": [],
+        }
+        mock_analyzer.return_value.analyze.return_value = {
+            "total_score": 72,
+            "factors": {"quality": 0.8},
+            "f_score": 6,
+        }
+        from advisor.scanner import MarketScanner
+
+        scanner = MarketScanner()
+        results = scanner.scan_top("A", top_n=10)
+
+        assert len(results) == 1
+        assert results[0]["code"] == "601318"
+
+    @patch("advisor.scanner.get_stock_pool")
+    @patch("advisor.scanner.ensure_market_scan_ready")
+    @patch("advisor.scanner.CompositeAnalyzer")
+    def test_scan_top_prefers_better_metadata_for_hk_us(
+        self,
+        mock_analyzer,
+        mock_ready,
+        mock_pool_fn,
+    ):
+        pool = [
+            {
+                "code": "AAPL",
+                "name": "Apple",
+                "market": "US",
+                "sector": "Tech",
+                "industry": "Hardware",
+                "list_date": "2000-01-01",
+                "total_market_cap": 3e12,
+                "is_active": 1,
+                "metadata_completeness": 0.25,
+                "metadata_source": "akshare_stock_us_spot",
+                "metadata_status": "active",
+            },
+            {
+                "code": "MSFT",
+                "name": "Microsoft",
+                "market": "US",
+                "sector": "Tech",
+                "industry": "Software",
+                "list_date": "2000-01-01",
+                "total_market_cap": 2.8e12,
+                "is_active": 1,
+                "metadata_completeness": 1.0,
+                "metadata_source": "akshare_stock_us_spot",
+                "metadata_status": "active",
+            },
+        ]
+        mock_pool_fn.side_effect = [pool, pool]
+        mock_ready.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "history_ready": 2,
+            "fundamentals_ready": 2,
+            "cache_hits": 2,
+            "missing_codes": [],
+        }
+        mock_analyzer.return_value.analyze.return_value = {
+            "total_score": 70,
+            "factors": {"quality": 0.8},
+            "f_score": 6,
+        }
+        from advisor.scanner import MarketScanner
+
+        scanner = MarketScanner()
+        results = scanner.scan_top("US", top_n=2)
+
+        assert results[0]["code"] == "MSFT"
+        assert results[0]["metadata_penalty"] == 0
+        assert results[1]["metadata_penalty"] > 0
 
     @patch("advisor.scanner.get_stock_pool", return_value=[])
     def test_scan_top_empty_pool(self, mock_pool_fn):
@@ -92,6 +220,14 @@ class TestMarketScanner:
         mock_ready,
         mock_pool_fn,
     ):
+        mock_ready.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "history_ready": 2,
+            "fundamentals_ready": 2,
+            "cache_hits": 2,
+            "missing_codes": [],
+        }
         mock_analyzer.return_value.analyze.side_effect = [
             {"total_score": 90, "factors": {"quality": 0.9}, "f_score": 8},
             {"total_score": 60, "factors": {"quality": 0.6}, "f_score": 5},
@@ -112,6 +248,14 @@ class TestMarketScanner:
         mock_ready,
         mock_pool_fn,
     ):
+        mock_ready.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "history_ready": 2,
+            "fundamentals_ready": 2,
+            "cache_hits": 2,
+            "missing_codes": [],
+        }
         mock_analyzer.return_value.analyze.return_value = {
             "total_score": 72,
             "factors": {"quality": 0.8},
@@ -165,6 +309,14 @@ class TestMarketScanner:
             "remote_history_backfilled": 0,
             "still_missing_list_date": 1,
             "missing_market_cap": 1,
+        }
+        mock_ready.return_value = {
+            "requested": 1,
+            "ready": 1,
+            "history_ready": 1,
+            "fundamentals_ready": 1,
+            "cache_hits": 0,
+            "missing_codes": [],
         }
         mock_analyzer.return_value.analyze.return_value = {
             "total_score": 72,
@@ -238,6 +390,54 @@ class TestMarketScanner:
         assert payload["results"][0]["code"] == "601318"
         assert payload["results"][0]["name"] == "PingAn"
         assert payload["results"][0]["factors"]["quality"] == 0.8
+
+    def test_print_readiness_summary(self, capsys):
+        from advisor.scanner import MarketScanner
+
+        MarketScanner._print_readiness_summary(
+            {
+                "requested": 3,
+                "ready": 2,
+                "history_ready": 3,
+                "fundamentals_ready": 2,
+                "cache_hits": 1,
+                "missing_codes": ["000001"],
+            }
+        )
+        output = capsys.readouterr().out
+        assert "Candidate readiness: ready=2/3" in output
+        assert "Candidate missing data: 000001" in output
+
+    def test_print_pool_metadata_status_includes_completeness(self, capsys):
+        from advisor.scanner import MarketScanner
+
+        MarketScanner._print_pool_metadata_status(
+            {
+                "requested": 3,
+                "already_ready": 3,
+                "profile_backfilled": 0,
+                "cached_history_backfilled": 0,
+                "remote_history_backfilled": 0,
+                "still_missing_list_date": 0,
+                "metadata_complete": 2,
+                "metadata_partial": 1,
+                "inactive_count": 1,
+            }
+        )
+        output = capsys.readouterr().out
+        assert "complete=2" in output
+        assert "partial=1" in output
+        assert "inactive=1" in output
+
+    def test_print_metadata_quality_summary(self, capsys):
+        from advisor.scanner import MarketScanner
+
+        MarketScanner._print_metadata_quality_summary(
+            {"complete": 2, "partial": 1, "low": 3},
+            label="candidate",
+        )
+        output = capsys.readouterr().out
+        assert "Candidate metadata quality: complete=2, partial=1, low=3" in output
 
     @patch("advisor.scanner.get_fundamentals")
     @patch("advisor.scanner.get_kline")

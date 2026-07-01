@@ -3,18 +3,21 @@ from unittest.mock import patch
 
 
 class TestDataReadiness:
-    @patch("data_readiness.get_fundamentals")
-    @patch("data_readiness.get_kline")
-    @patch("data_readiness._cache")
+    @patch("data_readiness.sync_symbol_data")
     def test_ensure_symbol_ready_uses_local_cache(
         self,
-        mock_cache,
-        mock_get_kline,
-        mock_get_fundamentals,
+        mock_sync_symbol_data,
     ):
-        mock_cache.get_daily_price.return_value = [{"date": "2025-01-01"}] * 400
-        mock_cache.get_latest_factor_snapshot.return_value = {
-            "date": datetime.now().strftime("%Y-%m-%d")
+        mock_sync_symbol_data.return_value = {
+            "code": "600519",
+            "market": "A",
+            "history_before": 400,
+            "history_after": 400,
+            "history_ready": True,
+            "history_covered_through": datetime.now().strftime("%Y-%m-%d"),
+            "fundamentals_before": True,
+            "fundamentals_after": True,
+            "ready": True,
         }
 
         from data_readiness import ensure_symbol_ready
@@ -22,33 +25,91 @@ class TestDataReadiness:
         result = ensure_symbol_ready("600519", "A", history_days=365)
         assert result["history_ready"] is True
         assert result["fundamentals_after"] is True
-        mock_get_kline.assert_not_called()
-        mock_get_fundamentals.assert_not_called()
+        assert result["covered_through"]
+        mock_sync_symbol_data.assert_called_once()
 
-    @patch("data_readiness.get_fundamentals")
-    @patch("data_readiness.get_kline")
-    @patch("data_readiness._cache")
+    @patch("data_readiness.sync_symbol_data")
     def test_ensure_symbol_ready_fetches_missing_data(
         self,
-        mock_cache,
-        mock_get_kline,
-        mock_get_fundamentals,
+        mock_sync_symbol_data,
     ):
-        mock_cache.get_daily_price.side_effect = [
-            [],
-            [{"date": "2025-01-01"}] * 365,
-        ]
-        mock_cache.get_latest_factor_snapshot.side_effect = [None, {
-            "date": datetime.now().strftime("%Y-%m-%d")
-        }]
+        mock_sync_symbol_data.return_value = {
+            "code": "600519",
+            "market": "A",
+            "history_before": 0,
+            "history_after": 365,
+            "history_ready": True,
+            "history_covered_through": datetime.now().strftime("%Y-%m-%d"),
+            "fundamentals_before": False,
+            "fundamentals_after": True,
+            "ready": True,
+        }
 
         from data_readiness import ensure_symbol_ready
 
         result = ensure_symbol_ready("600519", "A", history_days=365)
         assert result["history_ready"] is True
         assert result["fundamentals_after"] is True
-        mock_get_kline.assert_called_once()
-        mock_get_fundamentals.assert_called_once()
+        mock_sync_symbol_data.assert_called_once()
+
+    @patch("data_readiness.sync_watchlist_data")
+    def test_ensure_watchlist_ready_uses_sync_scope(self, mock_sync_watchlist_data):
+        mock_sync_watchlist_data.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "symbols": [],
+        }
+
+        from data_readiness import ensure_watchlist_ready
+
+        result = ensure_watchlist_ready("A")
+        assert result["requested"] == 2
+        mock_sync_watchlist_data.assert_called_once()
+
+    @patch("data_readiness.get_etf_pool")
+    def test_ensure_pool_ready_uses_etf_alias_for_fund_market(self, mock_get_etf_pool):
+        mock_get_etf_pool.return_value = [{"code": "510300"}]
+
+        from data_readiness import ensure_pool_ready
+
+        result = ensure_pool_ready("FUND")
+        assert result == [{"code": "510300"}]
+        mock_get_etf_pool.assert_called_once_with()
+
+    @patch("data_readiness.sync_etf_data")
+    def test_ensure_etf_ready_uses_etf_sync_scope(self, mock_sync_etf_data):
+        mock_sync_etf_data.return_value = {
+            "requested": 2,
+            "ready": 2,
+            "symbols": [
+                {"history_covered_through": "2026-07-01"},
+                {"history_covered_through": "2026-06-30"},
+            ],
+        }
+
+        from data_readiness import ensure_etf_ready
+
+        result = ensure_etf_ready(["510300", "159915"], history_days=365)
+        assert result["requested"] == 2
+        assert result["covered_through"] == "2026-07-01"
+        mock_sync_etf_data.assert_called_once()
+
+    @patch("data_readiness.ensure_etf_ready")
+    def test_ensure_fund_screen_ready_delegates_to_etf_ready(
+        self,
+        mock_ensure_etf_ready,
+    ):
+        mock_ensure_etf_ready.return_value = {"requested": 1, "ready": 1}
+
+        from data_readiness import ensure_fund_screen_ready
+
+        result = ensure_fund_screen_ready([{"code": "510300"}], history_days=365)
+        assert result["requested"] == 1
+        mock_ensure_etf_ready.assert_called_once_with(
+            ["510300"],
+            history_days=365,
+            limit=0,
+        )
 
     @patch("data_readiness.ensure_symbols_ready")
     @patch("data_readiness.ensure_pool_ready")

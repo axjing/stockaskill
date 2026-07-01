@@ -19,6 +19,8 @@ from utils import is_new, is_st
 _SCAN_HISTORY_DAYS = 365
 _MIN_HISTORY_ROWS = 240
 _NEW_LISTING_DAYS = 60
+_METADATA_COMPLETE_THRESHOLD = 0.75
+_METADATA_PARTIAL_THRESHOLD = 0.50
 
 
 class MarketScanner:
@@ -66,6 +68,8 @@ class MarketScanner:
 
             # Filter ST/delisted
             if is_st(code, name):
+                continue
+            if not bool(stock.get("is_active", 1)):
                 continue
 
             # Sector filter
@@ -129,6 +133,9 @@ class MarketScanner:
         if not filtered:
             return []
 
+        metadata_quality = self._metadata_quality_counts(filtered)
+        self._print_metadata_quality_summary(metadata_quality, label="candidate")
+
         candidates_with_mcap = [
             stock
             for stock in filtered
@@ -165,7 +172,8 @@ class MarketScanner:
             )
             return []
 
-        ensure_market_scan_ready(market, candidates)
+        sync_status = ensure_market_scan_ready(market, candidates)
+        self._print_readiness_summary(sync_status)
         print(f"Scoring {n} candidates...", flush=True)
 
         # Score each stock (parallel, cached-only for speed)
@@ -182,9 +190,16 @@ class MarketScanner:
                     "name": stock.get("name", ""),
                     "market": market,
                     "total_score": score,
+                    "adjusted_score": score - self._metadata_penalty(stock, market),
                     "sector": stock.get("sector", ""),
                     "industry": stock.get("industry", ""),
                     "market_cap": stock.get("total_market_cap", 0),
+                    "metadata_source": stock.get("metadata_source", ""),
+                    "metadata_status": stock.get("metadata_status", ""),
+                    "metadata_completeness": float(
+                        stock.get("metadata_completeness", 0) or 0
+                    ),
+                    "metadata_penalty": self._metadata_penalty(stock, market),
                     "factors": factor_result.get("factors", {}),
                     "f_score": factor_result.get("f_score", 0),
                 }
@@ -219,7 +234,14 @@ class MarketScanner:
             print(f"  Scored {len(results)} stocks successfully.", flush=True)
 
         # Sort by score descending
-        results.sort(key=lambda x: x["total_score"], reverse=True)
+        results.sort(
+            key=lambda x: (
+                x.get("adjusted_score", x.get("total_score", 0)),
+                x.get("metadata_completeness", 0),
+                x.get("total_score", 0),
+            ),
+            reverse=True,
+        )
         return results[:top_n]
 
     def get_snapshot_status(self, market: str) -> Dict[str, Any]:
@@ -276,9 +298,16 @@ class MarketScanner:
                     "name": stock.get("name", row["code"]),
                     "market": market,
                     "total_score": float(row.get("composite_score", 0) or 0),
+                    "adjusted_score": float(row.get("composite_score", 0) or 0),
                     "sector": stock.get("sector", ""),
                     "industry": stock.get("industry", ""),
                     "market_cap": stock.get("total_market_cap", 0),
+                    "metadata_source": stock.get("metadata_source", ""),
+                    "metadata_status": stock.get("metadata_status", ""),
+                    "metadata_completeness": float(
+                        stock.get("metadata_completeness", 0) or 0
+                    ),
+                    "metadata_penalty": 0.0,
                     "factors": factors,
                     "f_score": int(row.get("f_score", 0) or 0),
                     "eligible": bool(row.get("eligible")),
@@ -322,7 +351,11 @@ class MarketScanner:
                     "remote_history_backfilled": 0,
                     "still_missing_list_date": 0,
                     "missing_market_cap": 0,
+                    "metadata_complete": 0,
+                    "metadata_partial": 0,
+                    "inactive_count": 0,
                 },
+                "metadata_quality": {"complete": 0, "partial": 0, "low": 0},
             }
 
         metadata_status = ensure_stock_pool_candidates_ready(
@@ -333,6 +366,8 @@ class MarketScanner:
         refreshed_pool = {
             str(stock.get("code", "")): stock for stock in get_stock_pool(market)
         }
+        metadata_quality = self._metadata_quality_counts(list(refreshed_pool.values()))
+        self._print_metadata_quality_summary(metadata_quality, label="universe")
         trade_date = datetime.now().strftime("%Y-%m-%d")
 
         def _evaluate(stock: Dict[str, Any]) -> Dict[str, Any]:
@@ -551,6 +586,7 @@ class MarketScanner:
                 "fundamentals_fetched_count": fundamentals_fetched_count,
                 "fundamentals_missing_count": fundamentals_missing_count,
                 "metadata_status": metadata_status,
+                "metadata_quality": metadata_quality,
                 "display_count": (
                     summary["total_count"]
                     if include_incomplete
@@ -566,6 +602,9 @@ class MarketScanner:
         requested = status.get("requested", 0)
         if requested == 0:
             return
+        metadata_complete = int(status.get("metadata_complete", 0) or 0)
+        metadata_partial = int(status.get("metadata_partial", 0) or 0)
+        inactive_count = int(status.get("inactive_count", 0) or 0)
         fetched = (
             status.get("profile_backfilled", 0)
             + status.get("cached_history_backfilled", 0)
@@ -575,7 +614,10 @@ class MarketScanner:
             print(
                 "  Candidate metadata ready:"
                 f" {status.get('already_ready', requested)}/{requested}"
-                " listing dates already cached.",
+                " listing dates already cached."
+                f" complete={metadata_complete},"
+                f" partial={metadata_partial},"
+                f" inactive={inactive_count}.",
                 flush=True,
             )
             return
@@ -584,9 +626,79 @@ class MarketScanner:
             f" profile={status.get('profile_backfilled', 0)},"
             f" local_history={status.get('cached_history_backfilled', 0)},"
             f" remote_history={status.get('remote_history_backfilled', 0)},"
-            f" still_missing={status.get('still_missing_list_date', 0)}.",
+            f" still_missing={status.get('still_missing_list_date', 0)},"
+            f" complete={metadata_complete},"
+            f" partial={metadata_partial},"
+            f" inactive={inactive_count}.",
             flush=True,
         )
+
+    @staticmethod
+    def _print_readiness_summary(status: Dict[str, Any]) -> None:
+        """Print a concise sync/readiness summary before scan scoring."""
+        requested = int(status.get("requested", 0) or 0)
+        if requested <= 0:
+            return
+        print(
+            "  Candidate readiness:"
+            f" ready={status.get('ready', 0)}/{requested},"
+            f" history_ready={status.get('history_ready', 0)}/{requested},"
+            f" fundamentals_ready={status.get('fundamentals_ready', 0)}/{requested},"
+            f" cache_hits={status.get('cache_hits', 0)}",
+            flush=True,
+        )
+        missing_codes = status.get("missing_codes", [])
+        if missing_codes:
+            preview = ", ".join(str(code) for code in missing_codes[:10])
+            print(f"  Candidate missing data: {preview}", flush=True)
+
+    @staticmethod
+    def _metadata_quality_counts(stocks: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Bucket metadata completeness into complete, partial, and low groups."""
+        complete = 0
+        partial = 0
+        low = 0
+        for stock in stocks:
+            completeness = float(stock.get("metadata_completeness", 0) or 0)
+            if completeness >= _METADATA_COMPLETE_THRESHOLD:
+                complete += 1
+            elif completeness >= _METADATA_PARTIAL_THRESHOLD:
+                partial += 1
+            else:
+                low += 1
+        return {"complete": complete, "partial": partial, "low": low}
+
+    @staticmethod
+    def _print_metadata_quality_summary(
+        metadata_quality: Dict[str, int],
+        label: str,
+    ) -> None:
+        """Print a concise metadata quality summary for a candidate set."""
+        total = sum(
+            int(metadata_quality.get(key, 0) or 0)
+            for key in ("complete", "partial", "low")
+        )
+        if total <= 0:
+            return
+        print(
+            f"  {label.capitalize()} metadata quality:"
+            f" complete={metadata_quality.get('complete', 0)},"
+            f" partial={metadata_quality.get('partial', 0)},"
+            f" low={metadata_quality.get('low', 0)}",
+            flush=True,
+        )
+
+    @staticmethod
+    def _metadata_penalty(stock: Dict[str, Any], market: str) -> float:
+        """Return a small rank-only penalty for low-quality HK/US metadata."""
+        if market not in {"HK", "US"}:
+            return 0.0
+        completeness = float(stock.get("metadata_completeness", 0) or 0)
+        if completeness >= _METADATA_COMPLETE_THRESHOLD:
+            return 0.0
+        if completeness >= _METADATA_PARTIAL_THRESHOLD:
+            return 2.0
+        return 5.0
 
     def scan_by_sector(
         self, market: str = "A", top_n: int = 5

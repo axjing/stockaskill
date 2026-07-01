@@ -21,6 +21,249 @@ _cache = get_cache()
 logger = logging.getLogger(__name__)
 
 
+def _is_etf_market(market: str) -> bool:
+    """Return True when a market identifier represents the ETF asset path."""
+    return str(market).upper() == "FUND"
+
+
+def _market_supports_fundamentals(market: str) -> bool:
+    """Return True when the market should use equity fundamentals sync."""
+    return not _is_etf_market(market)
+
+
+def _has_fresh_snapshot(
+    snapshot: Optional[Dict[str, Any]],
+    max_age_days: int,
+) -> bool:
+    """Return True if a cached fundamentals snapshot is fresh enough."""
+    if not snapshot:
+        return False
+    date_str = str(snapshot.get("date", "")).strip()
+    try:
+        snapshot_date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return (datetime.now() - snapshot_date).days <= max_age_days
+
+
+def _latest_cached_date(
+    rows: Sequence[Dict[str, Any]],
+    field: str = "date",
+) -> str:
+    """Return the latest date field from cached rows."""
+    values = sorted(
+        str(row.get(field, "")).strip()
+        for row in rows
+        if str(row.get(field, "")).strip()
+    )
+    return values[-1] if values else ""
+
+
+def _first_present_value(row: pd.Series, candidates: Sequence[str]) -> Any:
+    """Return the first non-empty value from the given candidate columns."""
+    for candidate in candidates:
+        if candidate in row.index:
+            value = row.get(candidate)
+            if value is None:
+                continue
+            if isinstance(value, float) and pd.isna(value):
+                continue
+            if str(value).strip():
+                return value
+    return ""
+
+
+def _normalize_pool_text(value: Any) -> str:
+    """Return a stripped string value for pool metadata fields."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def _infer_active_status(name: str, raw_status: Any = "") -> int:
+    """Infer whether a pool row should be treated as active."""
+    status_text = _normalize_pool_text(raw_status).lower()
+    name_text = _normalize_pool_text(name).lower()
+    inactive_markers = (
+        "delist",
+        "delisted",
+        "suspend",
+        "suspended",
+        "halt",
+        "退市",
+        "摘牌",
+        "停牌",
+    )
+    combined = f"{name_text} {status_text}".strip()
+    return 0 if any(marker in combined for marker in inactive_markers) else 1
+
+
+def _normalize_metadata_status(raw_status: Any, is_active: int) -> str:
+    """Normalize raw upstream status into a compact cache-friendly label."""
+    status_text = _normalize_pool_text(raw_status).lower()
+    if not status_text:
+        return "active" if is_active else "inactive"
+    if "active" in status_text or "正常" in status_text:
+        return "active"
+    if any(
+        marker in status_text
+        for marker in ("delist", "delisted", "退市", "摘牌")
+    ):
+        return "delisted"
+    if any(
+        marker in status_text
+        for marker in ("suspend", "suspended", "halt", "停牌")
+    ):
+        return "suspended"
+    return status_text.replace(" ", "_")
+
+
+def _metadata_completeness_score(
+    sector: str,
+    industry: str,
+    list_date: str,
+    total_market_cap: float,
+) -> float:
+    """Return a simple [0, 1] completeness score for pool metadata."""
+    fields_present = 0
+    if sector.strip():
+        fields_present += 1
+    if industry.strip():
+        fields_present += 1
+    if list_date.strip():
+        fields_present += 1
+    if total_market_cap > 0:
+        fields_present += 1
+    return round(fields_present / 4.0, 2)
+
+
+def _normalize_cross_market_pool_row(
+    row: pd.Series,
+    source: str,
+) -> Dict[str, Any]:
+    """Extract a normalized HK/US pool row from heterogeneous upstream fields."""
+    name = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("name", "名称", "中文名称", "股票名称", "Name"),
+        )
+    )
+    raw_status = _first_present_value(row, ("status", "状态", "Status"))
+    sector = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("sector", "地区", "板块", "所属行业", "Sector"),
+        )
+    )
+    industry = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("industry", "行业", "所属行业", "Industry"),
+        )
+    )
+    list_date = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("list_date", "上市日期", "IPO日期", "ipo_date", "ListDate"),
+        )
+    )
+    total_market_cap = safe_float(
+        _first_present_value(
+            row,
+            ("total_market_cap", "总市值", "market_cap", "MarketCap"),
+        ),
+    )
+    is_active = _infer_active_status(name, raw_status)
+    return {
+        "code": _normalize_pool_text(
+            _first_present_value(row, ("code", "代码", "symbol", "Symbol"))
+        ),
+        "name": name,
+        "sector": sector,
+        "industry": industry,
+        "list_date": list_date,
+        "total_market_cap": total_market_cap,
+        "is_active": is_active,
+        "metadata_source": source,
+        "metadata_status": _normalize_metadata_status(raw_status, is_active),
+        "metadata_completeness": _metadata_completeness_score(
+            sector,
+            industry,
+            list_date,
+            total_market_cap,
+        ),
+    }
+
+
+def _upsert_symbol_sync_state(
+    code: str,
+    market: str,
+    data_kind: str,
+    status: str,
+    covered_date: str = "",
+    last_error: str = "",
+) -> None:
+    """Persist sync-state for a single symbol and data kind."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _cache.upsert_sync_state(
+        [
+            {
+                "scope_type": "symbol",
+                "scope_key": f"{market}:{code}",
+                "market": market,
+                "code": code,
+                "data_kind": data_kind,
+                "last_success_at": timestamp if status == "ok" else "",
+                "last_covered_date": covered_date,
+                "last_error": last_error,
+                "status": status,
+            }
+        ]
+    )
+
+
+def _upsert_scope_sync_state(
+    scope_type: str,
+    scope_key: str,
+    market: str,
+    data_kind: str,
+    status: str,
+    covered_date: str = "",
+    last_error: str = "",
+) -> None:
+    """Persist sync-state for a bounded scope summary row."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _cache.upsert_sync_state(
+        [
+            {
+                "scope_type": scope_type,
+                "scope_key": scope_key,
+                "market": market,
+                "code": "",
+                "data_kind": data_kind,
+                "last_success_at": timestamp if status == "ok" else "",
+                "last_covered_date": covered_date,
+                "last_error": last_error,
+                "status": status,
+            }
+        ]
+    )
+
+
+def _aggregate_covered_through(symbols: Sequence[Dict[str, Any]]) -> str:
+    """Return the latest non-empty covered-through date across symbol results."""
+    return max(
+        [
+            str(item.get("history_covered_through", "")).strip()
+            for item in symbols
+            if str(item.get("history_covered_through", "")).strip()
+        ],
+        default="",
+    )
+
+
 # -- Retry / rate-limit decorator -------------------------------------------
 
 
@@ -104,7 +347,7 @@ def _openbb_symbol(code: str, market: str) -> Optional[str]:
         return code.upper()
     if market == "HK":
         return f"{code}.HK"
-    if market in ("A", "FUND"):
+    if market == "A" or _is_etf_market(market):
         return None
     return None
 
@@ -115,7 +358,7 @@ def _openbb_symbol(code: str, market: str) -> Optional[str]:
 def _sina_code(code: str, market: str = "A") -> str:
     """Convert code to Sina format: sh601318, sz002475, sh510300."""
     code = normalize_code_for_market(code, market)
-    if market in ("A", "FUND"):
+    if market == "A" or _is_etf_market(market):
         if code.startswith("92"):
             return f"bj{code}"
         if code.startswith(("5", "6")):
@@ -149,15 +392,53 @@ def ensure_stock_pool_candidates_ready(
     normalized_codes = [
         normalize_code_for_market(code, market) for code in codes if str(code).strip()
     ]
-    if market != "A" or not normalized_codes:
+    if not normalized_codes:
         return {
             "requested": len(normalized_codes),
-            "already_ready": len(normalized_codes),
+            "already_ready": 0,
             "profile_backfilled": 0,
             "cached_history_backfilled": 0,
             "remote_history_backfilled": 0,
             "still_missing_list_date": 0,
             "missing_market_cap": 0,
+            "metadata_complete": 0,
+            "metadata_partial": 0,
+            "inactive_count": 0,
+        }
+    if market != "A":
+        non_a_pool = {
+            row["code"]: dict(row)
+            for row in _cache.get_stock_pool(market)
+            if row.get("code")
+        }
+        target_rows = [
+            non_a_pool[code] for code in normalized_codes if code in non_a_pool
+        ]
+        metadata_complete = sum(
+            1
+            for row in target_rows
+            if float(row.get("metadata_completeness", 0) or 0) >= 0.75
+        )
+        inactive_count = sum(
+            1 for row in target_rows if not bool(row.get("is_active", 1))
+        )
+        return {
+            "requested": len(normalized_codes),
+            "already_ready": len(target_rows),
+            "profile_backfilled": 0,
+            "cached_history_backfilled": 0,
+            "remote_history_backfilled": 0,
+            "still_missing_list_date": sum(
+                1 for row in target_rows if not str(row.get("list_date", "")).strip()
+            ),
+            "missing_market_cap": sum(
+                1
+                for row in target_rows
+                if float(row.get("total_market_cap", 0) or 0) <= 0
+            ),
+            "metadata_complete": metadata_complete,
+            "metadata_partial": max(len(target_rows) - metadata_complete, 0),
+            "inactive_count": inactive_count,
         }
 
     pool_map = {
@@ -249,6 +530,27 @@ def ensure_stock_pool_candidates_ready(
         "remote_history_backfilled": remote_history_backfilled,
         "still_missing_list_date": still_missing_list_date,
         "missing_market_cap": missing_market_cap,
+        "metadata_complete": sum(
+            1
+            for code in normalized_codes
+            if float(
+                refreshed_map.get(code, {}).get("metadata_completeness", 0) or 0
+            )
+            >= 0.75
+        ),
+        "metadata_partial": sum(
+            1
+            for code in normalized_codes
+            if float(
+                refreshed_map.get(code, {}).get("metadata_completeness", 0) or 0
+            )
+            < 0.75
+        ),
+        "inactive_count": sum(
+            1
+            for code in normalized_codes
+            if not bool(refreshed_map.get(code, {}).get("is_active", 1))
+        ),
     }
 
 
@@ -287,7 +589,7 @@ def _refresh_stock_pool(market: str) -> None:
             df = _fetch_hk_stock_pool(ak)
         elif market == "US":
             df = _fetch_us_stock_pool(ak)
-        elif market == "FUND":
+        elif _is_etf_market(market):
             df = _fetch_fund_pool_df(ak)
             if df is not None and not df.empty:
                 pool_rows = []
@@ -307,6 +609,9 @@ def _refresh_stock_pool(market: str) -> None:
                                 r.get("total_market_cap", 0)
                             ),
                             "is_active": 1,
+                            "metadata_source": "akshare_fund_etf_spot_em",
+                            "metadata_status": "active",
+                            "metadata_completeness": 0.25,
                             "updated_at": now,
                         }
                     )
@@ -327,7 +632,12 @@ def _refresh_stock_pool(market: str) -> None:
                         "industry": str(r.get("industry", "")),
                         "list_date": str(r.get("list_date", "")),
                         "total_market_cap": safe_float(r.get("total_market_cap", 0)),
-                        "is_active": 1,
+                        "is_active": int(r.get("is_active", 1) or 0),
+                        "metadata_source": str(r.get("metadata_source", "")),
+                        "metadata_status": str(r.get("metadata_status", "")),
+                        "metadata_completeness": safe_float(
+                            r.get("metadata_completeness", 0)
+                        ),
                         "updated_at": now,
                     }
                 )
@@ -496,7 +806,7 @@ def _fetch_a_stock_profile_metadata(code: str) -> Dict[str, str]:
 
 def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
     """Infer list date from cached/full-history K-line data."""
-    cached_rows = _cache.get_daily_price(code)
+    cached_rows = _cache.get_daily_price(code, market=market)
     if cached_rows:
         dates = sorted(
             str(row.get("date", "")).strip() for row in cached_rows if row.get("date")
@@ -511,7 +821,7 @@ def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
         full_history=True,
         force_refresh=False,
     )
-    cached_rows = _cache.get_daily_price(code)
+    cached_rows = _cache.get_daily_price(code, market=market)
     dates = sorted(
         str(row.get("date", "")).strip() for row in cached_rows if row.get("date")
     )
@@ -522,34 +832,28 @@ def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
 
 @_api_call("stock_pool_hk")
 def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
-    """Fetch HK pool via Sina."""
+    """Fetch HK pool via Sina and extract minimal metadata when available."""
     df = ak.stock_hk_spot()
-    col_map = {
-        "\u4ee3\u7801": "code",
-        "\u4e2d\u6587\u540d\u79f0": "name",
-    }
-    df = df.rename(columns=col_map)
-    df["industry"] = ""
-    df["sector"] = ""
-    df["list_date"] = ""
-    df["total_market_cap"] = 0.0
-    return df
+    if df is None or df.empty:
+        return df
+    rows = [
+        _normalize_cross_market_pool_row(df.iloc[idx], "akshare_stock_hk_spot")
+        for idx in range(len(df))
+    ]
+    return pd.DataFrame(rows)
 
 
 @_api_call("stock_pool_us")
 def _fetch_us_stock_pool(ak) -> Optional[pd.DataFrame]:
-    """Fetch US pool via Sina."""
+    """Fetch US pool via Sina and extract minimal metadata when available."""
     df = ak.stock_us_spot()
-    col_map = {
-        "\u4ee3\u7801": "code",
-        "\u540d\u79f0": "name",
-    }
-    df = df.rename(columns=col_map)
-    df["industry"] = ""
-    df["sector"] = ""
-    df["list_date"] = ""
-    df["total_market_cap"] = 0.0
-    return df
+    if df is None or df.empty:
+        return df
+    rows = [
+        _normalize_cross_market_pool_row(df.iloc[idx], "akshare_stock_us_spot")
+        for idx in range(len(df))
+    ]
+    return pd.DataFrame(rows)
 
 
 @_api_call("fund_pool")
@@ -593,7 +897,7 @@ def get_kline(
         List of K-line dicts (newest first).
     """
     code = normalize_code_for_market(code, market)
-    cached = _cache.get_daily_price(code)
+    cached = _cache.get_daily_price(code, market=market)
     if cached_only:
         return cached[:days] if cached else []
     if cached and not force_refresh and not full_history and len(cached) >= days:
@@ -608,7 +912,7 @@ def get_kline(
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
     else:
-        latest = _cache.get_latest_date(code) or ""
+        latest = _cache.get_latest_date(code, market=market) or ""
         if latest:
             start = _add_days(latest, -30)
         else:
@@ -620,7 +924,7 @@ def get_kline(
         new_data = _fetch_kline(code, market, start, end)
         if new_data:
             _cache.upsert_daily_price(new_data)
-            cached = _cache.get_daily_price(code)
+            cached = _cache.get_daily_price(code, market=market)
     except Exception as exc:
         logger.warning("get_kline fetch failed for %s: %s", code, exc)
 
@@ -670,7 +974,7 @@ def _fetch_kline_sina(
 ) -> List[Dict[str, Any]]:
     """Fetch K-line via Sina (daily, all history, then filter)."""
     sina_sym = _sina_code(code, market)
-    if market == "FUND":
+    if _is_etf_market(market):
         try:
             df = ak.fund_etf_hist_sina(symbol=sina_sym)
         except Exception:
@@ -898,7 +1202,7 @@ def get_fundamentals(
 ) -> Optional[Dict[str, Any]]:
     """Get latest fundamental snapshot. Graceful degradation."""
     code = normalize_code_for_market(code, market)
-    cached = _cache.get_latest_factor_snapshot(code)
+    cached = _cache.get_latest_factor_snapshot(code, market=market)
     if cached_only:
         return cached
     if cached and not force_refresh:
@@ -906,6 +1210,7 @@ def get_fundamentals(
     try:
         snapshot = _fetch_fundamentals(code, market)
         if snapshot:
+            snapshot["market"] = market
             _cache.upsert_factor_snapshot([snapshot])
             return snapshot
     except Exception as exc:
@@ -996,6 +1301,384 @@ def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any
         return None
 
 
+def sync_symbol_data(
+    code: str,
+    market: str = "A",
+    history_days: int = 365,
+    need_fundamentals: bool | None = None,
+    full_history: bool = False,
+    fundamentals_max_age_days: int = 120,
+) -> Dict[str, Any]:
+    """Synchronize local cache for a single symbol within a bounded scope."""
+    canonical_code = normalize_code_for_market(code, market)
+    require_fundamentals = (
+        _market_supports_fundamentals(market)
+        if need_fundamentals is None
+        else bool(need_fundamentals)
+    )
+
+    history_before_rows = _cache.get_daily_price(canonical_code, market=market)
+    history_before = len(history_before_rows)
+    history_target = (
+        max(history_days, history_before)
+        if not full_history
+        else history_days
+    )
+    history_rows = history_before_rows
+    history_error = ""
+
+    if history_before < history_days or full_history:
+        try:
+            history_rows = get_kline(
+                canonical_code,
+                market,
+                days=history_target,
+                force_refresh=full_history,
+                full_history=full_history,
+            )
+        except Exception as exc:
+            history_error = str(exc)
+            history_rows = _cache.get_daily_price(canonical_code, market=market)
+    history_after = len(history_rows)
+    history_ready = history_after >= history_days
+    history_covered_date = _latest_cached_date(history_rows)
+    _upsert_symbol_sync_state(
+        canonical_code,
+        market,
+        "history",
+        status="ok" if history_ready else "partial",
+        covered_date=history_covered_date,
+        last_error=history_error,
+    )
+
+    fundamentals_before_snapshot = _cache.get_latest_factor_snapshot(
+        canonical_code,
+        market=market,
+    )
+    fundamentals_before = _has_fresh_snapshot(
+        fundamentals_before_snapshot,
+        fundamentals_max_age_days,
+    )
+    fundamentals_after_snapshot = fundamentals_before_snapshot
+    fundamentals_error = ""
+
+    if require_fundamentals and not fundamentals_before:
+        try:
+            fundamentals_after_snapshot = get_fundamentals(
+                canonical_code,
+                market,
+                force_refresh=False,
+            )
+        except Exception as exc:
+            fundamentals_error = str(exc)
+            fundamentals_after_snapshot = _cache.get_latest_factor_snapshot(
+                canonical_code,
+                market=market,
+            )
+    fundamentals_after = _has_fresh_snapshot(
+        fundamentals_after_snapshot,
+        fundamentals_max_age_days,
+    )
+    fundamentals_covered_date = str(
+        (fundamentals_after_snapshot or {}).get("date", "")
+    ).strip()
+    if require_fundamentals:
+        _upsert_symbol_sync_state(
+            canonical_code,
+            market,
+            "fundamentals",
+            status="ok" if fundamentals_after else "partial",
+            covered_date=fundamentals_covered_date,
+            last_error=fundamentals_error,
+        )
+
+    return {
+        "scope_type": "symbol",
+        "scope_key": f"{market}:{canonical_code}",
+        "code": canonical_code,
+        "market": market,
+        "requested": 1,
+        "history_before": history_before,
+        "history_after": history_after,
+        "history_target": history_days,
+        "history_ready": history_ready,
+        "history_cache_hit": history_before >= history_days and not full_history,
+        "history_fetched": history_after > history_before,
+        "history_covered_through": history_covered_date,
+        "fundamentals_required": require_fundamentals,
+        "fundamentals_before": fundamentals_before,
+        "fundamentals_after": fundamentals_after,
+        "fundamentals_cache_hit": fundamentals_before,
+        "fundamentals_fetched": (
+            require_fundamentals
+            and not fundamentals_before
+            and bool(fundamentals_after_snapshot)
+        ),
+        "fundamentals_covered_through": fundamentals_covered_date,
+        "ready": history_ready and (fundamentals_after or not require_fundamentals),
+        "errors": [err for err in (history_error, fundamentals_error) if err],
+    }
+
+
+def sync_symbols_data(
+    codes: Sequence[str],
+    market: str,
+    history_days: int,
+    need_fundamentals: bool | None = None,
+    full_history: bool = False,
+    fundamentals_max_age_days: int = 120,
+    limit: int = 0,
+) -> Dict[str, Any]:
+    """Synchronize a bounded list of symbols and return an aggregate summary."""
+    selected_codes = list(codes[:limit] if limit else codes)
+    per_symbol = [
+        sync_symbol_data(
+            code,
+            market,
+            history_days=history_days,
+            need_fundamentals=need_fundamentals,
+            full_history=full_history,
+            fundamentals_max_age_days=fundamentals_max_age_days,
+        )
+        for code in selected_codes
+    ]
+    return {
+        "scope_type": "symbol_batch",
+        "market": market,
+        "requested": len(selected_codes),
+        "history_ready": sum(1 for item in per_symbol if item["history_ready"]),
+        "fundamentals_ready": sum(
+            1
+            for item in per_symbol
+            if item.get("fundamentals_required") and item.get("fundamentals_after")
+        ),
+        "ready": sum(1 for item in per_symbol if item["ready"]),
+        "cache_hits": sum(
+            1
+            for item in per_symbol
+            if item.get("history_cache_hit")
+            and (
+                item.get("fundamentals_cache_hit")
+                or not item.get("fundamentals_required")
+            )
+        ),
+        "history_fetched_count": sum(
+            1 for item in per_symbol if item.get("history_fetched")
+        ),
+        "fundamentals_fetched_count": sum(
+            1 for item in per_symbol if item.get("fundamentals_fetched")
+        ),
+        "missing_codes": [
+            item["code"] for item in per_symbol if not item.get("ready", False)
+        ],
+        "symbols": per_symbol,
+    }
+
+
+def sync_watchlist_data(
+    market: str = "A",
+    history_days: int = 365,
+    need_fundamentals: bool = True,
+    full_history: bool = False,
+    fundamentals_max_age_days: int = 120,
+) -> Dict[str, Any]:
+    """Synchronize the configured watchlist for a market."""
+    watchlist = [
+        normalize_code_for_market(code, market)
+        for code in cfg_get("watchlist", [])
+        if str(code).strip()
+    ]
+    result = sync_symbols_data(
+        watchlist,
+        market,
+        history_days=history_days,
+        need_fundamentals=need_fundamentals,
+        full_history=full_history,
+        fundamentals_max_age_days=fundamentals_max_age_days,
+    )
+    result["scope_type"] = "watchlist"
+    result["scope_key"] = market
+    result["covered_through"] = _aggregate_covered_through(result["symbols"])
+    _upsert_scope_sync_state(
+        "watchlist",
+        market,
+        market,
+        "summary",
+        status="ok" if result["ready"] == result["requested"] else "partial",
+        covered_date=result["covered_through"],
+    )
+    return result
+
+
+def sync_portfolio_data(
+    codes: Sequence[str],
+    market: str = "A",
+    history_days: int = 365,
+    need_fundamentals: bool = True,
+    full_history: bool = False,
+    fundamentals_max_age_days: int = 120,
+) -> Dict[str, Any]:
+    """Synchronize a user-provided portfolio code list."""
+    normalized_codes = [
+        normalize_code_for_market(code, market)
+        for code in codes
+        if str(code).strip()
+    ]
+    scope_key = ",".join(normalized_codes)
+    result = sync_symbols_data(
+        normalized_codes,
+        market,
+        history_days=history_days,
+        need_fundamentals=need_fundamentals,
+        full_history=full_history,
+        fundamentals_max_age_days=fundamentals_max_age_days,
+    )
+    result["scope_type"] = "portfolio"
+    result["scope_key"] = scope_key
+    result["covered_through"] = _aggregate_covered_through(result["symbols"])
+    _upsert_scope_sync_state(
+        "portfolio",
+        scope_key,
+        market,
+        "summary",
+        status="ok" if result["ready"] == result["requested"] else "partial",
+        covered_date=result["covered_through"],
+    )
+    return result
+
+
+def sync_scan_universe_data(
+    market: str = "A",
+    limit: int = 200,
+    history_days: int = 365,
+    need_fundamentals: bool = True,
+    full_history: bool = False,
+    fundamentals_max_age_days: int = 120,
+) -> Dict[str, Any]:
+    """Synchronize a bounded candidate universe for scanning."""
+    if _is_etf_market(market):
+        pool = get_fund_pool()
+    else:
+        pool = get_stock_pool(market)
+    candidate_codes = [
+        str(item.get("code", "")).strip()
+        for item in pool[:limit]
+        if str(item.get("code", "")).strip()
+    ]
+    result = sync_symbols_data(
+        candidate_codes,
+        market,
+        history_days=history_days,
+        need_fundamentals=(
+            need_fundamentals if _market_supports_fundamentals(market) else False
+        ),
+        full_history=full_history,
+        fundamentals_max_age_days=fundamentals_max_age_days,
+        limit=limit,
+    )
+    result["scope_type"] = "scan-universe"
+    result["scope_key"] = f"{market}:{limit}"
+    result["covered_through"] = _aggregate_covered_through(result["symbols"])
+    _upsert_scope_sync_state(
+        "scan-universe",
+        result["scope_key"],
+        market,
+        "summary",
+        status="ok" if result["ready"] == result["requested"] else "partial",
+        covered_date=result["covered_through"],
+    )
+    return result
+
+
+def sync_etf_data(
+    codes: Sequence[str],
+    history_days: int = 365,
+    limit: int = 0,
+) -> Dict[str, Any]:
+    """Synchronize bounded ETF NAV/history data within an ETF-specific scope."""
+    normalized_codes = [
+        normalize_code_for_market(code, "FUND")
+        for code in (codes[:limit] if limit else codes)
+        if str(code).strip()
+    ]
+    per_symbol = []
+    for code in normalized_codes:
+        nav_before_rows = _cache.get_fund_nav(code, history_days)
+        nav_before = len(nav_before_rows)
+        nav_rows = nav_before_rows
+        nav_error = ""
+        if nav_before < history_days:
+            try:
+                nav_rows = get_fund_nav(code, history_days)
+            except Exception as exc:
+                nav_error = str(exc)
+                nav_rows = _cache.get_fund_nav(code, history_days)
+        nav_after = len(nav_rows)
+        nav_ready = nav_after >= history_days
+        covered_through = _latest_cached_date(nav_rows)
+        _upsert_symbol_sync_state(
+            code,
+            "FUND",
+            "nav",
+            status="ok" if nav_ready else "partial",
+            covered_date=covered_through,
+            last_error=nav_error,
+        )
+        per_symbol.append(
+            {
+                "scope_type": "symbol",
+                "scope_key": f"FUND:{code}",
+                "code": code,
+                "market": "FUND",
+                "history_before": nav_before,
+                "history_after": nav_after,
+                "history_target": history_days,
+                "history_ready": nav_ready,
+                "history_cache_hit": nav_before >= history_days,
+                "history_fetched": nav_after > nav_before,
+                "history_covered_through": covered_through,
+                "fundamentals_required": False,
+                "fundamentals_before": False,
+                "fundamentals_after": False,
+                "fundamentals_cache_hit": False,
+                "fundamentals_fetched": False,
+                "fundamentals_covered_through": "",
+                "ready": nav_ready,
+                "errors": [nav_error] if nav_error else [],
+            }
+        )
+
+    scope_key = ",".join(normalized_codes)
+    result = {
+        "scope_type": "etf",
+        "scope_key": scope_key,
+        "market": "FUND",
+        "requested": len(normalized_codes),
+        "history_ready": sum(1 for item in per_symbol if item["history_ready"]),
+        "fundamentals_ready": 0,
+        "ready": sum(1 for item in per_symbol if item["ready"]),
+        "cache_hits": sum(1 for item in per_symbol if item["history_cache_hit"]),
+        "history_fetched_count": sum(
+            1 for item in per_symbol if item["history_fetched"]
+        ),
+        "fundamentals_fetched_count": 0,
+        "missing_codes": [
+            item["code"] for item in per_symbol if not item.get("ready", False)
+        ],
+        "covered_through": _aggregate_covered_through(per_symbol),
+        "symbols": per_symbol,
+    }
+    _upsert_scope_sync_state(
+        "etf",
+        scope_key,
+        "FUND",
+        "summary",
+        status="ok" if result["ready"] == result["requested"] else "partial",
+        covered_date=result["covered_through"],
+    )
+    return result
+
+
 # -- Fund data --------------------------------------------------------------
 
 
@@ -1019,6 +1702,11 @@ def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
                 cur = conn.execute("SELECT * FROM fund_info")
                 funds = [dict(r) for r in cur.fetchall()]
     return funds
+
+
+def get_etf_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Return the current ETF pool using the ETF-oriented FUND backing store."""
+    return get_fund_pool(force_refresh=force_refresh)
 
 
 def _refresh_fund_pool() -> None:

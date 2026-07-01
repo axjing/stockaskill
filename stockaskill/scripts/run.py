@@ -13,7 +13,10 @@
 import argparse
 import json
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # Force UTF-8 output for CJK support on Windows
 if sys.platform == "win32":
@@ -40,13 +43,18 @@ def _badge(score: float) -> str:
 from cache import get_cache  # noqa: E402
 from config import get as cfg_get  # noqa: E402
 from data_engine import (  # noqa: E402
-    get_fund_pool,
+    get_etf_pool,
     get_fundamentals,
     get_kline,
     get_stock_pool,
+    sync_etf_data,
+    sync_portfolio_data,
+    sync_scan_universe_data,
+    sync_symbol_data,
+    sync_watchlist_data,
 )
 from data_readiness import (  # noqa: E402
-    ensure_fund_screen_ready,
+    ensure_etf_ready,
     ensure_market_scan_ready,
     ensure_symbol_analysis_ready,
 )
@@ -57,6 +65,7 @@ from report_generator import (  # noqa: E402
     save_markdown,
     save_report,
 )
+from utils import normalize_code_for_market  # noqa: E402
 
 
 def _save_report(
@@ -96,6 +105,14 @@ def _print_snapshot_summary(summary: dict, refreshed: bool) -> None:
         f" bj={summary.get('bj_count', 0)},"
         f" new_listing={summary.get('new_listing_count', 0)}"
     )
+    metadata_quality = summary.get("metadata_quality", {}) or {}
+    if metadata_quality:
+        print(
+            "  Metadata quality:"
+            f" complete={metadata_quality.get('complete', 0)},"
+            f" partial={metadata_quality.get('partial', 0)},"
+            f" low={metadata_quality.get('low', 0)}"
+        )
 
 
 def _print_refresh_summary(summary: dict) -> None:
@@ -208,24 +225,27 @@ def cmd_scan(args: argparse.Namespace) -> None:
     fmt = getattr(args, "format", "both")
 
     if market == "FUND":
-        print("Scanning funds...")
-        funds = get_fund_pool()
-        if not funds:
+        print("Scanning ETFs...")
+        etfs = get_etf_pool()
+        if not etfs:
             print(
-                "  No funds found. Run 'python stockaskill/scripts/run.py fetch"
+                "  No ETFs found. Run 'python stockaskill/scripts/run.py fetch"
                 " pool' first.",
                 file=sys.stderr,
             )
             return
-        ensure_fund_screen_ready(funds[:top_n], limit=top_n)
-        print(f"Found {len(funds)} funds")
-        for f in funds[:top_n]:
+        ensure_etf_ready(
+            [str(item.get("code", "")).strip() for item in etfs[:top_n]],
+            limit=top_n,
+        )
+        print(f"Found {len(etfs)} ETFs")
+        for f in etfs[:top_n]:
             print(f"  {f.get('code', '?')} {f.get('name', '?')}")
         _save_report(
             "scan_FUND",
             fmt,
             output_dir,
-            data={"market": "FUND", "count": len(funds), "results": funds[:top_n]},
+            data={"market": "FUND", "count": len(etfs), "results": etfs[:top_n]},
         )
         return
 
@@ -306,7 +326,20 @@ def cmd_scan(args: argparse.Namespace) -> None:
             name = r.get("name", r["code"])
             f_score = r.get("f_score", 0)
             badge = _badge(score)
-            print(f"  {badge} {i:3d}. {r['code']} {name}: {score:.1f} (F={f_score})")
+            metadata_suffix = ""
+            if "metadata_completeness" in r:
+                metadata_suffix = (
+                    f", meta={float(r.get('metadata_completeness', 0) or 0):.2f}"
+                )
+                penalty = float(r.get("metadata_penalty", 0) or 0)
+                if penalty > 0:
+                    metadata_suffix += (
+                        f", adj={float(r.get('adjusted_score', score) or 0):.1f}"
+                    )
+            print(
+                f"  {badge} {i:3d}. {r['code']} {name}: {score:.1f}"
+                f" (F={f_score}{metadata_suffix})"
+            )
 
         _save_report(
             f"scan_{market}",
@@ -354,7 +387,20 @@ def cmd_refresh_scan(args: argparse.Namespace) -> None:
             name = r.get("name", r["code"])
             f_score = r.get("f_score", 0)
             badge = _badge(score)
-            print(f"  {badge} {i:3d}. {r['code']} {name}: {score:.1f} (F={f_score})")
+            metadata_suffix = ""
+            if "metadata_completeness" in r:
+                metadata_suffix = (
+                    f", meta={float(r.get('metadata_completeness', 0) or 0):.2f}"
+                )
+                penalty = float(r.get("metadata_penalty", 0) or 0)
+                if penalty > 0:
+                    metadata_suffix += (
+                        f", adj={float(r.get('adjusted_score', score) or 0):.1f}"
+                    )
+            print(
+                f"  {badge} {i:3d}. {r['code']} {name}: {score:.1f}"
+                f" (F={f_score}{metadata_suffix})"
+            )
         _save_report(
             f"refresh_scan_{market}",
             fmt,
@@ -455,6 +501,406 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             print("  No data")
     else:
         print(f"Unknown fetch type: {fetch_type}")
+
+
+def cmd_sync(args: argparse.Namespace) -> None:
+    """Synchronize bounded local data for a specific scope."""
+    sync_type = args.type
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+    market = getattr(args, "market", "A") or "A"
+    history_days = getattr(args, "days", 365) or 365
+    need_fundamentals = not bool(getattr(args, "skip_fundamentals", False))
+    full_history = bool(getattr(args, "full_history", False))
+    if sync_type == "symbol":
+        code = args.code
+        print(
+            f"Synchronizing symbol {code} (market={market}, days={history_days}, "
+            f"full_history={'yes' if full_history else 'no'})..."
+        )
+        result = sync_symbol_data(
+            code,
+            market,
+            history_days=history_days,
+            need_fundamentals=need_fundamentals,
+            full_history=full_history,
+        )
+        _print_symbol_sync_summary(result)
+        report_name = f"sync_symbol_{result['code']}_{market}"
+        metadata = {
+            "command": "sync",
+            "type": sync_type,
+            "market": market,
+            "code": result["code"],
+        }
+    elif sync_type == "watchlist":
+        print(
+            f"Synchronizing watchlist (market={market}, days={history_days}, "
+            f"full_history={'yes' if full_history else 'no'})..."
+        )
+        result = sync_watchlist_data(
+            market=market,
+            history_days=history_days,
+            need_fundamentals=need_fundamentals,
+            full_history=full_history,
+        )
+        _print_scope_sync_summary(result, label="watchlist")
+        report_name = f"sync_watchlist_{market}"
+        metadata = {"command": "sync", "type": sync_type, "market": market}
+    elif sync_type == "portfolio":
+        codes = [c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()]
+        print(
+            f"Synchronizing portfolio ({len(codes)} symbols, market={market}, "
+            f"days={history_days}, full_history={'yes' if full_history else 'no'})..."
+        )
+        result = sync_portfolio_data(
+            codes,
+            market=market,
+            history_days=history_days,
+            need_fundamentals=need_fundamentals,
+            full_history=full_history,
+        )
+        _print_scope_sync_summary(result, label="portfolio")
+        report_name = f"sync_portfolio_{market}"
+        metadata = {
+            "command": "sync",
+            "type": sync_type,
+            "market": market,
+            "codes": codes,
+        }
+    elif sync_type == "etf":
+        codes = [c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()]
+        print(
+            f"Synchronizing ETFs ({len(codes)} symbols, days={history_days})..."
+        )
+        result = sync_etf_data(
+            codes,
+            history_days=history_days,
+        )
+        _print_scope_sync_summary(result, label="etf")
+        report_name = "sync_etf"
+        metadata = {
+            "command": "sync",
+            "type": sync_type,
+            "market": "FUND",
+            "codes": codes,
+        }
+    elif sync_type == "scan-universe":
+        limit = getattr(args, "limit", 200) or 200
+        print(
+            f"Synchronizing scan universe (market={market}, limit={limit}, "
+            f"days={history_days}, full_history={'yes' if full_history else 'no'})..."
+        )
+        result = sync_scan_universe_data(
+            market=market,
+            limit=limit,
+            history_days=history_days,
+            need_fundamentals=need_fundamentals,
+            full_history=full_history,
+        )
+        _print_scope_sync_summary(result, label="scan-universe")
+        report_name = f"sync_scan_universe_{market}"
+        metadata = {
+            "command": "sync",
+            "type": sync_type,
+            "market": market,
+            "limit": limit,
+        }
+    else:
+        print(f"Unknown sync type: {sync_type}")
+        return
+
+    _save_report(report_name, fmt, output_dir, data=result, metadata=metadata)
+
+
+def _print_symbol_sync_summary(result: dict) -> None:
+    """Print a concise symbol-sync summary."""
+    print(
+        "  History:"
+        f" before={result.get('history_before', 0)},"
+        f" after={result.get('history_after', 0)},"
+        f" ready={'yes' if result.get('history_ready') else 'no'},"
+        f" covered_through={result.get('history_covered_through', '?') or '?'}"
+    )
+    if result.get("fundamentals_required"):
+        print(
+            "  Fundamentals:"
+            f" before={'yes' if result.get('fundamentals_before') else 'no'},"
+            f" after={'yes' if result.get('fundamentals_after') else 'no'},"
+            " covered_through="
+            f"{result.get('fundamentals_covered_through', '?') or '?'}"
+        )
+    if result.get("errors"):
+        print("  Errors:")
+        for err in result["errors"]:
+            print(f"    - {err}")
+    print(f"  Ready: {'yes' if result.get('ready') else 'no'}")
+
+
+def _print_scope_sync_summary(result: dict, label: str) -> None:
+    """Print a concise summary for a bounded multi-symbol sync scope."""
+    print(
+        f"  Scope {label}:"
+        f" requested={result.get('requested', 0)},"
+        f" ready={result.get('ready', 0)},"
+        f" cache_hits={result.get('cache_hits', 0)},"
+        f" history_fetched={result.get('history_fetched_count', 0)},"
+        f" fundamentals_fetched={result.get('fundamentals_fetched_count', 0)}"
+    )
+    print(
+        "  Coverage:"
+        f" covered_through={result.get('covered_through', '?') or '?'},"
+        f" missing={len(result.get('missing_codes', []))}"
+    )
+    if result.get("missing_codes"):
+        print("  Missing codes: " + ", ".join(result["missing_codes"][:10]))
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    """Show bounded sync-state diagnostics."""
+    status_type = args.type
+    cache = get_cache()
+    market = getattr(args, "market", "A") or "A"
+
+    if status_type == "symbol":
+        code = normalize_code_for_market(args.code, market)
+        rows = cache.get_sync_state(
+            "symbol",
+            f"{market}:{code}",
+            market=market,
+            code=code,
+        )
+        _print_status_summary(rows, label=f"symbol {code}", requested=1)
+        _print_market_metadata_summary(_scope_pool_rows([code], market), label="symbol")
+    elif status_type == "watchlist":
+        rows = cache.get_sync_state("watchlist", market, market=market)
+        codes = _normalized_watchlist(market)
+        symbol_rows = _collect_symbol_scope_rows(cache, codes, market)
+        _print_status_summary(symbol_rows, label="watchlist", requested=len(codes))
+        _print_market_metadata_summary(
+            _scope_pool_rows(codes, market),
+            label="watchlist",
+        )
+        rows.extend(symbol_rows)
+    elif status_type == "portfolio":
+        codes = [
+            normalize_code_for_market(c.strip(), market)
+            for c in getattr(args, "codes", "").split(",")
+            if c.strip()
+        ]
+        rows = cache.get_sync_state(
+            "portfolio",
+            ",".join(codes),
+            market=market,
+        )
+        symbol_rows = _collect_symbol_scope_rows(cache, codes, market)
+        _print_status_summary(symbol_rows, label="portfolio", requested=len(codes))
+        _print_market_metadata_summary(
+            _scope_pool_rows(codes, market),
+            label="portfolio",
+        )
+        rows.extend(symbol_rows)
+    elif status_type == "scan-universe":
+        limit = getattr(args, "limit", 200) or 200
+        rows = cache.get_sync_state(
+            "scan-universe",
+            f"{market}:{limit}",
+            market=market,
+        )
+        codes = _scan_universe_codes(market, limit)
+        symbol_rows = _collect_symbol_scope_rows(cache, codes, market)
+        _print_status_summary(
+            symbol_rows,
+            label=f"scan-universe {market}:{limit}",
+            requested=len(codes),
+        )
+        _print_market_metadata_summary(
+            _scope_pool_rows(codes, market),
+            label="scan-universe",
+        )
+        rows.extend(symbol_rows)
+    elif status_type == "etf":
+        market = "FUND"
+        codes = [
+            normalize_code_for_market(c.strip(), market)
+            for c in getattr(args, "codes", "").split(",")
+            if c.strip()
+        ]
+        rows = cache.get_sync_state(
+            "etf",
+            ",".join(codes),
+            market=market,
+        )
+        symbol_rows = _collect_symbol_scope_rows(cache, codes, market)
+        _print_status_summary(symbol_rows, label="etf", requested=len(codes))
+        _print_market_metadata_summary(_scope_pool_rows(codes, market), label="etf")
+        rows.extend(symbol_rows)
+    else:
+        print(f"Unknown status type: {status_type}")
+        return
+
+    if not rows:
+        print("No sync state found.")
+        return
+    print(f"Sync state for {status_type} (market={market}):")
+    for row in rows:
+        code_label = row.get("code", "") or "-"
+        print(
+            f"  {row.get('data_kind', '?')}:"
+            f" code={code_label},"
+            f" status={row.get('status', '?')},"
+            f" covered={row.get('last_covered_date', '?') or '?'},"
+            f" last_success={row.get('last_success_at', '?') or '?'}"
+        )
+        if row.get("last_error"):
+            print(f"    error={row['last_error']}")
+
+
+def _normalized_watchlist(market: str) -> list[str]:
+    """Return normalized watchlist codes for a market."""
+    return [
+        normalize_code_for_market(code, market)
+        for code in cfg_get("watchlist", [])
+        if str(code).strip()
+    ]
+
+
+def _scan_universe_codes(market: str, limit: int) -> list[str]:
+    """Return normalized codes for a bounded scan universe."""
+    if market == "FUND":
+        pool = get_etf_pool()
+    else:
+        pool = get_stock_pool(market)
+    return [
+        normalize_code_for_market(str(item.get("code", "")), market)
+        for item in pool[:limit]
+        if str(item.get("code", "")).strip()
+    ]
+
+
+def _collect_symbol_scope_rows(cache: Any, codes: list[str], market: str) -> list[dict]:
+    """Collect symbol sync-state rows for a bounded scope."""
+    rows: list[dict] = []
+    for code in codes:
+        rows.extend(
+            cache.get_sync_state(
+                "symbol",
+                f"{market}:{code}",
+                market=market,
+                code=code,
+            )
+        )
+    return rows
+
+
+def _scope_pool_rows(
+    codes: list[str],
+    market: str,
+) -> list[dict]:
+    """Return cached pool rows for the provided scope codes."""
+    if market == "FUND":
+        pool = get_etf_pool()
+    else:
+        pool = get_stock_pool(market)
+    pool_by_code = {
+        normalize_code_for_market(str(item.get("code", "")), market): item
+        for item in pool
+        if str(item.get("code", "")).strip()
+    }
+    return [pool_by_code[code] for code in codes if code in pool_by_code]
+
+
+def _print_market_metadata_summary(pool_rows: list[dict], label: str) -> None:
+    """Print a compact metadata-quality summary for a market scope."""
+    if not pool_rows:
+        return
+    complete = 0
+    partial = 0
+    low = 0
+    inactive = 0
+    total_completeness = 0.0
+    source_counts: dict[str, int] = {}
+    status_counts: dict[str, int] = {}
+    for row in pool_rows:
+        completeness = float(row.get("metadata_completeness", 0) or 0)
+        total_completeness += completeness
+        if completeness >= 0.75:
+            complete += 1
+        elif completeness >= 0.5:
+            partial += 1
+        else:
+            low += 1
+        if not bool(row.get("is_active", 1)):
+            inactive += 1
+        source = str(row.get("metadata_source", "")).strip() or "unknown"
+        status = str(row.get("metadata_status", "")).strip() or "unknown"
+        source_counts[source] = source_counts.get(source, 0) + 1
+        status_counts[status] = status_counts.get(status, 0) + 1
+    top_source = max(source_counts.items(), key=lambda item: item[1])[0]
+    top_status = max(status_counts.items(), key=lambda item: item[1])[0]
+    avg_completeness = total_completeness / max(len(pool_rows), 1)
+    print(
+        f"  Metadata {label}:"
+        f" complete={complete}, partial={partial}, low={low},"
+        f" inactive={inactive}, avg={avg_completeness:.2f},"
+        f" top_source={top_source}, top_status={top_status}"
+    )
+
+
+def _status_freshness(row: dict) -> str:
+    """Classify a sync-state row as fresh, stale, or missing."""
+    ttl_map = {
+        "history": int(cfg_get("cache_ttl.daily_kline", 3600) or 3600),
+        "fundamentals": int(cfg_get("cache_ttl.financial", 604800) or 604800),
+        "nav": int(cfg_get("cache_ttl.fund_nav", 3600) or 3600),
+        "summary": int(cfg_get("cache_ttl.daily_kline", 3600) or 3600),
+    }
+    last_success = str(row.get("last_success_at", "")).strip()
+    if not last_success:
+        return "missing"
+    try:
+        timestamp = datetime.strptime(last_success, "%Y-%m-%d %H:%M:%S").timestamp()
+    except ValueError:
+        return "unknown"
+    ttl = ttl_map.get(str(row.get("data_kind", "")), 3600)
+    return "fresh" if (time.time() - timestamp) <= ttl else "stale"
+
+
+def _print_status_summary(rows: list[dict], label: str, requested: int) -> None:
+    """Print aggregate freshness/error summary for a scope."""
+    if not rows:
+        print(f"  Scope {label}: no symbol sync rows found")
+        return
+    by_code: dict[str, list[dict]] = {}
+    stale = 0
+    fresh = 0
+    errors = 0
+    for row in rows:
+        code = str(row.get("code", "")).strip() or "-"
+        by_code.setdefault(code, []).append(row)
+        freshness = _status_freshness(row)
+        if freshness == "fresh":
+            fresh += 1
+        elif freshness == "stale":
+            stale += 1
+        if row.get("last_error"):
+            errors += 1
+    problem_codes = []
+    for code, code_rows in by_code.items():
+        if any(
+            row.get("status") != "ok"
+            or _status_freshness(row) != "fresh"
+            or row.get("last_error")
+            for row in code_rows
+        ):
+            problem_codes.append(code)
+    print(
+        f"  Scope {label}: requested={requested},"
+        f" symbol_rows={len(rows)}, fresh={fresh}, stale={stale},"
+        f" errors={errors}, symbols_with_issues={len(problem_codes)}"
+    )
+    if problem_codes:
+        print("  Top missing/problem symbols: " + ", ".join(problem_codes[:10]))
 
 
 def cmd_alpha(args: argparse.Namespace) -> None:
@@ -829,6 +1275,256 @@ def main() -> None:
     )
     p.add_argument("--market", default="A")
     p.set_defaults(func=cmd_fetch)
+
+    # sync
+    p = sub.add_parser("sync", help="Synchronize bounded local data")
+    sync_sub = p.add_subparsers(dest="type", required=True)
+
+    p_sync_symbol = sync_sub.add_parser("symbol", help="Synchronize one symbol")
+    p_sync_symbol.add_argument("code", help="Symbol code")
+    p_sync_symbol.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_sync_symbol.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Target history days",
+    )
+    p_sync_symbol.add_argument(
+        "--skip-fundamentals",
+        action="store_true",
+        help="Skip fundamentals sync for this symbol.",
+    )
+    p_sync_symbol.add_argument(
+        "--full-history",
+        action="store_true",
+        help="Attempt to fetch the symbol's full available history.",
+    )
+    p_sync_symbol.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_sync_symbol.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_sync_symbol.set_defaults(func=cmd_sync)
+
+    p_sync_watchlist = sync_sub.add_parser(
+        "watchlist",
+        help="Synchronize configured watchlist",
+    )
+    p_sync_watchlist.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_sync_watchlist.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Target history days",
+    )
+    p_sync_watchlist.add_argument(
+        "--skip-fundamentals",
+        action="store_true",
+        help="Skip fundamentals sync for this scope.",
+    )
+    p_sync_watchlist.add_argument("--full-history", action="store_true")
+    p_sync_watchlist.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_sync_watchlist.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_sync_watchlist.set_defaults(func=cmd_sync)
+
+    p_sync_portfolio = sync_sub.add_parser(
+        "portfolio",
+        help="Synchronize a portfolio code list",
+    )
+    p_sync_portfolio.add_argument(
+        "--codes",
+        required=True,
+        help="Comma-separated symbol codes",
+    )
+    p_sync_portfolio.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_sync_portfolio.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Target history days",
+    )
+    p_sync_portfolio.add_argument(
+        "--skip-fundamentals",
+        action="store_true",
+        help="Skip fundamentals sync for this scope.",
+    )
+    p_sync_portfolio.add_argument("--full-history", action="store_true")
+    p_sync_portfolio.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_sync_portfolio.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_sync_portfolio.set_defaults(func=cmd_sync)
+
+    p_sync_etf = sync_sub.add_parser(
+        "etf",
+        help="Synchronize a bounded ETF code list",
+    )
+    p_sync_etf.add_argument(
+        "--codes",
+        required=True,
+        help="Comma-separated ETF codes",
+    )
+    p_sync_etf.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Target history days",
+    )
+    p_sync_etf.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_sync_etf.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_sync_etf.set_defaults(func=cmd_sync)
+
+    p_sync_scan = sync_sub.add_parser(
+        "scan-universe",
+        help="Synchronize a bounded candidate universe for scanning",
+    )
+    p_sync_scan.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_sync_scan.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Max candidate symbols",
+    )
+    p_sync_scan.add_argument(
+        "--days",
+        type=int,
+        default=365,
+        help="Target history days",
+    )
+    p_sync_scan.add_argument(
+        "--skip-fundamentals",
+        action="store_true",
+        help="Skip fundamentals sync for this scope.",
+    )
+    p_sync_scan.add_argument("--full-history", action="store_true")
+    p_sync_scan.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_sync_scan.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_sync_scan.set_defaults(func=cmd_sync)
+
+    # status
+    p = sub.add_parser("status", help="Show data sync status")
+    status_sub = p.add_subparsers(dest="status_command", required=True)
+    p_status_data = status_sub.add_parser(
+        "data",
+        help="Show bounded sync-state diagnostics",
+    )
+    data_sub = p_status_data.add_subparsers(dest="type", required=True)
+
+    p_status_symbol = data_sub.add_parser("symbol", help="Show symbol sync state")
+    p_status_symbol.add_argument("code", help="Symbol code")
+    p_status_symbol.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
+    p_status_symbol.set_defaults(func=cmd_status)
+
+    p_status_watchlist = data_sub.add_parser(
+        "watchlist",
+        help="Show watchlist sync state",
+    )
+    p_status_watchlist.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_status_watchlist.set_defaults(func=cmd_status)
+
+    p_status_portfolio = data_sub.add_parser(
+        "portfolio",
+        help="Show portfolio sync state",
+    )
+    p_status_portfolio.add_argument(
+        "--codes",
+        required=True,
+        help="Comma-separated symbol codes",
+    )
+    p_status_portfolio.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_status_portfolio.set_defaults(func=cmd_status)
+
+    p_status_etf = data_sub.add_parser(
+        "etf",
+        help="Show ETF sync state",
+    )
+    p_status_etf.add_argument(
+        "--codes",
+        required=True,
+        help="Comma-separated ETF codes",
+    )
+    p_status_etf.set_defaults(func=cmd_status)
+
+    p_status_scan = data_sub.add_parser(
+        "scan-universe",
+        help="Show scan-universe sync state",
+    )
+    p_status_scan.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_status_scan.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Candidate scope size used during sync.",
+    )
+    p_status_scan.set_defaults(func=cmd_status)
 
     # alpha
     p = sub.add_parser("alpha", help="Alpha momentum stock scan")

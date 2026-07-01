@@ -2,6 +2,12 @@
 
 A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股、组合构建、风险控制、买卖时机全流程。数据源为 AKShare, 本地 SQLite 积累式缓存。
 
+当前项目定位已经明确为:
+
+- 本地优先、按任务补数据的投资分析/量化决策引擎
+- 不是港股/美股/ETF/基金全市场全量同步平台
+- `FUND` 路径当前按 ETF-first 语义支持, 不等同于广义公募基金全覆盖
+
 ## 适用框架
 
 兼容以下智能体框架, 均使用标准 `SKILL.md` 格式:
@@ -175,6 +181,13 @@ openclaw skills install @axjing/stockaskill --global
 - `scan` / `alpha` 会先补齐候选池的必要数据, 再做本地评分
 - `backtest` 只会对缺失历史做有上限的预热, 不会每次都全市场全历史重拉
 
+最近几批优化后, 本地缓存还新增了以下可见能力:
+
+- 显式有界同步: `sync symbol/watchlist/portfolio/scan-universe/etf`
+- 显式数据诊断: `status data ...`
+- HK/US 元数据质量信号: `metadata_source` / `metadata_status` / `metadata_completeness`
+- HK/US 低质量元数据在 realtime scan 中会被轻量降权, 但不会被粗暴硬过滤
+
 首次完整积累多市场历史数据仍会受到 API 限速保护 (500 次/天) 影响, 但不影响日常使用; 未缓存部分才会触发增量抓取。
 
 ### 后续使用
@@ -244,10 +257,14 @@ openclaw skills install @axjing/stockaskill --global
 | 表 | 内容 | 更新策略 |
 |:---|:-----|:---------|
 | `stock_pool` | 全市场股票池 (A / HK / US / FUND) | 按市场独立 TTL 更新 |
+| `stock_pool_v2` | 市场感知股票池 + 元数据质量字段 | 当前主读取路径 |
 | `daily_price` | 个股日 K 线 (前复权) | 按需增量, 只有缺失区间才拉取 |
+| `daily_price_v2` | 市场感知 K 线缓存 | 当前主读取路径 |
 | `factor_snapshot` | 基本面快照 (PE/PB/ROE/增速) | 按 TTL 过期更新 |
+| `factor_snapshot_v2` | 市场感知基本面快照 | 当前主读取路径 |
 | `computed_factors` | 计算因子值 | 本地计算, 无需 API |
 | `sentiment` | 情绪分析结果 | 按需增量 |
+| `sync_state` | scope 级同步状态 / 覆盖日期 / 错误信息 | `sync` / `status data` 使用 |
 | `cache_meta` | 缓存元信息 (防重复) | 自动维护 |
 | `api_usage` | API 调用计数 (限速) | 自动记录 |
 
@@ -259,6 +276,28 @@ openclaw skills install @axjing/stockaskill --global
 - 回测: 仅对缺失历史执行有上限的批量预热
 - 失败退避: 2^n 秒, 最多 3 次重试
 - 日配额上限: 500 次 (硬限制, 超出后返回本地数据)
+
+## 当前支持边界
+
+- A 股: 支持最深, 也是当前最稳定的市场
+- HK / US: 支持有界候选池、watchlist、portfolio、scan-universe 工作流
+- ETF: 一等支持对象, 当前通过 `FUND` / `etf` 路径使用
+- 广义公募基金: 暂不作为核心路线, 不建议按“全市场基金平台”理解当前项目
+
+## 元数据质量说明
+
+HK/US 池子会缓存以下额外字段:
+
+- `metadata_source`: 元数据来源
+- `metadata_status`: 归一化状态, 如 `active` / `delisted` / `suspended`
+- `metadata_completeness`: 0-1 之间的完整度分数
+
+这些信号目前用于两类目的:
+
+- `status data` 中显示 market-level 元数据健康摘要
+- realtime `scan` 中对 HK/US 低质量元数据做轻量降权
+
+它们当前是软信号, 不是硬过滤条件。
 
 ## 配置参数
 
@@ -323,6 +362,7 @@ ls .agents/skills/
 - 显式调用: 在提示中使用 `$stockaskill` 或 `/skills` 选择技能
 - 项目指令: 在仓库根目录创建 `CODEX.md` 或 `AGENTS.md` 编写持久化项目指引
 - 全局指令: `~/.codex/AGENTS.md` 用于个人默认设置
+- 建议在项目指令中明确写入“本地优先、按任务补数据、避免全市场全量同步”这一产品边界
 
 **禁用技能** (在 `~/.codex/config.toml` 中):
 ```toml
@@ -426,6 +466,31 @@ python stockaskill/scripts/run.py analyze 600519 --market A        # 个股分�
 python stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
 python stockaskill/scripts/run.py backtest                         # 回测验证
 python stockaskill/scripts/run.py fetch pool                       # 刷新数据池
+python stockaskill/scripts/run.py sync symbol 600519 --market A    # 单标的有界同步
+python stockaskill/scripts/run.py sync etf --codes 510300,159915   # ETF有界同步
+python stockaskill/scripts/run.py status data watchlist --market US # 数据状态诊断
+```
+
+### 有界同步与诊断
+
+项目已经不再建议“先全量拉完再分析”的使用方式。推荐直接按任务范围同步:
+
+```bash
+python stockaskill/scripts/run.py sync symbol 600519 --market A
+python stockaskill/scripts/run.py sync watchlist --market HK
+python stockaskill/scripts/run.py sync portfolio --codes AAPL,MSFT --market US
+python stockaskill/scripts/run.py sync scan-universe --market A --limit 200
+python stockaskill/scripts/run.py sync etf --codes 510300,159915
+```
+
+查看数据状态与元数据健康度:
+
+```bash
+python stockaskill/scripts/run.py status data symbol 600519 --market A
+python stockaskill/scripts/run.py status data watchlist --market US
+python stockaskill/scripts/run.py status data portfolio --codes 0700,9988 --market HK
+python stockaskill/scripts/run.py status data etf --codes 510300,159915
+python stockaskill/scripts/run.py status data scan-universe --market A --limit 200
 ```
 
 ## 数据来源

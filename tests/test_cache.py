@@ -44,6 +44,46 @@ class TestCacheManager:
         assert pool[0]["code"] == "601318"
         assert pool[0]["name"] == "PingAn"
 
+    def test_stock_pool_v2_persists_metadata_fields(self, cache):
+        rows = [
+            {
+                "code": "AAPL",
+                "name": "Apple",
+                "market": "US",
+                "sector": "Technology",
+                "industry": "Consumer Electronics",
+                "list_date": "",
+                "total_market_cap": 3.0e12,
+                "is_active": 1,
+                "metadata_source": "akshare_stock_us_spot",
+                "metadata_status": "active",
+                "metadata_completeness": 0.75,
+                "updated_at": "2025-01-01",
+            }
+        ]
+        cache.upsert_stock_pool(rows)
+        pool = cache.get_stock_pool("US")
+        assert pool[0]["metadata_source"] == "akshare_stock_us_spot"
+        assert pool[0]["metadata_status"] == "active"
+        assert pool[0]["metadata_completeness"] == 0.75
+
+    def test_stock_pool_is_market_aware_in_v2_table(self, cache):
+        rows = [
+            {"code": "00001", "name": "CKH", "market": "HK",
+             "sector": "", "industry": "",
+             "list_date": "", "total_market_cap": 0.0,
+             "is_active": 1, "updated_at": "2025-01-01"},
+            {"code": "00001", "name": "FundLike", "market": "FUND",
+             "sector": "", "industry": "ETF",
+             "list_date": "", "total_market_cap": 0.0,
+             "is_active": 1, "updated_at": "2025-01-01"},
+        ]
+        cache.upsert_stock_pool(rows)
+        hk_pool = cache.get_stock_pool("HK")
+        fund_pool = cache.get_stock_pool("FUND")
+        assert hk_pool[0]["name"] == "CKH"
+        assert fund_pool[0]["name"] == "FundLike"
+
     def test_stock_pool_empty_market(self, cache):
         pool = cache.get_stock_pool("HK")
         assert pool == []
@@ -105,6 +145,19 @@ class TestCacheManager:
         latest = cache.get_latest_date("601318")
         assert latest == "2025-01-05"
 
+    def test_get_latest_date_is_market_aware(self, cache):
+        rows = [
+            {"code": "ABC", "date": "2025-01-02", "open": 10.0,
+             "high": 11.0, "low": 9.5, "close": 10.5,
+             "volume": 1e7, "amount": 6.05e8, "market": "US"},
+            {"code": "ABC", "date": "2025-01-06", "open": 20.0,
+             "high": 21.0, "low": 19.5, "close": 20.5,
+             "volume": 1e7, "amount": 6.05e8, "market": "HK"},
+        ]
+        cache.upsert_daily_price(rows)
+        assert cache.get_latest_date("ABC", market="US") == "2025-01-02"
+        assert cache.get_latest_date("ABC", market="HK") == "2025-01-06"
+
     def test_get_latest_date_empty(self, cache):
         assert cache.get_latest_date("601318") is None
 
@@ -112,7 +165,7 @@ class TestCacheManager:
 
     def test_upsert_and_get_factor_snapshot(self, cache):
         rows = [{
-            "code": "601318", "date": "2025-01-01",
+            "code": "601318", "market": "A", "date": "2025-01-01",
             "market_cap": 1.2e12, "pe_ttm": 8.5, "pe_static": 8.0,
             "pb": 0.95, "ps_ttm": 1.5, "pcf_ttm": 5.0,
             "dividend_yield": 4.2, "roe": 0.15, "roa": 0.05,
@@ -125,6 +178,27 @@ class TestCacheManager:
         assert snap is not None
         assert snap["pe_ttm"] == 8.5
         assert snap["pb"] == 0.95
+
+    def test_sync_state_roundtrip(self, cache):
+        cache.upsert_sync_state(
+            [
+                {
+                    "scope_type": "symbol",
+                    "scope_key": "A:601318",
+                    "market": "A",
+                    "code": "601318",
+                    "data_kind": "history",
+                    "last_success_at": "2026-07-01 12:00:00",
+                    "last_covered_date": "2026-07-01",
+                    "last_error": "",
+                    "status": "ok",
+                }
+            ]
+        )
+        rows = cache.get_sync_state("symbol", "A:601318", market="A", code="601318")
+        assert len(rows) == 1
+        assert rows[0]["data_kind"] == "history"
+        assert rows[0]["last_covered_date"] == "2026-07-01"
 
     def test_get_factor_snapshot_missing(self, cache):
         assert cache.get_latest_factor_snapshot("missing") is None

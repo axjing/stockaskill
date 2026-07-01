@@ -1,6 +1,7 @@
 from datetime import datetime
 from unittest.mock import patch
 
+import pandas as pd
 from config import load_config
 
 load_config()
@@ -201,3 +202,121 @@ class TestEnsureStockPoolCandidatesReady:
 
         assert result["already_ready"] == 1
         mock_cache.upsert_stock_pool.assert_not_called()
+
+
+class TestCrossMarketPoolNormalization:
+    def test_fetch_hk_stock_pool_extracts_metadata_and_inactive_status(self):
+        hk_df = pd.DataFrame(
+            [
+                {
+                    "代码": "00700",
+                    "中文名称": "Tencent",
+                    "行业": "Internet",
+                    "地区": "Technology",
+                    "总市值": "5000000",
+                    "状态": "正常",
+                },
+                {
+                    "代码": "00001",
+                    "中文名称": "Legacy Delisted",
+                    "状态": "Delisted",
+                },
+            ]
+        )
+        ak = type("FakeAk", (), {"stock_hk_spot": lambda self: hk_df})()
+
+        with patch("data_engine._cache") as mock_cache:
+            mock_cache.record_api_call.return_value = True
+            from data_engine import _fetch_hk_stock_pool
+
+            result = _fetch_hk_stock_pool(ak)
+        assert result is not None
+        assert result.iloc[0]["industry"] == "Internet"
+        assert result.iloc[0]["sector"] == "Technology"
+        assert result.iloc[0]["total_market_cap"] == 5000000.0
+        assert result.iloc[0]["metadata_source"] == "akshare_stock_hk_spot"
+        assert result.iloc[0]["metadata_status"] == "active"
+        assert result.iloc[0]["metadata_completeness"] == 0.75
+        assert result.iloc[1]["is_active"] == 0
+
+    def test_fetch_us_stock_pool_extracts_metadata_and_inactive_status(self):
+        us_df = pd.DataFrame(
+            [
+                {
+                    "代码": "AAPL",
+                    "名称": "Apple",
+                    "所属行业": "Consumer Electronics",
+                    "总市值": "3000000",
+                    "状态": "Active",
+                },
+                {
+                    "代码": "ZZZZ",
+                    "名称": "Suspended Test",
+                    "状态": "Suspended",
+                },
+            ]
+        )
+        ak = type("FakeAk", (), {"stock_us_spot": lambda self: us_df})()
+
+        with patch("data_engine._cache") as mock_cache:
+            mock_cache.record_api_call.return_value = True
+            from data_engine import _fetch_us_stock_pool
+
+            result = _fetch_us_stock_pool(ak)
+        assert result is not None
+        assert result.iloc[0]["industry"] == "Consumer Electronics"
+        assert result.iloc[0]["total_market_cap"] == 3000000.0
+        assert result.iloc[0]["metadata_source"] == "akshare_stock_us_spot"
+        assert result.iloc[1]["metadata_status"] == "suspended"
+        assert result.iloc[1]["is_active"] == 0
+
+    def test_ensure_stock_pool_candidates_ready_summarizes_non_a_metadata(self):
+        with patch("data_engine._cache") as mock_cache:
+            mock_cache.get_stock_pool.return_value = [
+                {
+                    "code": "AAPL",
+                    "metadata_completeness": 0.75,
+                    "list_date": "",
+                    "total_market_cap": 3.0e12,
+                    "is_active": 1,
+                },
+                {
+                    "code": "ZZZZ",
+                    "metadata_completeness": 0.25,
+                    "list_date": "",
+                    "total_market_cap": 0.0,
+                    "is_active": 0,
+                },
+            ]
+
+            from data_engine import ensure_stock_pool_candidates_ready
+
+            result = ensure_stock_pool_candidates_ready("US", ["AAPL", "ZZZZ"])
+
+        assert result["metadata_complete"] == 1
+        assert result["metadata_partial"] == 1
+        assert result["inactive_count"] == 1
+
+
+class TestSyncEtfData:
+    def test_sync_etf_data_uses_fund_nav_cache_and_scope_state(self):
+        with patch("data_engine._cache") as mock_cache, patch(
+            "data_engine.get_fund_nav"
+        ) as mock_get_fund_nav:
+            mock_cache.get_fund_nav.side_effect = [
+                [],
+                [{"date": "2026-07-01", "nav": 4.0}] * 365,
+            ]
+            mock_get_fund_nav.return_value = [{"date": "2026-07-01", "nav": 4.0}] * 365
+
+            from data_engine import sync_etf_data
+
+            result = sync_etf_data(["510300"], history_days=365)
+
+        assert result["requested"] == 1
+        assert result["ready"] == 1
+        assert result["history_fetched_count"] == 1
+        assert result["covered_through"] == "2026-07-01"
+        mock_get_fund_nav.assert_called_once_with("510300", 365)
+        upsert_rows = mock_cache.upsert_sync_state.call_args_list[0].args[0]
+        assert upsert_rows[0]["data_kind"] == "nav"

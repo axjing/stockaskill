@@ -12,19 +12,20 @@ license: MIT
 compatibility: Requires Python 3.10+, network access (free, no API key).
 metadata:
   author: stockaskill-team
-  version: "1.2"
+  version: "1.3"
   short-description: Multi-market intelligent stock selection with AKShare
 ---
 
 # Smart Stock Selector
 
-Multi-market stock selection with AKShare + SQLite caching. Covers A-shares, HK, US, and funds (ETF/LOF).
+Multi-market stock selection with AKShare + SQLite caching. Covers A-shares, HK, US, and ETF-first fund workflows.
 
 ## Core promise
 
 Given a stock code, market, or investment theme, return actionable signals with scores.
 Use local cache first. Only fetch missing or stale pool, history, fundamentals, or index data.
 Warm data by task scope, not by blind full-market full-history refresh.
+Do not treat this skill as a warehouse or full-market sync platform.
 
 ## Triggers
 
@@ -38,7 +39,7 @@ Activate on any of these user intents:
 | Ranking, alpha, momentum | Alpha momentum scan |
 | Portfolio, 组合, allocation | Portfolio construction |
 | Backtest, 回测, validation | Historical backtest |
-| Fund, ETF, 基金 | Fund screening |
+| ETF, 基金, Fund | ETF screening / ETF data sync |
 | Sentiment, sentiment, 情绪 | Market sentiment check |
 | Refresh, 刷新, cache | Data operations |
 
@@ -126,14 +127,28 @@ They do not force a full-market historical sync on every run.
 
 For deeper programmatic access:
 
-    from data_engine import get_fund_pool, get_fund_nav
-    funds = get_fund_pool()
+    from data_engine import get_etf_pool, get_fund_nav
+    funds = get_etf_pool()
+
+Current `FUND` behavior is ETF-first. Broad mutual-fund NAV ingestion is not a
+core supported workflow yet.
 
 ### 8. Data operations
 
     python stockaskill/scripts/run.py fetch pool                # full pool refresh
     python stockaskill/scripts/run.py fetch kline 600519        # single stock K-line
     python stockaskill/scripts/run.py fetch fundamentals 600519 # single stock fundamentals
+
+Bounded sync and diagnostics:
+
+    python stockaskill/scripts/run.py sync symbol 600519 --market A
+    python stockaskill/scripts/run.py sync watchlist --market US
+    python stockaskill/scripts/run.py sync portfolio --codes 0700,9988 --market HK
+    python stockaskill/scripts/run.py sync etf --codes 510300,159915
+    python stockaskill/scripts/run.py sync scan-universe --market A --limit 200
+    python stockaskill/scripts/run.py status data symbol 600519 --market A
+    python stockaskill/scripts/run.py status data watchlist --market US
+    python stockaskill/scripts/run.py status data etf --codes 510300,159915
 
 ## Output guidelines
 
@@ -175,6 +190,7 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 | import akshare fails | Not installed | pip install akshare efinance baostock |
 | Code not found | Pool not fetched for that market | `python stockaskill/scripts/run.py fetch pool` |
 | Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or prefetch pools first |
+| HK/US candidates look noisy | Cross-market metadata incomplete | check `status data` metadata summary before trusting rankings |
 
 ## Key principles
 
@@ -182,9 +198,11 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 2. **Multi-factor, multi-strategy** - Weighted vote across 6 strategies from 7 factor dimensions.
 3. **Task-scoped warmup** - `analyze`/`scan`/`backtest` fetch only the minimal missing pool, history, fundamentals, or index data.
 4. **Market-aware caching** - A/HK/US/FUND pools and TTL metadata are tracked independently.
-5. **Script-driven** - Run `python stockaskill/scripts/run.py`, never reimplement logic.
-6. **Parallel scoring** - Thread pool (8 workers) for alpha scans.
-7. **Graceful degradation** - Cache-only mode on API limit. Partial results over failures.
+5. **ETF-first fund semantics** - `FUND` currently means exchange-traded ETF workflows, not broad mutual-fund coverage.
+6. **Metadata-aware cross-market support** - HK/US pools carry source, status, and completeness signals; low-quality metadata may be soft-penalized in ranking.
+7. **Script-driven** - Run `python stockaskill/scripts/run.py`, never reimplement logic.
+8. **Parallel scoring** - Thread pool (8 workers) for alpha scans.
+9. **Graceful degradation** - Cache-only mode on API limit. Partial results over failures.
 
 ## Reference files
 
