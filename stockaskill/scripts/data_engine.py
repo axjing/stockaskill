@@ -1217,6 +1217,12 @@ def get_fundamentals(
             snapshot["market"] = market
             _cache.upsert_factor_snapshot([snapshot])
             return snapshot
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "Daily API limit reached" in msg:
+            logger.debug("get_fundamentals API limit for %s, using cache", code)
+        else:
+            logger.warning("get_fundamentals fetch failed for %s: %s", code, exc)
     except Exception as exc:
         logger.warning("get_fundamentals fetch failed for %s: %s", code, exc)
     return cached
