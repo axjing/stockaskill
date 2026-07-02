@@ -18,7 +18,7 @@ Usage:
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,6 +33,7 @@ class ReportMetadata:
     Provides a typed contract for report metadata,
     ensuring consistent field names across all reports.
     """
+
     command: str = ""
     market: str = ""
     top_n: int = 0
@@ -113,13 +114,15 @@ def format_scan_results(results: List[Dict[str, Any]]) -> str:
     for i, r in enumerate(results, 1):
         score = r.get("total_score", 0)
         signal = r.get("signal", r.get("f_score", "—"))
-        rows.append([
-            str(i),
-            r.get("code", "?"),
-            r.get("name", "?"),
-            f"{score:.1f}" if isinstance(score, (int, float)) else str(score),
-            str(signal),
-        ])
+        rows.append(
+            [
+                str(i),
+                r.get("code", "?"),
+                r.get("name", "?"),
+                f"{score:.1f}" if isinstance(score, (int, float)) else str(score),
+                str(signal),
+            ]
+        )
     return format_score_table(headers, rows)
 
 
@@ -170,9 +173,7 @@ def format_market_regime_summary(regime: Dict[str, Any]) -> str:
     lines = [f"# Market Regime: {regime.get('market', '?')}", ""]
     lines.append(f"**Posture:** {regime.get('posture_label', '中性')}")
     lines.append(f"**Score:** {float(regime.get('score', 50) or 50):.1f}/100")
-    lines.append(
-        f"**Risk budget:** {float(regime.get('risk_budget', 1.0) or 1.0):.2f}"
-    )
+    lines.append(f"**Risk budget:** {float(regime.get('risk_budget', 1.0) or 1.0):.2f}")
     lines.append(
         f"**New positions allowed:** "
         f"{'yes' if regime.get('new_positions_allowed') else 'no'}"
@@ -189,7 +190,9 @@ def format_market_regime_summary(regime: Dict[str, Any]) -> str:
             f"{technical.get('ma60', 'N/A')} / "
             f"{technical.get('ma120', 'N/A')}"
         )
-        lines.append(f"- 20D Return: {float(technical.get('ret20', 0) or 0) * 100:.2f}%")
+        lines.append(
+            f"- 20D Return: {float(technical.get('ret20', 0) or 0) * 100:.2f}%"
+        )
         lines.append(
             f"- 60D Drawdown: {float(technical.get('drawdown60', 0) or 0) * 100:.2f}%"
         )
@@ -206,10 +209,12 @@ def format_market_regime_summary(regime: Dict[str, Any]) -> str:
             f"{breadth.get('sample_limit', 0)}"
         )
         lines.append(
-            f"- Above MA20: {float(breadth.get('above_ma20_ratio', 0.5) or 0.5) * 100:.1f}%"
+            "- Above MA20: "
+            f"{float(breadth.get('above_ma20_ratio', 0.5) or 0.5) * 100:.1f}%"
         )
         lines.append(
-            f"- Above MA60: {float(breadth.get('above_ma60_ratio', 0.5) or 0.5) * 100:.1f}%"
+            "- Above MA60: "
+            f"{float(breadth.get('above_ma60_ratio', 0.5) or 0.5) * 100:.1f}%"
         )
         lines.append("")
 
@@ -236,7 +241,9 @@ def format_diagnosis_summary(report: Dict[str, Any]) -> str:
     decision = report.get("final_decision", {})
     signal = decision.get("signal", "HOLD")
     score = decision.get("adjusted_score", 50)
-    lines.append(f"# Diagnosis: {report.get('code', '?')} ({report.get('market', '?')})")
+    lines.append(
+        f"# Diagnosis: {report.get('code', '?')} ({report.get('market', '?')})"
+    )
     lines.append("")
     lines.append(f"**Signal:** {signal} | **Score:** {score:.1f}/100")
     lines.append("")
@@ -411,6 +418,80 @@ def format_backtest_summary(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_scorecard(scorecard: Dict[str, Any]) -> str:
+    """Format a generic scorecard block as Markdown."""
+    if not scorecard:
+        return ""
+    lines = [
+        "## Scorecard",
+        f"- Name: {scorecard.get('name', 'scorecard')}",
+        f"- Score: {float(scorecard.get('score', 0) or 0):.1f}/100",
+        f"- Level: {scorecard.get('level', 'medium')}",
+    ]
+    if scorecard.get("summary"):
+        lines.append(f"- Summary: {scorecard.get('summary')}")
+    dimensions = scorecard.get("dimensions", []) or []
+    if dimensions:
+        lines.append("")
+        lines.append("| Dimension | Score | Verdict | Evidence |")
+        lines.append("|---|---:|---|---|")
+        for item in dimensions:
+            evidence = "；".join(item.get("evidence", []) or []) or "-"
+            lines.append(
+                "| "
+                f"{item.get('name', '')} | "
+                f"{float(item.get('score', 0) or 0):.1f} | "
+                f"{item.get('verdict', '')} | "
+                f"{evidence} |"
+            )
+    strengths = scorecard.get("strengths", []) or []
+    if strengths:
+        lines.append("")
+        lines.append("### Strengths")
+        for item in strengths:
+            lines.append(f"- {item}")
+    gaps = scorecard.get("gaps", []) or []
+    if gaps:
+        lines.append("")
+        lines.append("### Gaps")
+        for item in gaps:
+            lines.append(f"- {item}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def format_attribution(attribution: Dict[str, Any]) -> str:
+    """Format a postmortem attribution block as Markdown."""
+    if not attribution:
+        return ""
+    lines = [
+        "## Attribution",
+        f"- Outcome: {attribution.get('outcome', 'neutral')}",
+        f"- Primary Driver: {attribution.get('primary_driver', 'mixed')}",
+        f"- Summary: {attribution.get('summary', '')}",
+    ]
+    positives = attribution.get("positives", []) or []
+    if positives:
+        lines.append("")
+        lines.append("### Positives")
+        for item in positives:
+            lines.append(f"- {item}")
+    negatives = attribution.get("negatives", []) or []
+    if negatives:
+        lines.append("")
+        lines.append("### Negatives")
+        for item in negatives:
+            lines.append(f"- {item}")
+    adjustments = attribution.get("adjustments", []) or []
+    if adjustments:
+        lines.append("")
+        lines.append("### Adjustments")
+        for item in adjustments:
+            lines.append(f"- {item}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def format_thesis_summary(record: Dict[str, Any]) -> str:
     """Format a thesis-memory record as Markdown."""
     lines = [
@@ -436,6 +517,9 @@ def format_thesis_summary(record: Dict[str, Any]) -> str:
     )
     if confidence_block:
         lines.append(confidence_block)
+    scorecard_block = format_scorecard(record.get("scorecard", {}) or {})
+    if scorecard_block:
+        lines.append(scorecard_block)
 
     if record.get("notes"):
         lines.append("## Notes")
@@ -468,12 +552,13 @@ def format_thesis_summary(record: Dict[str, Any]) -> str:
         lines.append("## Postmortem")
         lines.append(f"- Outcome: {postmortem.get('outcome', 'unknown')}")
         lines.append(f"- Reviewed At: {postmortem.get('reviewed_at', '?')}")
-        lines.append(
-            f"- Thesis Status: {postmortem.get('thesis_status', 'closed')}"
-        )
+        lines.append(f"- Thesis Status: {postmortem.get('thesis_status', 'closed')}")
         if postmortem.get("notes"):
             lines.append(f"- Notes: {postmortem.get('notes')}")
         lines.append("")
+    attribution_block = format_attribution(record.get("attribution", {}) or {})
+    if attribution_block:
+        lines.append(attribution_block)
 
     return "\n".join(lines)
 
@@ -494,6 +579,9 @@ def format_theme_research(report: Dict[str, Any]) -> str:
     )
     if confidence_block:
         lines.append(confidence_block)
+    scorecard_block = format_scorecard(report.get("scorecard", {}) or {})
+    if scorecard_block:
+        lines.append(scorecard_block)
 
     layers = report.get("layers", []) or []
     if layers:

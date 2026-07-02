@@ -1,11 +1,11 @@
 import pytest
 from factors.base import Factor
-from factors.value import ValueFactor
-from factors.quality import QualityFactor
 from factors.growth import GrowthFactor
-from factors.momentum import MomentumFactor
 from factors.low_vol import LowVolFactor
+from factors.momentum import MomentumFactor
+from factors.quality import QualityFactor
 from factors.size import SizeFactor
+from factors.value import ValueFactor
 
 
 def test_factor_base_abstract():
@@ -48,11 +48,13 @@ class TestValueFactor:
     def test_batch_normalization(self, mock_kline_rising):
         stocks = []
         for code, pe, pb in [("A", 5, 0.5), ("B", 20, 2), ("C", 50, 5)]:
-            stocks.append({
-                "code": code,
-                "fundamentals": {"pe_ttm": pe, "pb": pb, "dividend_yield": 0},
-                "kline": mock_kline_rising,
-            })
+            stocks.append(
+                {
+                    "code": code,
+                    "fundamentals": {"pe_ttm": pe, "pb": pb, "dividend_yield": 0},
+                    "kline": mock_kline_rising,
+                }
+            )
         vf = ValueFactor()
         result = vf.compute_batch(stocks)
         assert len(result) == 3
@@ -75,7 +77,13 @@ class TestQualityFactor:
         assert 0 <= score <= 1
 
     def test_high_roe_high_score(self):
-        fund = {"roe": 0.3, "gross_margin": 0.6, "debt_ratio": 0.2, "eps": 5, "bvps": 20}
+        fund = {
+            "roe": 0.3,
+            "gross_margin": 0.6,
+            "debt_ratio": 0.2,
+            "eps": 5,
+            "bvps": 20,
+        }
         qf = QualityFactor()
         score = qf.compute(fund, [])
         assert score > 0.5
@@ -168,6 +176,7 @@ class TestLowVolFactor:
 
     def test_high_volatility_low_score(self):
         import random
+
         random.seed(42)
         kline = [{"close": 50 + random.uniform(-5, 5)} for _ in range(250)]
         lf = LowVolFactor()

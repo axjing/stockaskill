@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 from string import Formatter
-from typing import Any
 
 from models import WorkflowManifest, WorkflowManifestStep, WorkflowRunPlan
 

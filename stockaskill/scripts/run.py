@@ -41,8 +41,7 @@ def _require_supported_python() -> None:
     required = ".".join(str(part) for part in _MIN_PYTHON)
     current = ".".join(str(part) for part in sys.version_info[:3])
     print(
-        "stockaskill requires Python >= "
-        f"{required}; current interpreter is {current}.",
+        f"stockaskill requires Python >= {required}; current interpreter is {current}.",
         file=sys.stderr,
     )
     print(
@@ -90,11 +89,17 @@ from report_generator import (  # noqa: E402
     format_diagnosis_summary,
     format_market_regime_summary,
     format_portfolio_summary,
+    format_scorecard,
     format_theme_research,
     format_thesis_summary,
     format_workflow_run_summary,
     save_markdown,
     save_report,
+)
+from scorecards import (  # noqa: E402
+    build_diagnosis_scorecard,
+    build_theme_scorecard,
+    build_thesis_scorecard,
 )
 from theme_research import build_theme_report  # noqa: E402
 from thesis_memory import (  # noqa: E402
@@ -105,11 +110,11 @@ from thesis_memory import (  # noqa: E402
     update_thesis_postmortem,
 )
 from utils import normalize_code_for_market  # noqa: E402
-from workflows import build_workflow_recommendation  # noqa: E402
 from workflow_runner import (  # noqa: E402
     build_workflow_run_plan,
     list_workflow_manifests,
 )
+from workflows import build_workflow_recommendation  # noqa: E402
 
 
 def _save_report(
@@ -318,6 +323,99 @@ def cmd_workflow(args: argparse.Namespace) -> None:
     print(f"Unknown workflow action: {action}")
 
 
+def cmd_scorecard(args: argparse.Namespace) -> None:
+    """Build scorecards for thesis, theme, or diagnosis artifacts."""
+    action = getattr(args, "action", "")
+    market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+
+    if action == "thesis":
+        thesis_id = str(getattr(args, "thesis_id", "") or "").strip()
+        code = normalize_code_for_market(args.code, market) if args.code else ""
+        record = get_thesis_record(thesis_id=thesis_id, code=code, market=market)
+        if not record:
+            print("Thesis record not found.", file=sys.stderr)
+            return
+        scorecard = record.get("scorecard", {}) or build_thesis_scorecard(record)
+        print(
+            f"Scorecard thesis {record.get('code', '?')} "
+            f"(score={float(scorecard.get('score', 0) or 0):.1f}, "
+            f"level={scorecard.get('level', 'medium')})"
+        )
+        md = format_scorecard(scorecard)
+        print(md)
+        report_name = (
+            f"scorecard_thesis_{record.get('code', 'unknown')}_"
+            f"{record.get('market', market)}"
+        )
+        _save_report(
+            report_name,
+            fmt,
+            output_dir,
+            data=scorecard,
+            md=md,
+            metadata={
+                "command": "scorecard-thesis",
+                "market": record.get("market", market),
+                "code": record.get("code", ""),
+                "thesis_id": record.get("thesis_id", ""),
+            },
+        )
+        return
+
+    if action == "theme":
+        theme = " ".join(getattr(args, "theme", []) or []).strip()
+        report = build_theme_report(
+            theme=theme,
+            market=market,
+            top_n=int(getattr(args, "top", 3) or 3),
+            candidate_limit=int(getattr(args, "candidates", 0) or 0),
+        ).to_dict()
+        scorecard = report.get("scorecard", {}) or build_theme_scorecard(report)
+        print(
+            f"Scorecard theme {theme} "
+            f"(score={float(scorecard.get('score', 0) or 0):.1f}, "
+            f"level={scorecard.get('level', 'medium')})"
+        )
+        md = format_scorecard(scorecard)
+        print(md)
+        _save_report(
+            f"scorecard_theme_{market}",
+            fmt,
+            output_dir,
+            data=scorecard,
+            md=md,
+            metadata={"command": "scorecard-theme", "market": market, "theme": theme},
+        )
+        return
+
+    if action == "diagnose":
+        from advisor.diagnosis import StockDiagnosis
+
+        code = normalize_code_for_market(args.code, market)
+        report = StockDiagnosis(code, market).full_report()
+        scorecard = build_diagnosis_scorecard(report)
+        print(
+            f"Scorecard diagnose {code} "
+            f"(score={float(scorecard.get('score', 0) or 0):.1f}, "
+            f"level={scorecard.get('level', 'medium')})"
+        )
+        md = format_scorecard(scorecard)
+        print(md)
+        _save_report(
+            f"scorecard_diagnose_{code}_{market}",
+            fmt,
+            output_dir,
+            data=scorecard,
+            md=md,
+            metadata={"command": "scorecard-diagnose", "market": market, "code": code},
+        )
+        return
+
+    print(f"Unknown scorecard action: {action}")
+
+
 def cmd_thesis(args: argparse.Namespace) -> None:
     """Manage local thesis memory and postmortem records."""
     action = getattr(args, "action", "")
@@ -395,8 +493,12 @@ def cmd_thesis(args: argparse.Namespace) -> None:
             return
         md = format_thesis_summary(record)
         print(md)
+        report_name = (
+            f"thesis_review_{record.get('code', 'unknown')}_"
+            f"{record.get('market', market)}"
+        )
         _save_report(
-            f"thesis_review_{record.get('code', 'unknown')}_{record.get('market', market)}",
+            report_name,
             fmt,
             output_dir,
             data=record,
@@ -427,8 +529,12 @@ def cmd_thesis(args: argparse.Namespace) -> None:
             return
         md = format_thesis_summary(record)
         print(md)
+        report_name = (
+            f"thesis_postmortem_{record.get('code', 'unknown')}_"
+            f"{record.get('market', market)}"
+        )
         _save_report(
-            f"thesis_postmortem_{record.get('code', 'unknown')}_{record.get('market', market)}",
+            report_name,
             fmt,
             output_dir,
             data=record,
@@ -687,8 +793,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
         summary = None
         if mode == "realtime":
             print(
-                "  Realtime mode is approximate and only evaluates a candidate"
-                " subset.",
+                "  Realtime mode is approximate and only evaluates a candidate subset.",
                 flush=True,
             )
             results = scanner.scan_top(
@@ -719,8 +824,10 @@ def cmd_scan(args: argparse.Namespace) -> None:
                     "fallback_mode": "realtime",
                     "requested_mode": mode,
                 }
-            elif mode == "snapshot" and status["status"] != "fresh" and not getattr(
-                args, "refresh", False
+            elif (
+                mode == "snapshot"
+                and status["status"] != "fresh"
+                and not getattr(args, "refresh", False)
             ):
                 reason = "缺失" if status["status"] == "missing" else "过期"
                 print(f"  本地全市场快照{reason}。", flush=True)
@@ -1549,9 +1656,9 @@ def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
         bt = importlib.import_module("backtest_enhanced")
         result = bt.run_backtest()
         print(
-            f"\n  Result: CAGR={result.get('cagr', 0)*100:.2f}%, "
+            f"\n  Result: CAGR={result.get('cagr', 0) * 100:.2f}%, "
             f"Sharpe={result.get('sharpe', 0):.2f}, "
-            f"MaxDD={result.get('max_drawdown', 0)*100:.2f}%"
+            f"MaxDD={result.get('max_drawdown', 0) * 100:.2f}%"
         )
 
         md = format_backtest_summary(result)
@@ -1722,11 +1829,13 @@ def cmd_market_regime(args: argparse.Namespace) -> None:
             f" ret20={float(technical.get('ret20', 0) or 0) * 100:.2f}%"
         )
     if breadth:
+        above_ma20 = float(breadth.get("above_ma20_ratio", 0.5) or 0.5) * 100
+        above_ma60 = float(breadth.get("above_ma60_ratio", 0.5) or 0.5) * 100
         print(
             "  Breadth:"
             f" sample={breadth.get('sample_size', 0)}/{breadth.get('sample_limit', 0)},"
-            f" above_ma20={float(breadth.get('above_ma20_ratio', 0.5) or 0.5) * 100:.1f}%,"
-            f" above_ma60={float(breadth.get('above_ma60_ratio', 0.5) or 0.5) * 100:.1f}%"
+            f" above_ma20={above_ma20:.1f}%,"
+            f" above_ma60={above_ma60:.1f}%"
         )
     for reason in regime.get("reasons", [])[:5]:
         print(f"  - {reason}")
@@ -1835,6 +1944,69 @@ def main() -> None:
         help="Report output format",
     )
     p_workflow_run.set_defaults(func=cmd_workflow)
+
+    p = sub.add_parser("scorecard", help="Build scorecards for research artifacts")
+    scorecard_sub = p.add_subparsers(dest="action", required=True)
+
+    p_scorecard_thesis = scorecard_sub.add_parser(
+        "thesis",
+        help="Build a scorecard for a saved thesis record",
+    )
+    p_scorecard_thesis.add_argument("--thesis-id", default="", help="Saved thesis id")
+    p_scorecard_thesis.add_argument("--code", default="", help="Code for latest thesis")
+    p_scorecard_thesis.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_scorecard_thesis.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_scorecard_thesis.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_scorecard_thesis.set_defaults(func=cmd_scorecard)
+
+    p_scorecard_theme = scorecard_sub.add_parser(
+        "theme",
+        help="Build a scorecard for a theme research report",
+    )
+    p_scorecard_theme.add_argument("theme", nargs="+", help="Theme name")
+    p_scorecard_theme.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_scorecard_theme.add_argument("--top", type=int, default=3)
+    p_scorecard_theme.add_argument("--candidates", type=int, default=0)
+    p_scorecard_theme.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_scorecard_theme.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_scorecard_theme.set_defaults(func=cmd_scorecard)
+
+    p_scorecard_diagnose = scorecard_sub.add_parser(
+        "diagnose",
+        help="Build a scorecard for a diagnosis report",
+    )
+    p_scorecard_diagnose.add_argument("code", help="Stock code")
+    p_scorecard_diagnose.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_scorecard_diagnose.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_scorecard_diagnose.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_scorecard_diagnose.set_defaults(func=cmd_scorecard)
 
     p = sub.add_parser("thesis", help="Manage local thesis memory")
     thesis_sub = p.add_subparsers(dest="action", required=True)

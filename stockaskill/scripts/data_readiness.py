@@ -60,6 +60,9 @@ def ensure_symbol_ready(
         fundamentals_max_age_days=fundamentals_max_age_days,
     )
     result["covered_through"] = result.get("history_covered_through", "")
+    quality = build_symbol_quality_summary(canonical_code, market, result)
+    result["confidence"] = quality["confidence"]
+    result["provenance"] = quality["provenance"]
     return result
 
 
@@ -90,6 +93,9 @@ def ensure_symbols_ready(
         ],
         default="",
     )
+    quality = build_scope_quality_summary(result, market, scope="symbols")
+    result["confidence"] = quality["confidence"]
+    result["provenance"] = quality["provenance"]
     return result
 
 
@@ -134,9 +140,7 @@ def ensure_watchlist_ready(
         "data_readiness.analysis_history_days", 365
     )
     require_fundamentals = (
-        market != "FUND"
-        if need_fundamentals is None
-        else bool(need_fundamentals)
+        market != "FUND" if need_fundamentals is None else bool(need_fundamentals)
     )
     return sync_watchlist_data(
         market=market,
@@ -159,9 +163,7 @@ def ensure_portfolio_ready(
         "data_readiness.analysis_history_days", 365
     )
     require_fundamentals = (
-        market != "FUND"
-        if need_fundamentals is None
-        else bool(need_fundamentals)
+        market != "FUND" if need_fundamentals is None else bool(need_fundamentals)
     )
     return sync_portfolio_data(
         codes,
@@ -181,7 +183,8 @@ def ensure_scan_universe_ready(
     """Warm a bounded scan universe directly from the market pool."""
     return sync_scan_universe_data(
         market=market,
-        limit=limit or cfg_get(
+        limit=limit
+        or cfg_get(
             "data_readiness.scan_prefetch_limit",
             cfg_get("scan_max_candidates", 200),
         ),
@@ -215,6 +218,9 @@ def ensure_etf_ready(
         ],
         default="",
     )
+    quality = build_scope_quality_summary(result, "FUND", scope="etf")
+    result["confidence"] = quality["confidence"]
+    result["provenance"] = quality["provenance"]
     return result
 
 
@@ -241,12 +247,32 @@ def ensure_market_index_ready(
     if before < target_days:
         get_market_index(index_code, target_days)
     after = len(_cache.get_market_index(index_code, target_days))
-    return {
+    result = {
         "index_code": index_code,
         "history_before": before,
         "history_after": after,
         "history_ready": after >= target_days,
     }
+    score = 0.9 if result["history_ready"] else 0.45
+    result["confidence"] = _build_confidence_block(
+        score=score,
+        notes=[
+            "市场基准历史满足姿态分析要求"
+            if result["history_ready"]
+            else "市场基准历史不足，姿态分析会退化"
+        ],
+    )
+    result["provenance"] = {
+        "scope": "market_index",
+        "market": "A",
+        "freshness": "fresh" if result["history_ready"] else "partial",
+        "covered_through": "",
+        "inputs": ["market_index_history"],
+        "source": index_code,
+        "source_status": "cached",
+        "metadata_completeness": 1.0,
+    }
+    return result
 
 
 def ensure_backtest_ready(
@@ -270,7 +296,7 @@ def ensure_backtest_ready(
     missing_codes = [
         str(stock["code"])
         for stock in candidates
-        if _history_row_count(str(stock["code"])) < min_history
+        if _history_row_count(str(stock["code"]), market) < min_history
     ]
 
     result = ensure_symbols_ready(
@@ -305,9 +331,9 @@ def ensure_backtest_ready(
     return result
 
 
-def _history_row_count(code: str) -> int:
+def _history_row_count(code: str, market: str = "A") -> int:
     """Return the number of locally cached daily-price rows for a symbol."""
-    return len(_cache.get_daily_price(code))
+    return len(_cache.get_daily_price(code, market=market))
 
 
 def _has_fresh_fundamentals(code: str, max_age_days: int, market: str = "") -> bool:
@@ -321,3 +347,182 @@ def _has_fresh_fundamentals(code: str, max_age_days: int, market: str = "") -> b
     except ValueError:
         return False
     return (datetime.now() - snapshot_date).days <= max_age_days
+
+
+def build_symbol_quality_summary(
+    code: str,
+    market: str,
+    readiness: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return confidence/provenance for a symbol-level readiness result."""
+    pool_row = _pool_row(code, market)
+    completeness = float(pool_row.get("metadata_completeness", 0) or 0)
+    history_ready = bool(readiness.get("history_ready"))
+    fundamentals_ready = bool(
+        readiness.get("fundamentals_after")
+        or readiness.get("fundamentals_ready")
+        or not readiness.get("fundamentals_required", True)
+    )
+    freshness = _freshness_label(
+        str(
+            readiness.get("covered_through", "")
+            or readiness.get("history_covered_through", "")
+        ).strip()
+    )
+    components = [
+        (history_ready, 0.40),
+        (fundamentals_ready, 0.25),
+        (completeness >= 0.75, 0.20),
+        (freshness == "fresh", 0.15),
+    ]
+    score = sum(weight for ok, weight in components if ok)
+    notes = []
+    if history_ready:
+        notes.append("历史价格覆盖满足主路径分析要求")
+    else:
+        notes.append("历史价格覆盖不足")
+    if readiness.get("fundamentals_required", True):
+        notes.append("基本面数据可用" if fundamentals_ready else "基本面数据不足")
+    if completeness >= 0.75:
+        notes.append("元数据完整度较高")
+    elif completeness >= 0.5:
+        notes.append("元数据可用但不完整")
+    else:
+        notes.append("元数据完整度偏低")
+    if readiness.get("errors"):
+        notes.append("同步过程中出现过错误，需要复核")
+        score = max(0.0, score - 0.15)
+    provenance = _build_provenance_block(
+        scope="symbol",
+        market=market,
+        covered_through=str(
+            readiness.get("covered_through", "")
+            or readiness.get("history_covered_through", "")
+        ).strip(),
+        source=str(pool_row.get("metadata_source", "")).strip() or "unknown",
+        source_status=str(pool_row.get("metadata_status", "")).strip() or "unknown",
+        metadata_completeness=completeness,
+        inputs=_readiness_inputs(readiness),
+        code=code,
+    )
+    return {
+        "confidence": _build_confidence_block(
+            score=max(0.0, min(1.0, score)), notes=notes
+        ),
+        "provenance": provenance,
+    }
+
+
+def build_scope_quality_summary(
+    readiness: Dict[str, Any],
+    market: str,
+    scope: str,
+) -> Dict[str, Any]:
+    """Return confidence/provenance for a bounded multi-symbol scope."""
+    requested = int(readiness.get("requested", 0) or 0)
+    ready = int(readiness.get("ready", 0) or 0)
+    completeness_ratio = ready / max(requested, 1)
+    freshness = _freshness_label(str(readiness.get("covered_through", "")).strip())
+    score = completeness_ratio * 0.65
+    if freshness == "fresh":
+        score += 0.20
+    if int(readiness.get("cache_hits", 0) or 0) > 0:
+        score += 0.10
+    if not readiness.get("missing_codes"):
+        score += 0.05
+    notes = [
+        f"作用域覆盖率 {ready}/{requested}" if requested else "作用域请求为空",
+        "覆盖日期较新" if freshness == "fresh" else "覆盖日期一般或未知",
+    ]
+    if readiness.get("missing_codes"):
+        notes.append("仍有缺失代码，需要继续补齐")
+    provenance = _build_provenance_block(
+        scope=scope,
+        market=market,
+        covered_through=str(readiness.get("covered_through", "")).strip(),
+        source="bounded_sync",
+        source_status="cached_or_prefetched",
+        metadata_completeness=completeness_ratio,
+        inputs=["history", "fundamentals"] if market != "FUND" else ["history"],
+    )
+    return {
+        "confidence": _build_confidence_block(
+            score=max(0.0, min(1.0, score)), notes=notes
+        ),
+        "provenance": provenance,
+    }
+
+
+def _build_confidence_block(score: float, notes: Sequence[str]) -> Dict[str, Any]:
+    """Return a standardized confidence block."""
+    bounded = max(0.0, min(1.0, float(score or 0)))
+    if bounded >= 0.8:
+        level = "high"
+    elif bounded >= 0.55:
+        level = "medium"
+    else:
+        level = "low"
+    return {
+        "score": round(bounded, 3),
+        "level": level,
+        "notes": [str(item) for item in notes if str(item).strip()],
+    }
+
+
+def _build_provenance_block(
+    scope: str,
+    market: str,
+    covered_through: str,
+    source: str,
+    source_status: str,
+    metadata_completeness: float,
+    inputs: Sequence[str],
+    code: str = "",
+) -> Dict[str, Any]:
+    """Return a standardized provenance block."""
+    return {
+        "scope": scope,
+        "market": market,
+        "code": code,
+        "freshness": _freshness_label(covered_through),
+        "covered_through": covered_through,
+        "source": source,
+        "source_status": source_status,
+        "metadata_completeness": round(max(0.0, min(1.0, metadata_completeness)), 3),
+        "inputs": list(inputs),
+    }
+
+
+def _readiness_inputs(readiness: Dict[str, Any]) -> List[str]:
+    """Infer the main inputs used for a readiness result."""
+    inputs = ["history"]
+    if bool(readiness.get("fundamentals_after") or readiness.get("fundamentals_ready")):
+        inputs.append("fundamentals")
+    return inputs
+
+
+def _pool_row(code: str, market: str) -> Dict[str, Any]:
+    """Return the matching cached pool row for a symbol."""
+    pool = get_etf_pool() if market == "FUND" else get_stock_pool(market)
+    canonical = normalize_code_for_market(code, market)
+    for row in pool:
+        row_code = normalize_code_for_market(str(row.get("code", "")).strip(), market)
+        if row_code == canonical:
+            return row
+    return {}
+
+
+def _freshness_label(covered_through: str) -> str:
+    """Return a bounded freshness label from a covered-through date."""
+    if not covered_through:
+        return "unknown"
+    try:
+        covered = datetime.strptime(covered_through, "%Y-%m-%d")
+    except ValueError:
+        return "unknown"
+    age = (datetime.now() - covered).days
+    if age <= 7:
+        return "fresh"
+    if age <= 30:
+        return "recent"
+    return "stale"

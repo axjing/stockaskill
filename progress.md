@@ -343,6 +343,150 @@
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
+
+### 阶段 33：P2.3 高级 scorecard / attribution
+- 状态：已完成
+- 已执行动作：
+  - 基于 `findings.md` 的 `P2.3` 路线，收敛成“scorecards + attribution + CLI + thesis/theme 接线”的可落地版本。
+  - 在 `stockaskill/scripts/models.py` 中新增：
+    - `ScorecardDimension`
+    - `ScorecardReport`
+    - `AttributionReport`
+  - 新增 `stockaskill/scripts/scorecards.py`，实现：
+    - `build_diagnosis_scorecard()`
+    - `build_thesis_scorecard()`
+    - `build_theme_scorecard()`
+  - 新增 `stockaskill/scripts/postmortem.py`，实现轻量 `build_postmortem_attribution()`。
+  - 更新 `stockaskill/scripts/thesis_memory.py`：
+    - thesis capture 时生成 `scorecard`
+    - thesis postmortem 时生成 `attribution`
+  - 更新 `stockaskill/scripts/theme_research.py`，让主题研究报告内置 `theme_scorecard`。
+  - 更新 `stockaskill/scripts/report_generator.py`，新增：
+    - `format_scorecard()`
+    - `format_attribution()`
+    - 并把它们接入 thesis/theme markdown 输出
+  - 更新 `stockaskill/scripts/run.py`，新增：
+    - `scorecard thesis`
+    - `scorecard theme`
+    - `scorecard diagnose`
+  - 新增中文文档：
+    - `stockaskill/references/scorecards.md`
+  - 新增测试：
+    - `tests/test_scorecards.py`
+    - 并扩展 `tests/test_models.py`
+    - `tests/test_thesis_memory.py`
+    - `tests/test_theme_research.py`
+    - `tests/test_run.py`
+  - 运行语法检查：
+    - `.venv/bin/python -m py_compile stockaskill/scripts/models.py stockaskill/scripts/scorecards.py stockaskill/scripts/postmortem.py stockaskill/scripts/thesis_memory.py stockaskill/scripts/theme_research.py stockaskill/scripts/report_generator.py stockaskill/scripts/run.py tests/test_models.py tests/test_thesis_memory.py tests/test_theme_research.py tests/test_scorecards.py tests/test_run.py`
+  - 运行定向测试：
+    - `.venv/bin/pytest -q tests/test_models.py tests/test_thesis_memory.py tests/test_theme_research.py tests/test_scorecards.py tests/test_run.py`
+    - 结果：`73 passed`
+  - 运行全量测试：
+    - `.venv/bin/pytest -q`
+    - 结果：`342 passed, 1 warning`
+- 涉及文件：
+  - `stockaskill/scripts/models.py`
+  - `stockaskill/scripts/scorecards.py`
+  - `stockaskill/scripts/postmortem.py`
+  - `stockaskill/scripts/thesis_memory.py`
+  - `stockaskill/scripts/theme_research.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/references/scorecards.md`
+  - `tests/test_models.py`
+  - `tests/test_thesis_memory.py`
+  - `tests/test_theme_research.py`
+  - `tests/test_scorecards.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 34：质量门禁工具补齐与基线验证
+- 状态：已完成
+- 已执行动作：
+  - 检查当前 `.venv` 中 `ruff` / `mypy` 安装状态，确认两者均缺失。
+  - 读取 `pyproject.toml`，确认仓库已声明：
+    - `ruff>=0.1.0`
+    - `mypy>=1.0`
+  - 在当前 `.venv` 中安装：
+    - `ruff 0.15.20`
+    - `mypy 2.1.0`
+  - 运行 lint 验证：
+    - `.venv/bin/ruff check stockaskill/scripts tests`
+    - 结果：未通过，当前基线约 `78` 个问题
+    - 主要问题类型：
+      - `E501` 长行
+      - `I001` import 排序
+      - `F401` 未使用 import
+  - 运行类型检查：
+    - `.venv/bin/mypy stockaskill/scripts tests`
+    - 结果：未通过，当前基线约 `53` 个错误
+    - 主要问题类型：
+      - `no-any-return`
+      - thesis 相关变量类型不一致
+      - 抽象类实例化 / 参数类型问题
+      - 第三方依赖缺少 stubs
+  - 给出后续收敛建议：
+    - 先清 `ruff`
+    - 再修本地 `mypy`
+    - 最后再决定第三方 typing 策略
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 35：`ruff` 收口与质量门禁首轮通过
+- 状态：已完成
+- 已执行动作：
+  - 基于 `ruff --statistics` 与完整输出，确认问题主要集中在：
+    - `E501` 长行
+    - `I001` import 排序
+    - `F401` 未使用 import
+  - 对报错文件执行：
+    - `.venv/bin/ruff format ...`
+    - `.venv/bin/ruff check --fix ...`
+  - 对自动修复后剩余的少量长行做手工收口，主要涉及：
+    - `stockaskill/scripts/report_generator.py`
+    - `stockaskill/scripts/run.py`
+    - `stockaskill/scripts/thesis_memory.py`
+    - `tests/test_models.py`
+    - `tests/test_run.py`
+  - 重新运行：
+    - `.venv/bin/ruff check stockaskill/scripts tests`
+    - 结果：`All checks passed!`
+  - 运行语法检查：
+    - `.venv/bin/python -m py_compile stockaskill/scripts/report_generator.py stockaskill/scripts/run.py stockaskill/scripts/thesis_memory.py tests/test_models.py tests/test_run.py`
+  - 运行定向测试：
+    - `.venv/bin/pytest -q tests/test_models.py tests/test_run.py tests/test_thesis_memory.py`
+    - 结果：`66 passed`
+- 涉及文件：
+  - `stockaskill/scripts/advisor/diagnosis.py`
+  - `stockaskill/scripts/advisor/scanner.py`
+  - `stockaskill/scripts/config.py`
+  - `stockaskill/scripts/data_readiness.py`
+  - `stockaskill/scripts/deep_diagnosis.py`
+  - `stockaskill/scripts/factors/growth.py`
+  - `stockaskill/scripts/factors/low_vol.py`
+  - `stockaskill/scripts/factors/momentum.py`
+  - `stockaskill/scripts/market_regime.py`
+  - `stockaskill/scripts/portfolio/rebalance.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/scripts/thesis_memory.py`
+  - `stockaskill/scripts/workflow_runner.py`
+  - `tests/test_advisor.py`
+  - `tests/test_factors.py`
+  - `tests/test_models.py`
+  - `tests/test_run.py`
+  - `tests/test_scorecards.py`
+  - `tests/test_sentiment.py`
+  - `tests/test_strategies.py`
+  - `tests/test_utils.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
     - 20/60/120 均线关系
     - 20 日收益
     - 60 日回撤

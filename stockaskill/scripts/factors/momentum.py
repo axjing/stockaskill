@@ -38,7 +38,9 @@ class MomentumFactor(Factor):
 
         ret_min, ret_max = self._range("ret_6m", market)
         ret_span = ret_max - ret_min
-        mom_score = max(0, min(1, (ret_6m - ret_min) / ret_span)) if ret_span > 0 else 0.5
+        mom_score = (
+            max(0, min(1, (ret_6m - ret_min) / ret_span)) if ret_span > 0 else 0.5
+        )
 
         ma_bonus = self._ma_alignment(closes)
         return min(1, max(0, mom_score * 0.7 + ma_bonus * 0.3))

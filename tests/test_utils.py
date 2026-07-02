@@ -3,7 +3,9 @@ from datetime import datetime
 from utils import (
     code_to_akshare_symbol,
     code_to_xq_symbol,
+    contains_any_keyword,
     detect_market,
+    detect_workflow_intent,
     exchange_suffix,
     is_new,
     is_st,
@@ -33,6 +35,32 @@ class TestNormalizeCode:
         assert normalize_code_for_market("AAPL", "US") == "AAPL"
         assert normalize_code_for_market("700", "HK") == "00700"
         assert normalize_code_for_market("SZ002475", "A") == "002475"
+
+
+class TestWorkflowIntent:
+    def test_contains_any_keyword(self):
+        assert contains_any_keyword("需要先看市场状态", ["市场状态", "风险"])
+        assert not contains_any_keyword("普通分析", ["回测", "同步"])
+
+    def test_detect_backtest(self):
+        assert detect_workflow_intent("请做回测") == "backtest_strategy"
+
+    def test_detect_theme_research(self):
+        assert detect_workflow_intent("帮我做AI主题产业链研究") == "theme_research"
+
+    def test_detect_build_portfolio_from_codes(self):
+        assert (
+            detect_workflow_intent("", codes=["600519", "000858"]) == "build_portfolio"
+        )
+
+    def test_detect_diagnose_symbol(self):
+        assert (
+            detect_workflow_intent("复核 bull bear 逻辑", code="601318")
+            == "diagnose_symbol"
+        )
+
+    def test_detect_default_scan(self):
+        assert detect_workflow_intent("帮我找机会") == "opportunity_scan"
 
 
 class TestDetectMarket:

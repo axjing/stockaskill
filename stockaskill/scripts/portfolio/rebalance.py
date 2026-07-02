@@ -72,7 +72,11 @@ class Rebalancer:
             return False
         equal_weight = 1.0 / len(portfolio.positions)
         for pos in portfolio.positions:
-            expected = target_weights.get(pos.code, equal_weight) if target_weights else equal_weight
+            expected = (
+                target_weights.get(pos.code, equal_weight)
+                if target_weights
+                else equal_weight
+            )
             deviation = abs(pos.weight - expected)
             if deviation > self.threshold:
                 return True

@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 from data_engine import get_fundamentals, get_kline
-from data_readiness import ensure_symbol_analysis_ready
+from data_readiness import build_symbol_quality_summary, ensure_symbol_analysis_ready
 from factors.composite import CompositeAnalyzer
 from sentiment.aggregator import SentimentAggregator
 from strategies.aggregator import StrategyAggregator
@@ -23,7 +23,7 @@ class StockDiagnosis:
         Returns:
             Dict with all analysis sections.
         """
-        ensure_symbol_analysis_ready(self.code, self.market)
+        readiness = ensure_symbol_analysis_ready(self.code, self.market)
         fundamentals = get_fundamentals(self.code, self.market) or {}
         kline = get_kline(self.code, self.market, days=365)
 
@@ -45,10 +45,29 @@ class StockDiagnosis:
         # Risk assessment
         risk_result = self._risk_assessment(fundamentals, kline)
 
+        # Confidence / data-quality summary
+        confidence_result = self._confidence_assessment(
+            strategy_result,
+            technical_result,
+            fundamental_result,
+            sentiment_result,
+            kline,
+        )
+        quality = build_symbol_quality_summary(self.code, self.market, readiness)
+        confidence_result = self._merge_confidence(
+            confidence_result,
+            quality.get("confidence", {}),
+        )
+
         # Combine into final decision
         final_decision = self._final_decision(
-            strategy_result, sentiment_result, factor_result,
-            risk_result, technical_result,
+            strategy_result,
+            sentiment_result,
+            factor_result,
+            risk_result,
+            technical_result,
+            fundamental_result,
+            confidence_result,
         )
 
         return {
@@ -62,6 +81,8 @@ class StockDiagnosis:
             "technical": technical_result,
             "fundamentals": fundamental_result,
             "risks": risk_result,
+            "confidence": confidence_result,
+            "provenance": quality.get("provenance", {}),
         }
 
     def _strategy_analysis(self) -> Dict[str, Any]:
@@ -202,6 +223,8 @@ class StockDiagnosis:
         factors: Dict[str, Any],
         risk: Dict[str, Any] | None = None,
         technical: Dict[str, Any] | None = None,
+        fundamentals: Dict[str, Any] | None = None,
+        confidence: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Generate final BUY/SELL/HOLD decision."""
         base_score = strategy.get("final_score", 50)
@@ -228,17 +251,206 @@ class StockDiagnosis:
         tech = technical or self._technical_analysis(
             get_kline(self.code, self.market, days=365)
         )
+        fund = fundamentals or {}
+        confidence_data = confidence or {}
         current_price = tech.get("current_price", 0)
         support = tech.get("support_20d", current_price * 0.9)
+        bull_case = self._build_bull_case(strategy, factors, tech, fund, sentiment)
+        bear_case = self._build_bear_case(strategy, risk_data, tech, fund, sentiment)
+        invalidation = self._build_invalidation_conditions(
+            signal,
+            tech,
+            fund,
+            risk_data,
+        )
 
         return {
             "signal": signal,
             "adjusted_score": round(adjusted_score, 1),
             "base_score": round(base_score, 1),
             "adjustment_factor": round(adj_factor, 3),
+            "confidence_level": confidence_data.get("level", "medium"),
+            "confidence_score": confidence_data.get("score", 0.5),
+            "bull_case": bull_case,
+            "bear_case": bear_case,
+            "invalidation_conditions": invalidation,
             "stop_loss": round(support * 0.95, 2) if current_price > 0 else 0,
             "take_profit": round(current_price * 1.20, 2) if current_price > 0 else 0,
         }
+
+    def _confidence_assessment(
+        self,
+        strategy: Dict[str, Any],
+        technical: Dict[str, Any],
+        fundamentals: Dict[str, Any],
+        sentiment: Dict[str, Any],
+        kline: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Estimate confidence from data completeness and agreement strength."""
+        checks = {
+            "strategy_available": "error" not in strategy,
+            "technical_ready": technical.get("status") != "insufficient_data",
+            "fundamentals_ready": fundamentals.get("status") != "no_data",
+            "sentiment_ready": "error" not in sentiment,
+            "history_depth_ok": len(kline) >= 120,
+        }
+        check_score = sum(1 for ok in checks.values() if ok) / max(len(checks), 1)
+        strategy_confidence = float(strategy.get("confidence", 0.5) or 0.5)
+        score = max(0.0, min(1.0, check_score * 0.65 + strategy_confidence * 0.35))
+
+        if score >= 0.8:
+            level = "high"
+        elif score >= 0.55:
+            level = "medium"
+        else:
+            level = "low"
+
+        notes = []
+        if not checks["fundamentals_ready"]:
+            notes.append("基本面数据不足")
+        if not checks["technical_ready"]:
+            notes.append("技术面样本不足")
+        if not checks["sentiment_ready"]:
+            notes.append("情绪数据回退到默认值")
+        if checks["history_depth_ok"]:
+            notes.append("历史数据覆盖满足分析要求")
+        if strategy_confidence >= 0.75:
+            notes.append("策略聚合一致性较高")
+        elif strategy_confidence <= 0.45:
+            notes.append("策略聚合一致性一般")
+
+        return {
+            "score": round(score, 3),
+            "level": level,
+            "checks": checks,
+            "notes": notes or ["数据完整度中性"],
+        }
+
+    @staticmethod
+    def _merge_confidence(
+        analytical: Dict[str, Any],
+        data_quality: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Merge analytical confidence with data-quality confidence."""
+        analytical_score = float(analytical.get("score", 0.5) or 0.5)
+        quality_score = float(data_quality.get("score", 0.5) or 0.5)
+        merged_score = max(0.0, min(1.0, analytical_score * 0.7 + quality_score * 0.3))
+        if merged_score >= 0.8:
+            level = "high"
+        elif merged_score >= 0.55:
+            level = "medium"
+        else:
+            level = "low"
+        notes = list(analytical.get("notes", []) or [])
+        notes.extend(
+            item for item in (data_quality.get("notes", []) or []) if item not in notes
+        )
+        merged = dict(analytical)
+        merged["score"] = round(merged_score, 3)
+        merged["level"] = level
+        merged["notes"] = notes[:6]
+        merged["data_quality"] = data_quality
+        return merged
+
+    @staticmethod
+    def _build_bull_case(
+        strategy: Dict[str, Any],
+        factors: Dict[str, Any],
+        technical: Dict[str, Any],
+        fundamentals: Dict[str, Any],
+        sentiment: Dict[str, Any],
+    ) -> List[str]:
+        """Build explicit bullish reasons."""
+        reasons: List[str] = []
+        top_factors = sorted(
+            [
+                (name, float(score))
+                for name, score in (factors.get("factors", {}) or {}).items()
+                if isinstance(score, (int, float))
+            ],
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        if top_factors:
+            formatted = ", ".join(
+                f"{name}({score:.1f})" for name, score in top_factors[:3]
+            )
+            reasons.append(f"高分因子集中在 {formatted}")
+
+        if technical.get("trend") == "bullish":
+            reasons.append("短中期均线结构偏多")
+
+        if fundamentals.get("checks", {}).get("profitability") == "good":
+            reasons.append("盈利能力处于较好区间")
+
+        if float(sentiment.get("adjustment_factor", 1.0) or 1.0) > 1.03:
+            reasons.append("情绪面对总评分形成正向放大")
+
+        if float(strategy.get("confidence", 0.5) or 0.5) >= 0.75:
+            reasons.append("多策略信号一致性较高")
+
+        return reasons or ["当前多头证据不强，更多来自中性打分而非强趋势共振"]
+
+    @staticmethod
+    def _build_bear_case(
+        strategy: Dict[str, Any],
+        risk: Dict[str, Any],
+        technical: Dict[str, Any],
+        fundamentals: Dict[str, Any],
+        sentiment: Dict[str, Any],
+    ) -> List[str]:
+        """Build explicit bearish reasons / main risks."""
+        reasons: List[str] = []
+        for risk_name in risk.get("risks", [])[:3]:
+            reasons.append(f"风险项已触发：{risk_name}")
+
+        if technical.get("trend") == "bearish":
+            reasons.append("均线结构暂未形成顺趋势确认")
+
+        if fundamentals.get("checks", {}).get("valuation") == "expensive":
+            reasons.append("估值保护不足")
+
+        if float(sentiment.get("adjustment_factor", 1.0) or 1.0) < 0.97:
+            reasons.append("情绪面对总评分形成负向压制")
+
+        if float(strategy.get("confidence", 0.5) or 0.5) <= 0.45:
+            reasons.append("多策略之间分歧较大")
+
+        return reasons or ["当前主要风险来自后续数据确认不足，而不是单一强负面信号"]
+
+    @staticmethod
+    def _build_invalidation_conditions(
+        signal: str,
+        technical: Dict[str, Any],
+        fundamentals: Dict[str, Any],
+        risk: Dict[str, Any],
+    ) -> List[str]:
+        """Build explicit invalidation / what-must-change conditions."""
+        conditions: List[str] = []
+        support = float(technical.get("support_20d", 0) or 0)
+        if support > 0:
+            conditions.append(f"跌破 20 日支撑位 {support:.2f} 后未能快速收回")
+
+        if signal == "BUY":
+            conditions.append("下一次基本面更新中盈利质量明显走弱")
+            conditions.append("风险项继续增加并抬升到 high risk")
+        elif signal == "SELL":
+            conditions.append("价格重新站回中期均线且趋势修复")
+            conditions.append("核心风险项消退，风险等级回落")
+        else:
+            conditions.append("趋势与基本面中至少一项出现明确改善")
+            conditions.append("风险与估值约束至少解除一项")
+
+        if fundamentals.get("checks", {}).get("leverage") == "high":
+            conditions.append("杠杆压力未缓解前，不应上调判断")
+
+        if (
+            risk.get("risk_level") == "high"
+            and "风险项继续增加并抬升到 high risk" not in conditions
+        ):
+            conditions.append("高风险状态持续存在")
+
+        return conditions
 
     @staticmethod
     def _compute_rsi(closes: List[float], period: int = 14) -> float:

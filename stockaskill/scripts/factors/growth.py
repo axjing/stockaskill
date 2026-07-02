@@ -33,12 +33,18 @@ class GrowthFactor(Factor):
 
         # Revenue growth (40%)
         rev_span = rev_max - rev_min
-        rev_score = max(0, min(1, (rev_growth - rev_min) / rev_span)) if rev_span > 0 else 0.5
+        rev_score = (
+            max(0, min(1, (rev_growth - rev_min) / rev_span)) if rev_span > 0 else 0.5
+        )
         scores.append(rev_score * 0.40)
 
         # Profit growth (40%)
         prof_span = prof_max - prof_min
-        profit_score = max(0, min(1, (profit_growth - prof_min) / prof_span)) if prof_span > 0 else 0.5
+        profit_score = (
+            max(0, min(1, (profit_growth - prof_min) / prof_span))
+            if prof_span > 0
+            else 0.5
+        )
         scores.append(profit_score * 0.40)
 
         # Growth acceleration from K-line trend (20%)

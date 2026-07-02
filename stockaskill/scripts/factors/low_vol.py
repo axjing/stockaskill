@@ -47,10 +47,16 @@ class LowVolFactor(Factor):
         drop_range = drop_max - drop_min
 
         # Lower vol = higher score
-        vol_score = max(0, min(1, 1 - (vol - vol_min) / vol_range)) if vol_range > 0 else 0.5
+        vol_score = (
+            max(0, min(1, 1 - (vol - vol_min) / vol_range)) if vol_range > 0 else 0.5
+        )
 
         # Max daily drop penalty
         max_drop = abs(np.min(returns)) if len(returns) > 0 else 0
-        drop_penalty = max(0, min(1, 1 - (max_drop - drop_min) / drop_range)) if drop_range > 0 else 0.5
+        drop_penalty = (
+            max(0, min(1, 1 - (max_drop - drop_min) / drop_range))
+            if drop_range > 0
+            else 0.5
+        )
 
         return min(1, max(0, vol_score * 0.7 + drop_penalty * 0.3))

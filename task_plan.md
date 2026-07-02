@@ -9,7 +9,7 @@
 当前结论是：仓库应继续保持“本地优先、任务作用域、决策支持型投资分析引擎”定位，而不是向全市场数据平台或超重型研究平台演化。
 
 ## 当前阶段
-阶段 32
+阶段 35
 
 ## 阶段列表
 
@@ -217,6 +217,32 @@
 - [x] 补充定向测试与全量验证
 - 状态：已完成
 
+### 阶段 33：P2.3 高级 scorecard / attribution
+- [x] 新增 scorecard / attribution 数据模型
+- [x] 新增 `scorecards.py` 与 `postmortem.py`
+- [x] 将 thesis / theme research 接入 scorecard
+- [x] 将 thesis postmortem 接入 attribution
+- [x] 新增 `scorecard` CLI 命令
+- [x] 更新中文 scorecards 参考文档
+- [x] 补充定向测试与全量验证
+- 状态：已完成
+
+### 阶段 34：质量门禁工具补齐与基线验证
+- [x] 在当前 `.venv` 中安装 `ruff`
+- [x] 在当前 `.venv` 中安装 `mypy`
+- [x] 运行 `ruff check stockaskill/scripts tests`
+- [x] 运行 `mypy stockaskill/scripts tests`
+- [x] 记录当前 lint / type-check 基线问题
+- 状态：已完成
+
+### 阶段 35：`ruff` 收口与质量门禁首轮通过
+- [x] 对 `stockaskill/scripts` 与 `tests` 做首轮格式化
+- [x] 清理 import 排序与未使用 import
+- [x] 收口剩余 `E501` 长行问题
+- [x] 重新运行 `ruff check stockaskill/scripts tests`
+- [x] 运行相关定向测试确认无回归
+- 状态：已完成
+
 ## 当前关键问题
 1. 仓库是否应继续保持任务作用域分析引擎，而非扩张为数据平台？
 2. 哪些上游项目能力真正适合借鉴到 `stockaskill`？
@@ -243,6 +269,7 @@
 | `P1.1` 采用本地文件存储而不是引入数据库/后台服务 | thesis memory 当前只需满足留痕、回看、复盘闭环，没必要扩大基础设施复杂度 |
 | `P1.2` 采用本地主题模板 + 股票池映射，而不是直接依赖联网主题数据库 | 当前目标是补“主题研究入口”和证据链框架，不把仓库扩成外部主题研究平台 |
 | `P1.3` 采用“低伪精度”的 confidence/provenance 摘要，而不是复杂评分仪表盘 | 当前阶段重点是把数据质量和来源前台化，而不是制造看似精确但不可解释的分数系统 |
+| 当前先记录 `ruff` / `mypy` 基线，而不在同一轮混入大规模风格/类型清理 | 当前目标是先补齐质量门禁工具并确认真实问题分布，再按 lint 与 typing 分两段收敛 |
 
 ## 发生过的问题
 | 问题 | 次数 | 处理方式 |
@@ -252,4 +279,4 @@
 ## 备注
 - 现阶段更适合做“分层增强”，而不是大规模重构。
 - 后续任何实现都应优先保留现有 `scan / diagnose / portfolio / backtest / sync / status` 主路径的稳定性。
-- 下一候选阶段优先考虑 `P2.3 高级 scorecard / attribution`，因为当前已具备 thesis、theme、deep-diagnose 与 workflow routine，适合开始补“研究质量评分卡”和“复盘归因”层。
+- 下一候选阶段优先考虑 `mypy` 本地代码修复与第三方 typing 策略收口，因为 `ruff` 已通过，而 `mypy` 仍未通过。

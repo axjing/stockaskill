@@ -47,9 +47,18 @@ def test_cmd_market_regime_prints_summary(capsys):
         "risk_budget": 0.85,
         "new_positions_allowed": True,
         "technical": {"current": 3800, "ma20": 3720, "ma60": 3600, "ret20": 0.06},
-        "breadth": {"sample_size": 30, "sample_limit": 60, "above_ma20_ratio": 0.63, "above_ma60_ratio": 0.58},
+        "breadth": {
+            "sample_size": 30,
+            "sample_limit": 60,
+            "above_ma20_ratio": 0.63,
+            "above_ma60_ratio": 0.58,
+        },
         "reasons": ["指数位于短中期均线上方", "样本 breadth 较强"],
-        "confidence": {"level": "high", "score": 0.86, "notes": ["市场基准历史覆盖较充分"]},
+        "confidence": {
+            "level": "high",
+            "score": 0.86,
+            "notes": ["市场基准历史覆盖较充分"],
+        },
         "provenance": {"source": "000300", "source_status": "ok", "freshness": "fresh"},
     }
 
@@ -141,7 +150,10 @@ def test_cmd_route_recommends_theme_research(capsys):
 
     output = capsys.readouterr().out
     assert "Intent: theme_research" in output
-    assert "python stockaskill/scripts/run.py theme-scan <THEME> --market A --top 3" in output
+    assert (
+        "python stockaskill/scripts/run.py theme-scan <THEME> --market A --top 3"
+        in output
+    )
 
 
 def test_cmd_workflow_list_prints_builtin_manifests(capsys):
@@ -200,7 +212,10 @@ def test_cmd_workflow_run_prints_resolved_steps(capsys):
         "steps": [
             {
                 "title": "执行主题研究",
-                "command": "python stockaskill/scripts/run.py theme-scan AI基础设施 --market A --top 3",
+                "command": (
+                    "python stockaskill/scripts/run.py theme-scan "
+                    "AI基础设施 --market A --top 3"
+                ),
                 "purpose": "先排产业链层级，再缩小到高优先级候选公司。",
             }
         ],
@@ -217,6 +232,67 @@ def test_cmd_workflow_run_prints_resolved_steps(capsys):
     assert "Workflow: theme-research-weekly (market=A)" in output
     assert "theme-scan AI基础设施 --market A --top 3" in output
     assert "Note: note" in output
+
+
+def test_cmd_scorecard_thesis_prints_score(capsys):
+    from run import cmd_scorecard
+
+    args = type(
+        "Args",
+        (),
+        {
+            "action": "thesis",
+            "thesis_id": "A_601318_1",
+            "code": "",
+            "market": "A",
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+    record = {
+        "thesis_id": "A_601318_1",
+        "code": "601318",
+        "market": "A",
+        "scorecard": {"name": "thesis_scorecard", "score": 78.0, "level": "high"},
+    }
+
+    with patch("run.get_thesis_record", return_value=record):
+        with patch("run._save_report"):
+            cmd_scorecard(args)
+
+    output = capsys.readouterr().out
+    assert "Scorecard thesis 601318 (score=78.0, level=high)" in output
+
+
+def test_cmd_scorecard_theme_prints_score(capsys):
+    from run import cmd_scorecard
+
+    args = type(
+        "Args",
+        (),
+        {
+            "action": "theme",
+            "theme": ["AI基础设施"],
+            "market": "A",
+            "top": 3,
+            "candidates": 0,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+    report = {
+        "scorecard": {"name": "theme_scorecard", "score": 71.0, "level": "medium"}
+    }
+
+    with patch("run.build_theme_report") as mock_build:
+        mock_build.return_value = type(
+            "ThemeReport", (), {"to_dict": lambda self=None: report}
+        )()
+        with patch("run._save_report"):
+            cmd_scorecard(args)
+
+    output = capsys.readouterr().out
+    assert "Scorecard theme AI基础设施 (score=71.0, level=medium)" in output
 
 
 def test_cmd_theme_scan_prints_ranked_layers(capsys):
@@ -240,8 +316,16 @@ def test_cmd_theme_scan_prints_ranked_layers(capsys):
         "market": "A",
         "summary": "我会先看先进封装与测试。",
         "key_question": "真实扩产首先卡在哪一层",
-        "confidence": {"level": "medium", "score": 0.72, "notes": ["主题命中了预置模板"]},
-        "provenance": {"source": "ai_infra", "source_status": "template_matched", "freshness": "local_first"},
+        "confidence": {
+            "level": "medium",
+            "score": 0.72,
+            "notes": ["主题命中了预置模板"],
+        },
+        "provenance": {
+            "source": "ai_infra",
+            "source_status": "template_matched",
+            "freshness": "local_first",
+        },
         "layers": [
             {
                 "rank": 1,
@@ -300,7 +384,9 @@ def test_cmd_deep_diagnose_prints_conflicts_and_checks(capsys):
                 "implication": "若风险继续累积，趋势信号的解释力会被削弱。",
             }
         ],
-        "next_checks": ["复核冲突项 trend_vs_risk: 若风险继续累积，趋势信号的解释力会被削弱。"],
+        "next_checks": [
+            "复核冲突项 trend_vs_risk: 若风险继续累积，趋势信号的解释力会被削弱。"
+        ],
     }
 
     with patch("run.build_deep_diagnosis", return_value=report):
@@ -487,9 +573,18 @@ def test_format_diagnosis_summary_includes_cases_and_confidence():
             "invalidation_conditions": ["跌破 20 日支撑"],
         },
         "confidence": {"level": "high", "score": 0.81, "notes": ["策略聚合一致性较高"]},
-        "provenance": {"scope": "symbol", "source": "manual", "metadata_completeness": 1.0},
+        "provenance": {
+            "scope": "symbol",
+            "source": "manual",
+            "metadata_completeness": 1.0,
+        },
         "factors": {"factors": {"quality": 82.0}},
-        "technical": {"trend": "bullish", "rsi_14": 62, "support_20d": 55, "resistance_20d": 63},
+        "technical": {
+            "trend": "bullish",
+            "rsi_14": 62,
+            "support_20d": 55,
+            "resistance_20d": 63,
+        },
         "risks": {"risk_level": "medium", "risks": ["high_valuation"]},
     }
 
@@ -512,7 +607,11 @@ def test_format_deep_diagnosis_summary_includes_long_form_sections():
             "mode": "deep-diagnose",
             "executive_summary": "BUY 倾向，综合分数 72.0/100。",
             "final_decision": {"signal": "BUY", "adjusted_score": 72.0},
-            "confidence": {"level": "medium", "score": 0.73, "notes": ["策略聚合一致性较高"]},
+            "confidence": {
+                "level": "medium",
+                "score": 0.73,
+                "notes": ["策略聚合一致性较高"],
+            },
             "provenance": {"scope": "symbol", "source": "manual", "freshness": "stale"},
             "variant_perception": {
                 "summary": "价格结构已改善，但市场可能尚未充分定价趋势修复。",
@@ -520,7 +619,11 @@ def test_format_deep_diagnosis_summary_includes_long_form_sections():
                 "what_has_to_be_true": ["盈利能力处于较好区间"],
             },
             "supporting_evidence": [
-                {"category": "bull_case", "strength": "high", "detail": "盈利能力处于较好区间"}
+                {
+                    "category": "bull_case",
+                    "strength": "high",
+                    "detail": "盈利能力处于较好区间",
+                }
             ],
             "conflict_matrix": [
                 {
@@ -533,7 +636,9 @@ def test_format_deep_diagnosis_summary_includes_long_form_sections():
             ],
             "bear_case": ["估值保护不足"],
             "invalidation_conditions": ["跌破 20 日支撑位 55.00 后未能快速收回"],
-            "next_checks": ["复核冲突项 trend_vs_risk: 若风险继续累积，趋势信号的解释力会被削弱。"],
+            "next_checks": [
+                "复核冲突项 trend_vs_risk: 若风险继续累积，趋势信号的解释力会被削弱。"
+            ],
         }
     )
 
@@ -559,7 +664,10 @@ def test_format_workflow_run_summary_includes_context_and_missing_params():
             "steps": [
                 {
                     "title": "重建组合视图",
-                    "command": "python stockaskill/scripts/run.py portfolio --codes {codes} --market A --capital 1000000",
+                    "command": (
+                        "python stockaskill/scripts/run.py portfolio "
+                        "--codes {codes} --market A --capital 1000000"
+                    ),
                     "purpose": "重新审视组合权重建议。",
                     "artifact": "portfolio_A.json/.md",
                 }
@@ -590,7 +698,17 @@ def test_format_thesis_summary_includes_postmortem():
             "confidence_level": "high",
             "confidence_score": 0.81,
             "summary": "BUY 观点",
-            "provenance": {"scope": "symbol", "source": "manual", "metadata_completeness": 1.0},
+            "provenance": {
+                "scope": "symbol",
+                "source": "manual",
+                "metadata_completeness": 1.0,
+            },
+            "scorecard": {"name": "thesis_scorecard", "score": 78.0, "level": "high"},
+            "attribution": {
+                "outcome": "win",
+                "primary_driver": "thesis_quality",
+                "summary": "复盘显示主要收益更可能来自 thesis 结构较完整。",
+            },
             "postmortem": {
                 "outcome": "win",
                 "reviewed_at": "2026-07-03T00:00:00Z",
@@ -603,6 +721,8 @@ def test_format_thesis_summary_includes_postmortem():
     assert "## Postmortem" in md
     assert "Outcome: win" in md
     assert "## Provenance" in md
+    assert "## Scorecard" in md
+    assert "## Attribution" in md
 
 
 def test_format_theme_research_includes_ranked_layers():
@@ -615,8 +735,17 @@ def test_format_theme_research_includes_ranked_layers():
             "market": "A",
             "summary": "先看先进封装",
             "key_question": "卡点在哪一层",
-            "confidence": {"level": "medium", "score": 0.7, "notes": ["主题命中了预置模板"]},
-            "provenance": {"scope": "theme_research", "source": "ai_infra", "metadata_completeness": 0.8},
+            "confidence": {
+                "level": "medium",
+                "score": 0.7,
+                "notes": ["主题命中了预置模板"],
+            },
+            "provenance": {
+                "scope": "theme_research",
+                "source": "ai_infra",
+                "metadata_completeness": 0.8,
+            },
+            "scorecard": {"name": "theme_scorecard", "score": 71.0, "level": "medium"},
             "layers": [
                 {
                     "rank": 1,
@@ -642,8 +771,36 @@ def test_format_theme_research_includes_ranked_layers():
 
     assert "## Ranked Layers" in md
     assert "## Confidence" in md
+    assert "## Scorecard" in md
     assert "先进封装与测试" in md
     assert "## Next Checks" in md
+
+
+def test_format_scorecard_renders_dimensions():
+    from report_generator import format_scorecard
+
+    md = format_scorecard(
+        {
+            "name": "thesis_scorecard",
+            "score": 78.0,
+            "level": "high",
+            "summary": "summary",
+            "dimensions": [
+                {
+                    "name": "balance",
+                    "score": 80.0,
+                    "verdict": "strong",
+                    "evidence": ["bull_case=2", "bear_case=1"],
+                }
+            ],
+            "strengths": ["balance: strong"],
+            "gaps": [],
+        }
+    )
+
+    assert "## Scorecard" in md
+    assert "balance" in md
+    assert "Strengths" in md
 
 
 def test_cmd_scan_fund_warms_etf_scope(capsys):
@@ -1150,9 +1307,10 @@ def test_cmd_status_symbol_reads_sync_state(capsys):
         },
     )
 
-    with patch("run.get_cache") as mock_get_cache, patch(
-        "run.get_stock_pool"
-    ) as mock_pool:
+    with (
+        patch("run.get_cache") as mock_get_cache,
+        patch("run.get_stock_pool") as mock_pool,
+    ):
         mock_pool.return_value = [
             {
                 "code": "601318",
@@ -1192,9 +1350,11 @@ def test_cmd_status_watchlist_prints_scope_summary(capsys):
         },
     )
 
-    with patch("run.get_cache") as mock_get_cache, patch(
-        "run.cfg_get"
-    ) as mock_cfg, patch("run.get_stock_pool") as mock_pool:
+    with (
+        patch("run.get_cache") as mock_get_cache,
+        patch("run.cfg_get") as mock_cfg,
+        patch("run.get_stock_pool") as mock_pool,
+    ):
         mock_cfg.side_effect = lambda key, default=None: {
             "watchlist": ["600519", "000858"],
             "cache_ttl.daily_kline": 3600,
@@ -1269,9 +1429,11 @@ def test_cmd_status_etf_prints_scope_summary(capsys):
         },
     )
 
-    with patch("run.get_cache") as mock_get_cache, patch(
-        "run.cfg_get"
-    ) as mock_cfg, patch("run.get_etf_pool") as mock_pool:
+    with (
+        patch("run.get_cache") as mock_get_cache,
+        patch("run.cfg_get") as mock_cfg,
+        patch("run.get_etf_pool") as mock_pool,
+    ):
         mock_cfg.side_effect = lambda key, default=None: {
             "cache_ttl.daily_kline": 3600,
             "cache_ttl.financial": 604800,

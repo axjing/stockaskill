@@ -200,6 +200,8 @@ class MarketScanner:
                         stock.get("metadata_completeness", 0) or 0
                     ),
                     "metadata_penalty": self._metadata_penalty(stock, market),
+                    "confidence": self._candidate_confidence(stock, score),
+                    "provenance": self._candidate_provenance(stock, market),
                     "factors": factor_result.get("factors", {}),
                     "f_score": factor_result.get("f_score", 0),
                 }
@@ -308,6 +310,11 @@ class MarketScanner:
                         stock.get("metadata_completeness", 0) or 0
                     ),
                     "metadata_penalty": 0.0,
+                    "confidence": self._candidate_confidence(
+                        stock,
+                        float(row.get("composite_score", 0) or 0),
+                    ),
+                    "provenance": self._candidate_provenance(stock, market),
                     "factors": factors,
                     "f_score": int(row.get("f_score", 0) or 0),
                     "eligible": bool(row.get("eligible")),
@@ -389,9 +396,7 @@ class MarketScanner:
                 days=_SCAN_HISTORY_DAYS,
                 cached_only=True,
             )
-            cached_fundamentals = (
-                get_fundamentals(code, market, cached_only=True) or {}
-            )
+            cached_fundamentals = get_fundamentals(code, market, cached_only=True) or {}
             kline = cached_kline
             fundamentals = dict(cached_fundamentals)
             remote_fundamentals: Dict[str, Any] = {}
@@ -411,8 +416,8 @@ class MarketScanner:
             cached_history_ready = len(cached_kline) >= _MIN_HISTORY_ROWS
             cached_fundamentals_ready = bool(cached_fundamentals) or market_cap > 0
             history_fetched = not cached_history_ready and has_history
-            fundamentals_fetched = (
-                not bool(cached_fundamentals) and bool(remote_fundamentals)
+            fundamentals_fetched = not bool(cached_fundamentals) and bool(
+                remote_fundamentals
             )
 
             factor_result = None
@@ -450,9 +455,7 @@ class MarketScanner:
                     else 0.0
                 ),
                 "f_score": (
-                    int(factor_result.get("f_score", 0) or 0)
-                    if factor_result
-                    else 0
+                    int(factor_result.get("f_score", 0) or 0) if factor_result else 0
                 ),
                 "value_score": (
                     float(factor_result.get("factors", {}).get("value", 0) or 0)
@@ -544,9 +547,7 @@ class MarketScanner:
                 cache_reused_count += 1 if row.pop("_reused") else 0
                 backfilled_count += 1 if row.pop("_backfilled") else 0
                 history_missing_count += 1 if not row["has_history"] else 0
-                fundamentals_missing_count += (
-                    1 if not row["has_fundamentals"] else 0
-                )
+                fundamentals_missing_count += 1 if not row["has_fundamentals"] else 0
                 rows.append(row)
 
         eligible_rows = sorted(
@@ -632,6 +633,53 @@ class MarketScanner:
             f" inactive={inactive_count}.",
             flush=True,
         )
+
+    @staticmethod
+    def _candidate_confidence(stock: Dict[str, Any], score: float) -> Dict[str, Any]:
+        """Return a bounded confidence summary for a scan candidate."""
+        completeness = float(stock.get("metadata_completeness", 0) or 0)
+        bounded_score = 0.35
+        if completeness >= 0.75:
+            bounded_score += 0.25
+        elif completeness >= 0.5:
+            bounded_score += 0.15
+        if float(score or 0) >= 70:
+            bounded_score += 0.25
+        elif float(score or 0) >= 55:
+            bounded_score += 0.15
+        if bool(stock.get("is_active", 1)):
+            bounded_score += 0.1
+        level = (
+            "high"
+            if bounded_score >= 0.8
+            else ("medium" if bounded_score >= 0.55 else "low")
+        )
+        return {
+            "score": round(max(0.0, min(1.0, bounded_score)), 3),
+            "level": level,
+            "notes": [
+                "扫描结果依赖本地缓存和元数据质量",
+                "候选分数只适合作为研究优先级，不是直接交易指令",
+            ],
+        }
+
+    @staticmethod
+    def _candidate_provenance(stock: Dict[str, Any], market: str) -> Dict[str, Any]:
+        """Return a standardized provenance block for a scan candidate."""
+        return {
+            "scope": "scan_candidate",
+            "market": market,
+            "code": str(stock.get("code", "")).strip(),
+            "freshness": "local_cached",
+            "covered_through": "",
+            "source": str(stock.get("metadata_source", "")).strip() or "unknown",
+            "source_status": str(stock.get("metadata_status", "")).strip() or "unknown",
+            "metadata_completeness": round(
+                float(stock.get("metadata_completeness", 0) or 0),
+                3,
+            ),
+            "inputs": ["stock_pool_metadata", "cached_factor_scores"],
+        }
 
     @staticmethod
     def _print_readiness_summary(status: Dict[str, Any]) -> None:

@@ -589,6 +589,79 @@ P2 原则：
 - 新增 `stockaskill/references/scorecards.md`
 - 新增 `tests/test_scorecards.py`
 
+#### 当前落地结论
+- 已新增 `scorecard thesis/theme/diagnose` CLI。
+- 当前实现方式：
+  - 在 `models.py` 中增加：
+    - `ScorecardDimension`
+    - `ScorecardReport`
+    - `AttributionReport`
+  - 在 `scorecards.py` 中提供三类评分卡：
+    - diagnosis scorecard
+    - thesis scorecard
+    - theme scorecard
+  - 在 `postmortem.py` 中新增轻量 attribution 归因逻辑
+  - 在 `thesis_memory.py` 中：
+    - capture 时生成 thesis scorecard
+    - postmortem 时生成 attribution
+  - 在 `theme_research.py` 中为主题研究结果生成 theme scorecard
+- 当前设计判断：
+  - 这层已经能把“研究是否完整”“复盘后该改什么”前台化。
+- 当前评分卡仍是启发式、确定性、可解释实现，不追求伪精度。
+- 现阶段更值得做的是把 workflow routine 与 scorecard 结果串起来，而不是继续新增更多独立命令。
+
+## 八、质量门禁当前基线
+
+### 1. `.venv` 工具状态
+- 当前 `.venv` 已补装：
+  - `ruff 0.15.20`
+  - `mypy 2.1.0`
+
+### 2. `ruff` 当前结果
+- 命令：
+  - `.venv/bin/ruff check stockaskill/scripts tests`
+- 当前基线最初约 `78` 个问题。
+- 主要分布：
+  - `E501` 长行
+  - `I001` import 排序
+  - `F401` 未使用 import
+
+#### 当前落地结论
+- 已完成首轮 `ruff` 收口。
+- 当前结果：
+  - `ruff check stockaskill/scripts tests`
+  - `All checks passed!`
+- 当前实现方式：
+  - 先用 `ruff format` 处理大部分格式化问题
+  - 再用 `ruff check --fix` 自动清理 import 排序与未使用 import
+  - 最后只对剩余少量 `E501` 手工拆行
+- 当前设计判断：
+  - 这一轮已经把 lint 门禁从“不可用”推进到“可通过”。
+  - 下一步更合理的是集中解决 `mypy` 的本地代码问题，而不是再做新功能扩张。
+
+### 3. `mypy` 当前结果
+- 命令：
+  - `.venv/bin/mypy stockaskill/scripts tests`
+- 当前未通过，基线约 `53` 个错误。
+- 主要分布：
+  - 本地代码的 `no-any-return`
+  - `run.py` 中 thesis 相关变量类型不一致
+  - 抽象类实例化与参数类型问题
+  - 第三方库缺少 stubs：
+    - `pandas`
+    - `scipy.stats`
+    - `akshare`
+    - `efinance`
+    - `baostock`
+  - 还存在 `openbb` 的 import-not-found
+
+### 4. 当前设计判断
+- 这轮应先把工具补齐并拿到真实基线，而不是顺手混入大规模代码清理。
+- 更合理的后续顺序是：
+  1. 先清 `ruff`
+  2. 再修本地 `mypy` 类型问题
+  3. 最后决定是补第三方 stubs，还是对外部依赖做更明确的 typing 策略收口
+
 ## 八、推荐实施顺序
 
 ### 若目标是“先提升决策质量”

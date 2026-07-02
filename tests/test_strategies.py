@@ -1,31 +1,48 @@
-import pytest
 from unittest.mock import patch
 
-from models import Signal
+import pytest
 from config import load_config
+from models import Signal
+from strategies.aggregator import StrategyAggregator
 from strategies.base import Strategy
-from strategies.multi_factor import MultiFactorStrategy
+from strategies.contrarian import ContrarianStrategy
 from strategies.deep_value import DeepValueStrategy
 from strategies.garp import GARPStrategy
 from strategies.ma_trend import MATrendStrategy
-from strategies.contrarian import ContrarianStrategy
-from strategies.aggregator import StrategyAggregator
+from strategies.multi_factor import MultiFactorStrategy
 
 load_config()
 
 mock_kline_data = [
-    {"date": f"2024-{i//30+1:02d}-{(i%30)+1:02d}", "open": 60.0, "high": 61.0,
-     "low": 59.0, "close": 60.5, "volume": 1e7, "amount": 6e8}
+    {
+        "date": f"2024-{i // 30 + 1:02d}-{(i % 30) + 1:02d}",
+        "open": 60.0,
+        "high": 61.0,
+        "low": 59.0,
+        "close": 60.5,
+        "volume": 1e7,
+        "amount": 6e8,
+    }
     for i in range(250)
 ]
 mock_fundamentals = {
-    "code": "601318", "date": "2025-01-01",
-    "market_cap": 1.2e12, "pe_ttm": 8.5, "pe_static": 8.0,
-    "pb": 0.95, "dividend_yield": 4.2,
-    "roe": 0.15, "roa": 0.05,
-    "gross_margin": 0.35, "net_margin": 0.20,
-    "revenue_growth": 0.12, "profit_growth": 0.15,
-    "debt_ratio": 0.40, "current_ratio": 1.5, "eps": 8.0, "bvps": 50.0,
+    "code": "601318",
+    "date": "2025-01-01",
+    "market_cap": 1.2e12,
+    "pe_ttm": 8.5,
+    "pe_static": 8.0,
+    "pb": 0.95,
+    "dividend_yield": 4.2,
+    "roe": 0.15,
+    "roa": 0.05,
+    "gross_margin": 0.35,
+    "net_margin": 0.20,
+    "revenue_growth": 0.12,
+    "profit_growth": 0.15,
+    "debt_ratio": 0.40,
+    "current_ratio": 1.5,
+    "eps": 8.0,
+    "bvps": 50.0,
 }
 
 

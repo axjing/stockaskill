@@ -1,10 +1,27 @@
-import pytest
 from models import (
-    Signal, Market, StockInfo, KlineData, FactorSnapshot,
-    FactorResult, StrategySignal, Position, Portfolio, FundInfo,
-    ThemeCandidate, ThemeLayerFinding, ThemeResearchReport, ThesisPostmortem,
-    ThesisRecord, WorkflowManifest, WorkflowManifestStep, WorkflowRecommendation,
-    WorkflowRunPlan, WorkflowStep,
+    AttributionReport,
+    FactorResult,
+    FactorSnapshot,
+    FundInfo,
+    KlineData,
+    Market,
+    Portfolio,
+    Position,
+    ScorecardDimension,
+    ScorecardReport,
+    Signal,
+    StockInfo,
+    StrategySignal,
+    ThemeCandidate,
+    ThemeLayerFinding,
+    ThemeResearchReport,
+    ThesisPostmortem,
+    ThesisRecord,
+    WorkflowManifest,
+    WorkflowManifestStep,
+    WorkflowRecommendation,
+    WorkflowRunPlan,
+    WorkflowStep,
 )
 
 
@@ -35,9 +52,13 @@ class TestStockInfo:
 
     def test_full(self):
         s = StockInfo(
-            code="000858", name="Wuliangye", market="A",
-            sector="Food", industry="Baijiu",
-            list_date="1998-04-27", total_market_cap=5e11,
+            code="000858",
+            name="Wuliangye",
+            market="A",
+            sector="Food",
+            industry="Baijiu",
+            list_date="1998-04-27",
+            total_market_cap=5e11,
             is_active=True,
         )
         assert s.sector == "Food"
@@ -53,8 +74,13 @@ class TestStockInfo:
 class TestKlineData:
     def test_creation(self):
         k = KlineData(
-            date="2025-01-01", open=10.0, high=11.0,
-            low=9.5, close=10.5, volume=1e6, amount=1.05e7,
+            date="2025-01-01",
+            open=10.0,
+            high=11.0,
+            low=9.5,
+            close=10.5,
+            volume=1e6,
+            amount=1.05e7,
         )
         assert k.date == "2025-01-01"
         assert k.close == 10.5
@@ -62,8 +88,13 @@ class TestKlineData:
 
     def test_types(self):
         k = KlineData(
-            date="2025-01-01", open=10.0, high=11.0,
-            low=9.0, close=10.0, volume=1e6, amount=1e7,
+            date="2025-01-01",
+            open=10.0,
+            high=11.0,
+            low=9.0,
+            close=10.0,
+            volume=1e6,
+            amount=1e7,
         )
         assert isinstance(k.open, float)
         assert isinstance(k.high, float)
@@ -72,8 +103,11 @@ class TestKlineData:
 class TestFactorSnapshot:
     def test_creation(self):
         fs = FactorSnapshot(
-            code="601318", date="2025-01-01",
-            pe_ttm=8.5, pb=0.95, roe=0.15,
+            code="601318",
+            date="2025-01-01",
+            pe_ttm=8.5,
+            pb=0.95,
+            roe=0.15,
             market_cap=1.2e12,
         )
         assert fs.code == "601318"
@@ -104,7 +138,9 @@ class TestFactorResult:
 class TestStrategySignal:
     def test_creation(self):
         ss = StrategySignal(
-            strategy_name="multi_factor", signal=Signal.BUY, score=75,
+            strategy_name="multi_factor",
+            signal=Signal.BUY,
+            score=75,
         )
         assert ss.strategy_name == "multi_factor"
         assert ss.signal == Signal.BUY
@@ -113,8 +149,11 @@ class TestStrategySignal:
 
     def test_with_detail(self):
         ss = StrategySignal(
-            strategy_name="deep_value", signal=Signal.BUY, score=80,
-            confidence=0.8, detail={"pe": 8.0, "pb": 0.9},
+            strategy_name="deep_value",
+            signal=Signal.BUY,
+            score=80,
+            confidence=0.8,
+            detail={"pe": 8.0, "pb": 0.9},
         )
         assert ss.confidence == 0.8
         assert ss.detail["pe"] == 8.0
@@ -123,8 +162,13 @@ class TestStrategySignal:
 class TestPosition:
     def test_creation(self):
         p = Position(
-            code="601318", name="PingAn", market="A",
-            weight=0.15, shares=1000, cost=62.5, current_price=63.0,
+            code="601318",
+            name="PingAn",
+            market="A",
+            weight=0.15,
+            shares=1000,
+            cost=62.5,
+            current_price=63.0,
         )
         assert p.code == "601318"
         assert p.shares == 1000
@@ -147,14 +191,37 @@ class TestPortfolio:
 
     def test_with_positions(self):
         pos = [
-            Position(code="601318", name="PingAn", weight=0.4, shares=5000, cost=60.0, current_price=62.0),
-            Position(code="000858", name="Wuliangye", weight=0.6, shares=3000, cost=150.0, current_price=155.0),
+            Position(
+                code="601318",
+                name="PingAn",
+                weight=0.4,
+                shares=5000,
+                cost=60.0,
+                current_price=62.0,
+            ),
+            Position(
+                code="000858",
+                name="Wuliangye",
+                weight=0.6,
+                shares=3000,
+                cost=150.0,
+                current_price=155.0,
+            ),
         ]
         p = Portfolio(name="Test", capital=1000000, positions=pos)
         assert len(p.positions) == 2
 
     def test_summary_contains_keys(self):
-        pos = [Position(code="601318", name="PingAn", weight=0.5, shares=5000, cost=60.0, current_price=62.0)]
+        pos = [
+            Position(
+                code="601318",
+                name="PingAn",
+                weight=0.5,
+                shares=5000,
+                cost=60.0,
+                current_price=62.0,
+            )
+        ]
         p = Portfolio(name="Test", capital=1000000, positions=pos)
         summary = p.summary()
         assert "Portfolio: Test" in summary
@@ -162,8 +229,22 @@ class TestPortfolio:
         assert "601318" in summary
 
     def test_summary_with_metrics(self):
-        pos = [Position(code="601318", name="PingAn", weight=1.0, shares=5000, cost=60.0, current_price=62.0)]
-        p = Portfolio(name="Test", capital=1000000, positions=pos, metrics={"sharpe": 1.5, "volatility": 0.2})
+        pos = [
+            Position(
+                code="601318",
+                name="PingAn",
+                weight=1.0,
+                shares=5000,
+                cost=60.0,
+                current_price=62.0,
+            )
+        ]
+        p = Portfolio(
+            name="Test",
+            capital=1000000,
+            positions=pos,
+            metrics={"sharpe": 1.5, "volatility": 0.2},
+        )
         summary = p.summary()
         assert "sharpe" in summary
 
@@ -171,9 +252,13 @@ class TestPortfolio:
 class TestFundInfo:
     def test_creation(self):
         fi = FundInfo(
-            code="510050", name="CSI 300 ETF",
-            fund_type="ETF", nav=4.5, acc_nav=4.8,
-            scale=5e10, track_index="000300",
+            code="510050",
+            name="CSI 300 ETF",
+            fund_type="ETF",
+            nav=4.5,
+            acc_nav=4.8,
+            scale=5e10,
+            track_index="000300",
         )
         assert fi.code == "510050"
         assert fi.fund_type == "ETF"
@@ -214,7 +299,10 @@ class TestWorkflowManifest:
             steps=[
                 WorkflowManifestStep(
                     title="step1",
-                    command="python stockaskill/scripts/run.py market-regime --market {market}",
+                    command=(
+                        "python stockaskill/scripts/run.py "
+                        "market-regime --market {market}"
+                    ),
                     purpose="check posture",
                 )
             ],
@@ -238,7 +326,10 @@ class TestWorkflowRunPlan:
             steps=[
                 WorkflowManifestStep(
                     title="step1",
-                    command="python stockaskill/scripts/run.py portfolio --codes {codes}",
+                    command=(
+                        "python stockaskill/scripts/run.py "
+                        "portfolio --codes {codes}"
+                    ),
                     purpose="review portfolio",
                 )
             ],
@@ -248,6 +339,44 @@ class TestWorkflowRunPlan:
 
         assert payload["market"] == "A"
         assert payload["missing_params"] == ["codes"]
+
+
+class TestScorecardReport:
+    def test_to_dict(self):
+        report = ScorecardReport(
+            name="thesis_scorecard",
+            score=78.0,
+            level="high",
+            summary="summary",
+            dimensions=[
+                ScorecardDimension(
+                    name="balance",
+                    score=80.0,
+                    verdict="strong",
+                    evidence=["bull_case=2"],
+                )
+            ],
+        )
+
+        payload = report.to_dict()
+
+        assert payload["name"] == "thesis_scorecard"
+        assert payload["dimensions"][0]["verdict"] == "strong"
+
+
+class TestAttributionReport:
+    def test_to_dict(self):
+        report = AttributionReport(
+            outcome="win",
+            primary_driver="thesis_quality",
+            summary="summary",
+            positives=["结构较完整"],
+        )
+
+        payload = report.to_dict()
+
+        assert payload["outcome"] == "win"
+        assert payload["positives"][0] == "结构较完整"
 
 
 class TestThesisRecord:
