@@ -1006,11 +1006,21 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
     regime = _safe_market_regime(market)
     print("  " + summarize_market_regime(regime))
     try:
+        from data_engine import sync_portfolio_data
         from portfolio.builder import PortfolioBuilder
 
+        # Phase 1: sync only missing data
+        print(f"  Syncing {len(codes)} symbols...")
+        sync_result = sync_portfolio_data(codes, market=market, history_days=365)
+        print(
+            f"  Sync done: {sync_result['ready']}/{sync_result['requested']} ready, "
+            f"cache_hits={sync_result['cache_hits']}"
+        )
+
+        # Phase 2: all analysis reads cache only
         builder = PortfolioBuilder("My Portfolio", capital=capital)
         for c in codes:
-            builder.add_from_strategy(c, market)
+            builder.add_from_strategy(c, market, cached_only=True)
         portfolio = builder.build(
             capital_fraction=float(regime.get("risk_budget", 1.0) or 1.0)
         )

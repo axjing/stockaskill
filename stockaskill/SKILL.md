@@ -71,6 +71,26 @@ Optional cold-start bootstrap:
 If the cache is cold, `analyze`, `diagnose`, `scan`, `alpha`, `portfolio`,
 and `backtest` now warm only the data they actually need before scoring.
 
+## Local cache
+
+All market data is stored in a local SQLite database at `.cache/quant_cache.db`
+relative to the project root. The cache contains:
+
+| Table | Content |
+|---|---|
+| `stock_pool` | A/HK/US/FUND symbol lists with metadata |
+| `daily_price` | K-line history (OHLCV), keyed by code+date |
+| `factor_snapshot` | Fundamental snapshots (PE/PB/ROE/etc.) |
+| `computed_factors` | Pre-computed factor scores |
+| `fund_info` | ETF pool metadata |
+| `fund_nav` | ETF NAV history |
+| `market_index` | Index K-line history |
+| `api_usage` | Daily API call tracking |
+| `sync_state` | Per-symbol sync status and covered dates |
+
+The cache is created automatically on first data fetch or sync. Safe to delete
+and re-warm via `fetch pool` or `sync symbol <code>`.
+
 ## Workflows
 
 ### 1. Single stock analysis
@@ -146,6 +166,10 @@ Explain which factors drove top rankings (momentum + low-vol + quality ~73% comb
 
 ### 6. Portfolio construction
 
+Both `portfolio` and `portfolio-enhanced` now follow a sync-then-cached-only flow:
+they first sync missing history/fundamentals for the target symbols, then score
+entirely from local cache. This avoids duplicate API fetches during analysis.
+
 Standard portfolio:
 
     python stockaskill/scripts/run.py portfolio --codes 600519,000858,002475 --capital 1000000 --market A
@@ -153,6 +177,10 @@ Standard portfolio:
 Enhanced core-satellite:
 
     python stockaskill/scripts/run.py portfolio-enhanced --capital 1000000
+
+Pre-warm portfolio data independently (optional):
+
+    python stockaskill/scripts/run.py sync portfolio --codes 600519,000858,002475 --market A
 
 ### 7. Backtest
 
