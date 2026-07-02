@@ -615,10 +615,10 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     print(f"Analyzing {code} (market={market})...")
 
     ensure_symbol_analysis_ready(code, market)
-    kline = get_kline(code, market, days=365)
+    kline = get_kline(code, market, days=365, cached_only=True)
     print(f"  K-line data: {len(kline)} days cached")
 
-    fund = get_fundamentals(code, market)
+    fund = get_fundamentals(code, market, cached_only=True)
     report_data = {"code": code, "market": market}
     if fund:
         print(f"  PE(TTM): {fund.get('pe_ttm', 'N/A')}")

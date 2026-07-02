@@ -24,14 +24,16 @@ class StockDiagnosis:
             Dict with all analysis sections.
         """
         readiness = ensure_symbol_analysis_ready(self.code, self.market)
-        fundamentals = get_fundamentals(self.code, self.market) or {}
-        kline = get_kline(self.code, self.market, days=365)
+        # All subsequent data reads should be cached-only: ensure_symbol_analysis_ready
+        # has already synced any missing data.
+        fundamentals = get_fundamentals(self.code, self.market, cached_only=True) or {}
+        kline = get_kline(self.code, self.market, days=365, cached_only=True)
 
-        # Strategy analysis
-        strategy_result = self._strategy_analysis()
+        # Strategy analysis — cached_only: data was already synced above
+        strategy_result = self._strategy_analysis(cached_only=True)
 
         # Factor analysis
-        factor_result = self._factor_analysis()
+        factor_result = self._factor_analysis(cached_only=True)
 
         # Sentiment
         sentiment_result = self._sentiment_analysis()
@@ -85,19 +87,19 @@ class StockDiagnosis:
             "provenance": quality.get("provenance", {}),
         }
 
-    def _strategy_analysis(self) -> Dict[str, Any]:
+    def _strategy_analysis(self, cached_only: bool = True) -> Dict[str, Any]:
         """Run strategy aggregator."""
         try:
             agg = StrategyAggregator(self.code, self.market)
-            return agg.analyze_all()
+            return agg.analyze_all(cached_only=cached_only)
         except Exception as exc:
             return {"error": str(exc), "final_signal": "HOLD", "final_score": 50}
 
-    def _factor_analysis(self) -> Dict[str, Any]:
+    def _factor_analysis(self, cached_only: bool = True) -> Dict[str, Any]:
         """Run composite factor analysis."""
         try:
             analyzer = CompositeAnalyzer(self.code, self.market)
-            return analyzer.analyze()
+            return analyzer.analyze(cached_only=cached_only)
         except Exception as exc:
             return {"error": str(exc), "total_score": 50}
 
@@ -249,7 +251,7 @@ class StockDiagnosis:
 
         # Stop-loss / take-profit references (use pre-computed technical if available)
         tech = technical or self._technical_analysis(
-            get_kline(self.code, self.market, days=365)
+            get_kline(self.code, self.market, days=365, cached_only=True)
         )
         fund = fundamentals or {}
         confidence_data = confidence or {}
