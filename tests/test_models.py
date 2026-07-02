@@ -2,6 +2,9 @@ import pytest
 from models import (
     Signal, Market, StockInfo, KlineData, FactorSnapshot,
     FactorResult, StrategySignal, Position, Portfolio, FundInfo,
+    ThemeCandidate, ThemeLayerFinding, ThemeResearchReport, ThesisPostmortem,
+    ThesisRecord, WorkflowManifest, WorkflowManifestStep, WorkflowRecommendation,
+    WorkflowRunPlan, WorkflowStep,
 )
 
 
@@ -180,3 +183,130 @@ class TestFundInfo:
         fi = FundInfo(code="510050", name="Test")
         assert fi.fund_type == ""
         assert fi.scale == 0.0
+
+
+class TestWorkflowRecommendation:
+    def test_to_dict(self):
+        recommendation = WorkflowRecommendation(
+            intent="opportunity_scan",
+            market="A",
+            summary="test",
+            steps=[
+                WorkflowStep(
+                    title="step1",
+                    command="python stockaskill/scripts/run.py market-regime A",
+                    purpose="check posture",
+                )
+            ],
+        )
+
+        payload = recommendation.to_dict()
+
+        assert payload["intent"] == "opportunity_scan"
+        assert payload["steps"][0]["title"] == "step1"
+
+
+class TestWorkflowManifest:
+    def test_to_dict(self):
+        manifest = WorkflowManifest(
+            name="market-regime-daily",
+            summary="test",
+            steps=[
+                WorkflowManifestStep(
+                    title="step1",
+                    command="python stockaskill/scripts/run.py market-regime --market {market}",
+                    purpose="check posture",
+                )
+            ],
+        )
+
+        payload = manifest.to_dict()
+
+        assert payload["name"] == "market-regime-daily"
+        assert payload["steps"][0]["title"] == "step1"
+
+
+class TestWorkflowRunPlan:
+    def test_to_dict(self):
+        plan = WorkflowRunPlan(
+            name="portfolio-review-weekly",
+            summary="test",
+            description="desc",
+            market="A",
+            manifest_path="stockaskill/workflows/portfolio-review-weekly.yaml",
+            missing_params=["codes"],
+            steps=[
+                WorkflowManifestStep(
+                    title="step1",
+                    command="python stockaskill/scripts/run.py portfolio --codes {codes}",
+                    purpose="review portfolio",
+                )
+            ],
+        )
+
+        payload = plan.to_dict()
+
+        assert payload["market"] == "A"
+        assert payload["missing_params"] == ["codes"]
+
+
+class TestThesisRecord:
+    def test_to_dict_includes_postmortem(self):
+        record = ThesisRecord(
+            thesis_id="A_601318_20260702_000000",
+            code="601318",
+            market="A",
+            created_at="2026-07-02T00:00:00Z",
+            source="diagnose",
+            thesis_status="closed",
+            signal="BUY",
+            score=72.0,
+            confidence_level="high",
+            confidence_score=0.81,
+            summary="test summary",
+            postmortem=ThesisPostmortem(
+                outcome="win",
+                reviewed_at="2026-07-03T00:00:00Z",
+                notes="worked",
+            ),
+        )
+
+        payload = record.to_dict()
+
+        assert payload["postmortem"]["outcome"] == "win"
+        assert payload["signal"] == "BUY"
+
+
+class TestThemeResearchReport:
+    def test_to_dict(self):
+        report = ThemeResearchReport(
+            theme="AI基础设施",
+            resolved_theme="ai_infra",
+            market="A",
+            summary="先看先进封装",
+            key_question="卡点在哪一层",
+            layers=[
+                ThemeLayerFinding(
+                    layer="先进封装与测试",
+                    scarce_layer="先进封装设备/测试验证",
+                    rank=1,
+                    score=88.0,
+                    why_here="更接近扩产瓶颈",
+                    candidates=[
+                        ThemeCandidate(
+                            code="300001",
+                            name="测试公司",
+                            layer="先进封装与测试",
+                            layer_rank=1,
+                            score=75.0,
+                            market="A",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        payload = report.to_dict()
+
+        assert payload["resolved_theme"] == "ai_infra"
+        assert payload["layers"][0]["candidates"][0]["code"] == "300001"

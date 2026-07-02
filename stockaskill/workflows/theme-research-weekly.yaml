@@ -1,0 +1,35 @@
+{
+  "name": "theme-research-weekly",
+  "summary": "每周主题研究例行：主题拆解、单票深诊断、再沉淀 thesis。",
+  "description": "适合围绕一个已知主题做周频跟踪。需要 `theme`，如要直接落到单票复核，可同时提供 `code`。",
+  "defaults": {
+    "market": "A",
+    "top": 3
+  },
+  "required_params": ["theme"],
+  "tags": ["weekly", "theme", "research"],
+  "notes": [
+    "若暂未确定个股代码，可先执行前两步，再从主题结果中选择候选标的。",
+    "当 `code` 未提供时，后续单票步骤会保留 `{code}` 占位符。"
+  ],
+  "steps": [
+    {
+      "title": "执行主题研究",
+      "command": "python stockaskill/scripts/run.py theme-scan {theme} --market {market} --top {top}",
+      "purpose": "先排产业链层级，再缩小到高优先级候选公司。",
+      "artifact": "theme_scan_{market}.json/.md"
+    },
+    {
+      "title": "单票深度复核",
+      "command": "python stockaskill/scripts/run.py deep-diagnose {code} --market {market}",
+      "purpose": "对高优先级候选做冲突复核和失效条件检查。",
+      "artifact": "deep_diagnose_{code}_{market}.json/.md"
+    },
+    {
+      "title": "沉淀 thesis",
+      "command": "python stockaskill/scripts/run.py thesis capture {code} --market {market}",
+      "purpose": "把周度主题判断转成可回看的研究记忆。",
+      "artifact": "thesis_capture_{code}_{market}.json"
+    }
+  ]
+}

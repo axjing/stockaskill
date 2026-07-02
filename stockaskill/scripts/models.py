@@ -1,6 +1,6 @@
 """Data structures for the stock selection system."""
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List
 
@@ -129,3 +129,165 @@ class FundInfo:
     acc_nav: float = 0.0
     scale: float = 0.0
     track_index: str = ""
+
+
+@dataclass
+class WorkflowStep:
+    """A single CLI step recommended by the workflow router."""
+
+    title: str
+    command: str
+    purpose: str
+
+
+@dataclass
+class WorkflowRecommendation:
+    """Structured recommendation for a user workflow."""
+
+    intent: str
+    market: str
+    summary: str
+    rationale: List[str] = field(default_factory=list)
+    steps: List[WorkflowStep] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass
+class WorkflowManifestStep:
+    """A manifest-defined workflow step."""
+
+    title: str
+    command: str
+    purpose: str
+    artifact: str = ""
+    when: str = ""
+
+
+@dataclass
+class WorkflowManifest:
+    """A reusable workflow manifest loaded from disk."""
+
+    name: str
+    summary: str
+    description: str = ""
+    defaults: Dict[str, Any] = field(default_factory=dict)
+    required_params: List[str] = field(default_factory=list)
+    steps: List[WorkflowManifestStep] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass
+class WorkflowRunPlan:
+    """A resolved workflow plan after manifest parameter substitution."""
+
+    name: str
+    summary: str
+    description: str
+    market: str
+    manifest_path: str
+    context: Dict[str, Any] = field(default_factory=dict)
+    missing_params: List[str] = field(default_factory=list)
+    steps: List[WorkflowManifestStep] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass
+class ThesisPostmortem:
+    """Postmortem outcome attached to an investment thesis."""
+
+    outcome: str
+    reviewed_at: str
+    notes: str = ""
+    thesis_status: str = "closed"
+
+
+@dataclass
+class ThesisRecord:
+    """Local-first thesis memory record."""
+
+    thesis_id: str
+    code: str
+    market: str
+    created_at: str
+    source: str
+    thesis_status: str
+    signal: str
+    score: float
+    confidence_level: str
+    confidence_score: float
+    summary: str
+    bull_case: List[str] = field(default_factory=list)
+    bear_case: List[str] = field(default_factory=list)
+    invalidation_conditions: List[str] = field(default_factory=list)
+    notes: str = ""
+    postmortem: ThesisPostmortem | None = None
+    provenance: Dict[str, Any] = field(default_factory=dict)
+    diagnosis_report: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass
+class ThemeCandidate:
+    """Candidate company inside a theme layer."""
+
+    code: str
+    name: str
+    layer: str
+    layer_rank: int
+    score: float
+    market: str
+    sector: str = ""
+    industry: str = ""
+    evidence: List[str] = field(default_factory=list)
+    disconfirming_signals: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ThemeLayerFinding:
+    """Ranked supply-chain layer in a theme research report."""
+
+    layer: str
+    scarce_layer: str
+    rank: int
+    score: float
+    why_here: str
+    evidence: List[str] = field(default_factory=list)
+    disconfirming_signals: List[str] = field(default_factory=list)
+    candidates: List[ThemeCandidate] = field(default_factory=list)
+
+
+@dataclass
+class ThemeResearchReport:
+    """Structured theme-research output."""
+
+    theme: str
+    resolved_theme: str
+    market: str
+    summary: str
+    key_question: str
+    next_checks: List[str] = field(default_factory=list)
+    lower_priority_areas: List[str] = field(default_factory=list)
+    layers: List[ThemeLayerFinding] = field(default_factory=list)
+    confidence: Dict[str, Any] = field(default_factory=dict)
+    provenance: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)

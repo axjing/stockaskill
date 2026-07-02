@@ -1,0 +1,28 @@
+{
+  "name": "market-regime-daily",
+  "summary": "先看市场姿态，再输出最新候选池的日常例行流程。",
+  "description": "适合每天开盘前或收盘后执行，先确认 risk budget，再决定是否继续拉取当日候选。",
+  "defaults": {
+    "market": "A",
+    "top": 10
+  },
+  "required_params": [],
+  "tags": ["daily", "market", "scan"],
+  "notes": [
+    "如果 `new_positions_allowed=no`，后续 scan 结果应更多用于观察而不是扩张风险。"
+  ],
+  "steps": [
+    {
+      "title": "检查市场状态",
+      "command": "python stockaskill/scripts/run.py market-regime --market {market}",
+      "purpose": "读取 posture、risk budget、confidence 与 provenance。",
+      "artifact": "market_regime_{market}.json/.md"
+    },
+    {
+      "title": "拉取候选列表",
+      "command": "python stockaskill/scripts/run.py scan {market} --top {top}",
+      "purpose": "基于当前市场姿态快速拉出当日候选。",
+      "artifact": "scan_{market}.json"
+    }
+  ]
+}

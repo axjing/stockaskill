@@ -1,296 +1,631 @@
-# Progress Log
+# 进度日志
 
-## Session: 2026-07-01
+## 会话：2026-07-01 至 2026-07-02
 
-### Phase 1: Requirements & Discovery
-- **Status:** in_progress
-- **Started:** 2026-07-01
-- Actions taken:
-  - Read the planning-with-files skill instructions and templates.
-  - Confirmed no existing planning files were present in the project root.
-  - Created planning files for this research task.
-  - Gathered current repository findings from prior inspection of data engine, scanner, cache, and skill docs.
-- Files created/modified:
-  - task_plan.md (created)
-  - findings.md (created)
-  - progress.md (created)
+### 阶段 1：需求确认与仓库发现
+- 状态：已完成
+- 已执行动作：
+  - 阅读规划技能要求与模板。
+  - 确认项目根目录最初没有专门的规划文件。
+  - 创建 `task_plan.md`、`findings.md`、`progress.md`。
+  - 收集仓库现状与数据引擎背景。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-### Phase 2: Planning & Structure
-- **Status:** complete
-- Actions taken:
-  - Defined assessment criteria around product fit, implementation fit, and operational burden.
-  - Separated ETF support from broad mutual-fund support.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
+### 阶段 2：评估框架建立
+- 状态：已完成
+- 已执行动作：
+  - 定义产品适配性、实现适配性和维护成本的判断标准。
+  - 明确 ETF 与 broad mutual-fund 不应混为同一范围讨论。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
 
-### Phase 3: Assessment
-- **Status:** complete
-- Actions taken:
-  - Assessed current repository behavior as task-scoped cache warming rather than full-market ingestion.
-  - Assessed market coverage gaps and cross-market schema limitations.
-  - Assessed whether full incremental sync matches actual workflows implemented in the skill.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
+### 阶段 3：现状评估
+- 状态：已完成
+- 已执行动作：
+  - 评估仓库当前是“任务作用域缓存预热”而非“全市场摄取平台”。
+  - 评估 HK / US / ETF / FUND 支持深度与结构性限制。
+  - 评估数据身份、metadata、sync 范围与产品目标之间的关系。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
 
-### Phase 4: Recommendation
-- **Status:** complete
-- Actions taken:
-  - Concluded that full-universe incremental sync is not the best primary roadmap direction.
-  - Defined a bounded alternative centered on selective HK/US/ETF sync and deferred broad fund ingestion.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
+### 阶段 4：产品建议输出
+- 状态：已完成
+- 已执行动作：
+  - 给出“不建议默认走全市场全量增量同步”的结论。
+  - 提出“有界 HK / US / ETF 支持 + 延后 broad mutual-fund”的替代方案。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
 
-### Phase 5: Delivery
-- **Status:** complete
-- Actions taken:
-  - Reviewed planning artifacts before final delivery.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 5：首次交付
+- 状态：已完成
+- 已执行动作：
+  - 复核规划文件并向用户输出评估结论。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-### Phase 6: Optimization Framing
-- **Status:** complete
-- Actions taken:
-  - Confirmed the repository should remain a local-first, task-scoped investment analysis engine.
-  - Framed optimization goals around correctness, bounded sync, readiness visibility, and ETF-first scope control.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
+### 阶段 6：优化方向框定
+- 状态：已完成
+- 已执行动作：
+  - 明确仓库应继续保持本地优先、任务作用域定位。
+  - 将优化重点聚焦在正确性、bounded sync、readiness 可见性和 ETF-first 语义。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
 
-### Phase 7: Optimization Roadmap
-- **Status:** complete
-- Actions taken:
-  - Defined a staged roadmap covering schema hardening, explicit sync APIs, metadata enrichment, readiness observability, and asset-scope strategy.
-  - Mapped the roadmap to concrete modules in `cache.py`, `data_engine.py`, `data_readiness.py`, `run.py`, and `scanner.py`.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 7：数据引擎优化路线图
+- 状态：已完成
+- 已执行动作：
+  - 制定 schema hardening、显式 sync API、metadata enrichment、readiness observability 路线。
+  - 映射到 `cache.py`、`data_engine.py`、`data_readiness.py`、`run.py`、`scanner.py`。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-### Phase 8: Roadmap Delivery
-- **Status:** complete
-- Actions taken:
-  - Delivered the bounded roadmap aligned with the confirmed local-first task-scoped architecture.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
+### 阶段 8：优化路线图交付
+- 状态：已完成
+- 已执行动作：
+  - 向用户交付本地优先、任务作用域下的数据引擎优化路线图。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
 
-### Phase 9: Executable Development Plan
-- **Status:** complete
-- Actions taken:
-  - Converted the roadmap into a concrete implementation plan with MVP batches, first-PR scope, function-level work breakdown, migration risks, and verification strategy.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 9：可执行开发计划
+- 状态：已完成
+- 已执行动作：
+  - 把路线图转成可实现批次、函数级工作分解、风险与验证策略。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-### Phase 10: Plan Delivery
-- **Status:** complete
-- Actions taken:
-  - Delivered the executable development plan and then proceeded into implementation with user approval.
-- Files created/modified:
-  - task_plan.md (updated)
-  - findings.md (updated)
+### 阶段 10：开发计划交付
+- 状态：已完成
+- 已执行动作：
+  - 向用户交付了可执行计划，并在后续进入实现阶段。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
 
-### Phase 11: MVP Batch 1 Implementation
-- **Status:** complete
-- Actions taken:
-  - Added additive market-aware cache v2 tables and sync_state.
-  - Added symbol-scoped sync services in the data layer.
-  - Routed readiness helpers through the new sync layer.
-  - Added `sync symbol` CLI support.
-  - Updated targeted tests and passed verification.
-- Files created/modified:
-  - stockaskill/scripts/cache.py (updated)
-  - stockaskill/scripts/data_engine.py (updated)
-  - stockaskill/scripts/data_readiness.py (updated)
-  - stockaskill/scripts/run.py (updated)
-  - tests/test_cache.py (updated)
-  - tests/test_data_readiness.py (updated)
-  - tests/test_run.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 11：MVP 第 1 批实现
+- 状态：已完成
+- 已执行动作：
+  - 增加 market-aware cache v2 与 sync_state。
+  - 增加 symbol 级 sync 服务。
+  - 通过新 sync 层重用 readiness。
+  - 增加 `sync symbol` CLI。
+  - 补充并通过定向测试。
+- 涉及文件：
+  - `stockaskill/scripts/cache.py`
+  - `stockaskill/scripts/data_engine.py`
+  - `stockaskill/scripts/data_readiness.py`
+  - `stockaskill/scripts/run.py`
+  - `tests/test_cache.py`
+  - `tests/test_data_readiness.py`
+  - `tests/test_run.py`
 
-### Phase 12: MVP Batch 2 Implementation
-- **Status:** complete
-- Actions taken:
-  - Added watchlist, portfolio, and scan-universe sync scopes.
-  - Added minimal `status data` diagnostics across symbol and scope views.
-  - Added readiness wrappers for new scopes.
-  - Extended targeted tests and re-verified the touched surface.
-- Files created/modified:
-  - stockaskill/scripts/data_engine.py (updated)
-  - stockaskill/scripts/data_readiness.py (updated)
-  - stockaskill/scripts/run.py (updated)
-  - tests/test_data_readiness.py (updated)
-  - tests/test_run.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 12：MVP 第 2 批实现
+- 状态：已完成
+- 已执行动作：
+  - 增加 watchlist / portfolio / scan-universe sync scope。
+  - 增加最小 `status data` 诊断。
+  - 增加作用域级 readiness 包装。
+- 涉及文件：
+  - `stockaskill/scripts/data_engine.py`
+  - `stockaskill/scripts/data_readiness.py`
+  - `stockaskill/scripts/run.py`
+  - 对应测试文件
 
-### Phase 13: MVP Batch 3 Implementation
-- **Status:** complete
-- Actions taken:
-  - Made scanner print readiness summaries from explicit warmup/sync results.
-  - Enriched `status data` with aggregated freshness, error counts, and top problem symbols.
-  - Extended advisor and CLI tests for the new visibility behavior.
-- Files created/modified:
-  - stockaskill/scripts/advisor/scanner.py (updated)
-  - stockaskill/scripts/data_engine.py (updated)
-  - stockaskill/scripts/run.py (updated)
-  - tests/test_advisor.py (updated)
-  - tests/test_run.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 13：MVP 第 3 批实现
+- 状态：已完成
+- 已执行动作：
+  - 让 scanner 显示 readiness 摘要。
+  - 增强 `status data` 的 freshness / error / 问题 symbol 视图。
+- 涉及文件：
+  - `stockaskill/scripts/advisor/scanner.py`
+  - `stockaskill/scripts/data_engine.py`
+  - `stockaskill/scripts/run.py`
+  - 对应测试文件
 
-### Phase 14: MVP Batch 4 Implementation
-- **Status:** complete
-- Actions taken:
-  - Added ETF-specific sync aggregation in `data_engine.py` backed by ETF NAV/history sync-state rows.
-  - Added `ensure_etf_ready()` and routed the current fund-screen warmup path through ETF-specific readiness semantics.
-  - Added `sync etf` and `status data etf` CLI entry points.
-  - Tightened `scan FUND` user-facing wording to explicit ETF semantics while keeping internal market identity stable.
-  - Extended targeted tests for ETF sync, ETF readiness, ETF status diagnostics, and FUND/ETF scan behavior.
-- Files created/modified:
-  - stockaskill/scripts/data_engine.py (updated)
-  - stockaskill/scripts/data_readiness.py (updated)
-  - stockaskill/scripts/run.py (updated)
-  - tests/test_data_engine.py (updated)
-  - tests/test_data_readiness.py (updated)
-  - tests/test_run.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 14：MVP 第 4 批实现
+- 状态：已完成
+- 已执行动作：
+  - 增加 ETF 专属 sync 聚合。
+  - 增加 `ensure_etf_ready()`。
+  - 增加 `sync etf` 与 `status data etf`。
+  - 收紧 FUND 为 ETF 语义。
+- 涉及文件：
+  - `stockaskill/scripts/data_engine.py`
+  - `stockaskill/scripts/data_readiness.py`
+  - `stockaskill/scripts/run.py`
+  - 对应测试文件
 
-### Phase 15: MVP Batch 5 Implementation
-- **Status:** complete
-- Actions taken:
-  - Added ETF market helpers and `get_etf_pool()` alias in the data layer to reduce continued spread of raw FUND-specific branching.
-  - Added best-effort HK/US pool metadata normalization for sector, industry, list date, market cap, and active status extraction.
-  - Made cross-market pool refresh persist upstream `is_active` state instead of hardcoding all symbols active.
-  - Updated scanner candidate preparation to skip inactive names explicitly.
-  - Extended targeted tests for HK/US pool normalization, ETF pool aliasing, and inactive-symbol filtering.
-- Files created/modified:
-  - stockaskill/scripts/data_engine.py (updated)
-  - stockaskill/scripts/data_readiness.py (updated)
-  - stockaskill/scripts/run.py (updated)
-  - stockaskill/scripts/advisor/scanner.py (updated)
-  - tests/test_data_engine.py (updated)
-  - tests/test_data_readiness.py (updated)
-  - tests/test_run.py (updated)
-  - tests/test_advisor.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 15：MVP 第 5 批实现
+- 状态：已完成
+- 已执行动作：
+  - 增加 ETF alias / helper。
+  - 改善 HK / US pool metadata 归一化。
+  - 增加 inactive symbol 过滤。
+- 涉及文件：
+  - `stockaskill/scripts/data_engine.py`
+  - `stockaskill/scripts/data_readiness.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/scripts/advisor/scanner.py`
+  - 对应测试文件
 
-### Phase 16: MVP Batch 6 Implementation
-- **Status:** complete
-- Actions taken:
-  - Added additive `stock_pool_v2` metadata fields for source, status, and completeness, plus startup migration for older caches.
-  - Updated HK/US pool normalization to populate metadata visibility fields and normalized active/delisted/suspended status labels.
-  - Extended stock-pool readiness summaries to report metadata complete/partial and inactive counts for non-A markets.
-  - Updated scanner metadata summary output to surface the new completeness and inactive counters.
-  - Extended targeted tests for cache roundtrip, HK/US metadata normalization, non-A readiness summary, and scanner metadata output.
-- Files created/modified:
-  - stockaskill/scripts/cache.py (updated)
-  - stockaskill/scripts/data_engine.py (updated)
-  - stockaskill/scripts/advisor/scanner.py (updated)
-  - tests/test_cache.py (updated)
-  - tests/test_data_engine.py (updated)
-  - tests/test_advisor.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 16：MVP 第 6 批实现
+- 状态：已完成
+- 已执行动作：
+  - 增加 `stock_pool_v2` metadata source / status / completeness。
+  - 在 readiness 中展示 metadata 完整度与 inactive 统计。
+- 涉及文件：
+  - `stockaskill/scripts/cache.py`
+  - `stockaskill/scripts/data_engine.py`
+  - `stockaskill/scripts/advisor/scanner.py`
+  - 对应测试文件
 
-### Phase 17: MVP Batch 7 Implementation
-- **Status:** complete
-- Actions taken:
-  - Added metadata-quality summaries in scanner candidate/universe flows.
-  - Made realtime HK/US scan ranking consume `metadata_completeness` via a small rank-only penalty.
-  - Extended scan/snapshot result payloads with metadata source/status/completeness fields.
-  - Added market-level metadata health summaries to `status data` for symbol/watchlist/portfolio/scan-universe/etf scopes.
-  - Extended targeted tests for metadata-aware scan behavior and status-data metadata summaries.
-- Files created/modified:
-  - stockaskill/scripts/advisor/scanner.py (updated)
-  - stockaskill/scripts/run.py (updated)
-  - tests/test_advisor.py (updated)
-  - tests/test_run.py (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 17：MVP 第 7 批实现
+- 状态：已完成
+- 已执行动作：
+  - 将 metadata quality 作为 scan / ranking 的轻量信号。
+  - 在 `status data` 中增加市场级 metadata 健康摘要。
+- 涉及文件：
+  - `stockaskill/scripts/advisor/scanner.py`
+  - `stockaskill/scripts/run.py`
+  - 对应测试文件
 
-### Phase 18: Documentation Alignment
-- **Status:** complete
-- Actions taken:
-  - Updated `stockaskill/SKILL.md` to document local-first bounded sync, ETF-first semantics, and new sync/status commands.
-  - Updated `README.md` to reflect bounded sync workflows, status diagnostics, metadata-quality signals, and current product scope boundaries.
-  - Updated `AGENTS.md` with project-specific product-scope guardrails for future coding agents.
-- Files created/modified:
-  - stockaskill/SKILL.md (updated)
-  - README.md (updated)
-  - AGENTS.md (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 18：文档与技能定义对齐
+- 状态：已完成
+- 已执行动作：
+  - 更新 `stockaskill/SKILL.md`。
+  - 更新 `README.md`。
+  - 更新 `AGENTS.md`。
+- 涉及文件：
+  - `stockaskill/SKILL.md`
+  - `README.md`
+  - `AGENTS.md`
 
-### Phase 19: Skill Definition Tightening
-- **Status:** complete
-- Actions taken:
-  - Narrowed `stockaskill/SKILL.md` trigger wording from broad fund language to ETF-first semantics.
-  - Reduced `SKILL.md` frontmatter to the minimal `name` + `description` shape.
-  - Added an explicit scope-boundary section and task-based reference routing guidance.
-  - Replaced an awkward non-copyable sector-scan example with a direct runnable example.
-  - Aligned `stockaskill/agents/openai.yaml` short description and default prompt with bounded-sync ETF-first scope.
-  - Ran skill-level validation using both the local validator and the `skill-creator` quick validator.
-- Files created/modified:
-  - stockaskill/SKILL.md (updated)
-  - stockaskill/agents/openai.yaml (updated)
-  - task_plan.md (updated)
-  - findings.md (updated)
-  - progress.md (updated)
+### 阶段 19：技能定义收口
+- 状态：已完成
+- 已执行动作：
+  - 缩窄 trigger wording。
+  - 收紧 ETF-first 边界。
+  - 对齐 `agents/openai.yaml`。
+- 涉及文件：
+  - `stockaskill/SKILL.md`
+  - `stockaskill/agents/openai.yaml`
 
-## Test Results
-| Test | Input | Expected | Actual | Status |
-|------|-------|----------|--------|--------|
-| Planning file presence | Root planning files absent initially | Create new files | Created successfully | PASS |
-| Assessment consistency | Planning files vs repository findings | Recommendation should match actual architecture | Recommendation matches task-scoped local-first design | PASS |
-| Optimization direction consistency | Confirmed product positioning vs roadmap | Roadmap should reinforce local-first task-scoped model | Roadmap stays bounded and avoids data-platform sprawl | PASS |
-| Executable-plan consistency | Roadmap vs implementation batches | Batches should be incremental and repository-aligned | MVP batches preserve current workflows and isolate risk | PASS |
-| Batch 1 targeted test suite | `uv run python -m pytest tests/test_cache.py tests/test_data_readiness.py tests/test_run.py -q` | Touched modules should pass targeted regression tests | `41 passed` | PASS |
-| Batch 1 lint | `uv run ruff check ...` on touched files | No lint violations | All checks passed | PASS |
-| Batch 2 targeted test suite | `uv run python -m pytest tests/test_cache.py tests/test_data_readiness.py tests/test_run.py -q` | New sync scopes and diagnostics should pass targeted regression tests | `45 passed` | PASS |
-| Batch 2 lint | `uv run ruff check ...` on touched files | No lint violations | All checks passed | PASS |
-| Batch 3 targeted test suite | `uv run python -m pytest tests/test_cache.py tests/test_data_readiness.py tests/test_run.py tests/test_advisor.py -q` | Scanner and richer status diagnostics should pass targeted regression tests | `65 passed` | PASS |
-| Batch 3 lint | `uv run ruff check ...` on touched files | No lint violations | All checks passed | PASS |
-| Batch 4 targeted ETF/readiness/CLI suite | `source .venv/bin/activate && pytest tests/test_run.py tests/test_data_readiness.py tests/test_data_engine.py::TestSyncEtfData::test_sync_etf_data_uses_fund_nav_cache_and_scope_state -q` | ETF-specific sync/readiness/status changes should pass targeted regression tests | `19 passed` | PASS |
-| Batch 4 advisor regression | `source .venv/bin/activate && pytest tests/test_advisor.py -q` | Prior scanner/readiness behavior should remain stable | `19 passed` | PASS |
-| Batch 4 lint | `source .venv/bin/activate && ruff check stockaskill/scripts/data_engine.py stockaskill/scripts/data_readiness.py stockaskill/scripts/run.py tests/test_data_engine.py tests/test_data_readiness.py tests/test_run.py` | No lint violations | All checks passed | PASS |
-| Batch 5 targeted suite | `source .venv/bin/activate && pytest tests/test_data_engine.py::TestCrossMarketPoolNormalization tests/test_data_engine.py::TestSyncEtfData::test_sync_etf_data_uses_fund_nav_cache_and_scope_state tests/test_data_readiness.py tests/test_run.py tests/test_advisor.py -q` | ETF semantics and HK/US pool normalization changes should pass targeted regression tests | `42 passed` | PASS |
-| Batch 5 lint | `source .venv/bin/activate && ruff check stockaskill/scripts/data_engine.py stockaskill/scripts/data_readiness.py stockaskill/scripts/run.py stockaskill/scripts/advisor/scanner.py tests/test_data_engine.py tests/test_data_readiness.py tests/test_run.py tests/test_advisor.py` | No lint violations | All checks passed | PASS |
-| Batch 6 targeted suite | `source .venv/bin/activate && pytest tests/test_cache.py::TestCacheManager::test_stock_pool_v2_persists_metadata_fields tests/test_data_engine.py::TestCrossMarketPoolNormalization tests/test_data_readiness.py tests/test_run.py tests/test_advisor.py -q` | Metadata visibility and scanner summary changes should pass targeted regression tests | `44 passed` | PASS |
-| Batch 6 lint | `source .venv/bin/activate && ruff check stockaskill/scripts/cache.py stockaskill/scripts/data_engine.py stockaskill/scripts/data_readiness.py stockaskill/scripts/run.py stockaskill/scripts/advisor/scanner.py tests/test_cache.py tests/test_data_engine.py tests/test_data_readiness.py tests/test_run.py tests/test_advisor.py` | No lint violations | All checks passed | PASS |
-| Batch 7 targeted suite | `source .venv/bin/activate && pytest tests/test_advisor.py tests/test_run.py -q` | Metadata-aware scan/status changes should pass targeted regression tests | `35 passed` | PASS |
-| Batch 7 lint | `source .venv/bin/activate && ruff check stockaskill/scripts/advisor/scanner.py stockaskill/scripts/run.py tests/test_advisor.py tests/test_run.py` | No lint violations | All checks passed | PASS |
-| Skill-level local validation | `source .venv/bin/activate && python stockaskill/scripts/validate_skill.py stockaskill` | Skill definition and local references/scripts should validate | `PASS: all validation checks OK` | PASS |
-| Skill-creator quick validation | `python3 /home/ji/.codex/skills/.system/skill-creator/scripts/quick_validate.py /home/ji/stockaskill/stockaskill` | Skill should satisfy generic skill structure checks | `Skill is valid!` | PASS |
+### 阶段 20：3rdparty 能力对比分析
+- 状态：已完成
+- 已执行动作：
+  - 对比了 `stockaskill` 与 `serenity-skill`、`claude-trading-skills`、`UZI deep-analysis`。
+  - 识别出三个最值得借鉴的方向：
+    - workflow / router
+    - market regime / posture
+    - thesis memory / postmortem
+  - 明确了不建议直接照搬的内容：
+    - 大量微 skill 拆分
+    - 复杂 persona / 65 评委系统
+    - broad mutual-fund 平台化扩张
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-## Error Log
-| Timestamp | Error | Attempt | Resolution |
-|-----------|-------|---------|------------|
-| 2026-07-01 | Missing planning files | 1 | Created task_plan.md, findings.md, progress.md |
-| 2026-07-01 | `tests/test_data_engine.py` full-file run stalled in an existing network-dependent path | 1 | Switched to targeted ETF/data-engine regression plus related CLI/readiness/advisor suites for this batch |
+### 阶段 21：功能演进路线规划
+- 状态：已完成
+- 已执行动作：
+  - 将对比结论转为功能演进主题。
+  - 按 `P0 / P1 / P2` 排定优先级。
+  - 将路线图限定在符合当前仓库产品定位的范围内。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
 
-## 5-Question Reboot Check
-| Question | Answer |
-|----------|--------|
-| Where am I? | Phase 19 complete |
-| Where am I going? | Next implementation batch if requested |
-| What's the goal? | Improve the local-first task-scoped engine with bounded sync, clearer scan readiness, richer diagnostics, and safer market-aware cache semantics |
-| What have I learned? | Skill trigger surfaces and UI metadata need separate tightening from product docs, otherwise broad over-triggering persists |
-| What have I done? | Tightened the skill definition itself by narrowing triggers, simplifying frontmatter, improving reference routing, and aligning UI metadata |
+### 阶段 22：文件级落地映射
+- 状态：已完成
+- 已执行动作：
+  - 将 `P0 / P1 / P2` 路线图映射到具体模块与文件。
+  - 记录实施依赖与推荐顺序。
+  - 形成可直接用于后续 PR 规划的文档输出。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 23：规划文档中文化
+- 状态：已完成
+- 已执行动作：
+  - 将三个规划文档统一重写为中文版本。
+  - 保留当前阶段、路线图与结论，但改成更适合持续维护的中文结构。
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 24：P0.2 市场状态 / 风险姿态层首批实现
+- 状态：已完成
+- 已执行动作：
+  - 读取并确认 `run.py`、`data_readiness.py`、`portfolio/builder.py`、`report_generator.py` 的完整当前实现，避免在已有 sync / scan / portfolio 逻辑上做盲改。
+  - 新增 `stockaskill/scripts/market_regime.py`，实现轻量市场姿态分析：
+    - benchmark 趋势
+
+### 阶段 31：P2.1 `deep-diagnose` 长报告模式
+- 状态：已完成
+- 已执行动作：
+  - 读取 `task_plan.md`、`findings.md`、`progress.md`，并补跑 `planning-with-files-zh` 的 `session-catchup`。
+  - 全文复核 `stockaskill/scripts/run.py`、`stockaskill/scripts/report_generator.py`、`stockaskill/scripts/advisor/diagnosis.py` 以及相关测试文件，确认 `P2.1` 的接线位置。
+  - 新增 `stockaskill/scripts/deep_diagnosis.py`，基于 `StockDiagnosis.full_report()` 叠加长报告合成层。
+  - 为长报告增加：
+    - `executive_summary`
+    - `variant_perception`
+    - `supporting_evidence`
+    - `conflict_matrix`
+    - `next_checks`
+  - 在 `stockaskill/scripts/run.py` 中新增 `cmd_deep_diagnose` 与 `deep-diagnose` parser。
+  - 在 `stockaskill/scripts/report_generator.py` 中新增 `format_deep_diagnosis_summary()`。
+  - 新增 `stockaskill/references/deep-diagnosis.md` 中文说明文档。
+  - 新增 `tests/test_deep_diagnosis.py`，并扩展 `tests/test_run.py` 覆盖 CLI 与 markdown 长报告渲染。
+  - 运行语法检查：
+    - `.venv/bin/python -m py_compile stockaskill/scripts/deep_diagnosis.py stockaskill/scripts/report_generator.py stockaskill/scripts/run.py tests/test_deep_diagnosis.py tests/test_run.py`
+  - 运行定向测试：
+    - `.venv/bin/pytest -q tests/test_deep_diagnosis.py tests/test_run.py`
+    - 结果：`30 passed`
+  - 运行全量测试：
+    - `.venv/bin/pytest -q`
+    - 结果：`324 passed, 1 warning`
+- 涉及文件：
+  - `stockaskill/scripts/deep_diagnosis.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/references/deep-diagnosis.md`
+  - `tests/test_deep_diagnosis.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 32：P2.2 manifest 式 workflow 运行
+- 状态：已完成
+- 已执行动作：
+  - 读取 `task_plan.md`、`findings.md`、`progress.md` 与现有 `workflows.py`、`run.py`，确认当前只有 recommendation router，没有 manifest runner。
+  - 在 `stockaskill/scripts/models.py` 中新增：
+    - `WorkflowManifestStep`
+    - `WorkflowManifest`
+    - `WorkflowRunPlan`
+  - 新增 `stockaskill/scripts/workflow_runner.py`，实现：
+    - manifest 列表读取
+    - 单个 manifest 加载
+    - 参数替换
+    - 缺失参数保留占位符
+    - workflow run-plan 生成
+  - 新增内置 manifests：
+    - `stockaskill/workflows/market-regime-daily.yaml`
+    - `stockaskill/workflows/portfolio-review-weekly.yaml`
+    - `stockaskill/workflows/theme-research-weekly.yaml`
+  - 在 `stockaskill/scripts/run.py` 中新增：
+    - `workflow list`
+    - `workflow run <name>`
+  - 在 `stockaskill/scripts/report_generator.py` 中新增 `format_workflow_run_summary()`。
+  - 更新 `stockaskill/references/workflows.md`，把 router 与 manifest routine 一并说明。
+  - 新增 `tests/test_workflow_runner.py`，并扩展：
+    - `tests/test_models.py`
+    - `tests/test_run.py`
+  - 运行语法检查：
+    - `.venv/bin/python -m py_compile stockaskill/scripts/models.py stockaskill/scripts/workflow_runner.py stockaskill/scripts/report_generator.py stockaskill/scripts/run.py tests/test_workflow_runner.py tests/test_models.py tests/test_run.py`
+  - 运行定向测试：
+    - `.venv/bin/pytest -q tests/test_workflow_runner.py tests/test_models.py tests/test_run.py`
+    - 结果：`62 passed`
+  - 运行全量测试：
+    - `.venv/bin/pytest -q`
+    - 结果：`333 passed, 1 warning`
+- 涉及文件：
+  - `stockaskill/scripts/models.py`
+  - `stockaskill/scripts/workflow_runner.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/workflows/market-regime-daily.yaml`
+  - `stockaskill/workflows/portfolio-review-weekly.yaml`
+  - `stockaskill/workflows/theme-research-weekly.yaml`
+  - `stockaskill/references/workflows.md`
+  - `tests/test_workflow_runner.py`
+  - `tests/test_models.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+    - 20/60/120 均线关系
+    - 20 日收益
+    - 60 日回撤
+    - 20 日波动率
+    - bounded breadth sample
+  - 在配置中加入 `market_regime` 默认参数与 benchmark 映射。
+  - 为 `PortfolioBuilder.build()` 增加 `capital_fraction` 参数，使市场风险预算可以直接作用于部署仓位。
+  - 在 `report_generator.py` 中新增 market regime markdown 渲染，并允许 portfolio 报告展示 posture / risk budget。
+  - 在 `run.py` 中：
+    - 新增 `market-regime` 命令
+    - 为 `scan`、`refresh-scan`、`alpha` 增加 posture 摘要
+    - 为 `portfolio`、`portfolio-enhanced` 接入 `risk_budget`
+  - 增加定向测试：
+    - `tests/test_market_regime.py`
+    - `tests/test_portfolio.py` 中的 risk budget 权重验证
+    - `tests/test_run.py` 中的新命令与接线验证
+  - 运行了语法编译检查与最小 smoke test。
+- 涉及文件：
+  - `stockaskill/scripts/config.py`
+  - `stockaskill/scripts/market_regime.py`
+  - `stockaskill/scripts/portfolio/builder.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/scripts/run.py`
+  - `tests/test_market_regime.py`
+  - `tests/test_portfolio.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 25：测试环境修复与全量验证
+- 状态：已完成
+- 已执行动作：
+  - 检查当前 `.venv`，确认 Python 可用但最初缺少 `pip` 模块入口。
+  - 运行 `.venv/bin/python -m ensurepip --upgrade` 修复当前环境中的 `pip` 基础安装。
+  - 确认 `.venv/bin/pip3` 可用后，安装 `pytest`。
+  - 验证 `import pytest` 正常。
+  - 使用 `.venv/bin/pytest -q` 运行全量测试。
+- 结果：
+  - `291 passed, 1 warning in 330.10s (0:05:30)`
+- 涉及文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 26：P0.3 `diagnose` 输出硬化
+- 状态：已完成
+- 已执行动作：
+  - 复读并确认 `stockaskill/scripts/advisor/diagnosis.py`、`stockaskill/scripts/report_generator.py`、`tests/test_advisor.py`、`tests/test_run.py` 的相关实现。
+  - 在 `StockDiagnosis.full_report()` 中增加 `confidence` 区块。
+  - 在 `StockDiagnosis._final_decision()` 中增加结构化输出：
+    - `confidence_level`
+    - `confidence_score`
+    - `bull_case`
+    - `bear_case`
+    - `invalidation_conditions`
+  - 新增内部构造逻辑：
+    - `_confidence_assessment()`
+    - `_build_bull_case()`
+    - `_build_bear_case()`
+    - `_build_invalidation_conditions()`
+  - 更新 `report_generator.format_diagnosis_summary()`，使 markdown 摘要包含：
+    - Confidence
+    - Bull Case
+    - Bear Case
+    - Invalidation
+  - 更新 `stockaskill/references/output-style-and-language.md`，补充 diagnosis 输出顺序约束。
+  - 增加测试：
+    - `tests/test_advisor.py` 中的 diagnosis 结构测试
+    - `tests/test_run.py` 中的 diagnosis summary 渲染测试
+  - 运行语法检查、定向测试与全量测试。
+- 测试结果：
+  - 定向测试：`43 passed in 9.47s`
+  - 全量测试：`294 passed, 1 warning in 149.13s`
+- 涉及文件：
+  - `stockaskill/scripts/advisor/diagnosis.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/references/output-style-and-language.md`
+  - `tests/test_advisor.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 27：P0.1 workflow router / 引导入口
+- 状态：已完成
+- 已执行动作：
+  - 完整读取 `stockaskill/scripts/run.py`、`models.py`、`utils.py` 与相关测试，确认统一 CLI 的最小侵入接入点。
+  - 在 `models.py` 中增加 `WorkflowStep`、`WorkflowRecommendation` 数据结构，并提供 `to_dict()` 序列化能力。
+  - 在 `utils.py` 中增加 `contains_any_keyword()` 与 `detect_workflow_intent()`，采用确定性关键词路由。
+  - 新增 `stockaskill/scripts/workflows.py`，封装内置 workflow recommendation：
+    - `opportunity_scan`
+    - `market_check`
+    - `analyze_symbol`
+    - `diagnose_symbol`
+    - `build_portfolio`
+    - `sync_data`
+    - `backtest_strategy`
+  - 在 `run.py` 中增加 `route` / `recommend` 命令，以及 workflow recommendation 的终端渲染输出。
+  - 新增 `stockaskill/references/workflows.md` 中文说明文档，记录支持意图、示例命令和边界。
+  - 更新测试：
+    - `tests/test_models.py`
+    - `tests/test_utils.py`
+    - `tests/test_run.py`
+  - 运行 `.venv/bin/python -m py_compile` 做语法校验。
+  - 运行定向测试与全量测试，确认无回归。
+- 测试结果：
+  - 定向测试：`83 passed in 6.47s`
+  - 全量测试：`302 passed, 1 warning in 120.36s`
+- 涉及文件：
+  - `stockaskill/scripts/models.py`
+  - `stockaskill/scripts/utils.py`
+  - `stockaskill/scripts/workflows.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/references/workflows.md`
+  - `tests/test_models.py`
+  - `tests/test_utils.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 28：P1.1 thesis memory / postmortem
+- 状态：已完成
+- 已执行动作：
+  - 读取 `report_generator.py`、`run.py`、`advisor/diagnosis.py` 和现有测试，确认 thesis 记录层可直接复用 `diagnose` 输出结构。
+  - 在 `models.py` 中增加：
+    - `ThesisPostmortem`
+    - `ThesisRecord`
+  - 在 `config.py` 中增加 `thesis_memory.storage_dir` 与默认 `limit`。
+  - 新增 `stockaskill/scripts/thesis_memory.py`，实现本地文件化 thesis 存储：
+    - `build_thesis_record()`
+    - `save_thesis_record()`
+    - `list_thesis_records()`
+    - `get_thesis_record()`
+    - `update_thesis_postmortem()`
+  - 在 `report_generator.py` 中新增 `format_thesis_summary()`。
+  - 在 `run.py` 中新增 `thesis` CLI 命令及子命令：
+    - `capture`
+    - `list`
+    - `review`
+    - `postmortem`
+  - 新增中文说明文档 `stockaskill/references/thesis-memory.md`。
+  - 补充测试：
+    - `tests/test_thesis_memory.py`
+    - `tests/test_run.py`
+    - `tests/test_models.py`
+  - 运行 `.venv/bin/python -m py_compile` 做语法校验。
+  - 运行定向测试与全量测试，确认无回归。
+- 测试结果：
+  - 定向测试：`50 passed in 6.68s`
+  - 全量测试：`310 passed, 1 warning in 118.18s`
+- 涉及文件：
+  - `stockaskill/scripts/models.py`
+  - `stockaskill/scripts/config.py`
+  - `stockaskill/scripts/thesis_memory.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/references/thesis-memory.md`
+  - `tests/test_models.py`
+  - `tests/test_run.py`
+  - `tests/test_thesis_memory.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 29：P1.2 主题研究 / 证据链模式
+- 状态：已完成
+- 已执行动作：
+  - 读取 `findings.md` 中主题研究路线定义，以及 `output-style-and-language.md`、`serenity-dialogue-protocol.md`、`scanner.py` 的现有约束和能力。
+  - 在 `models.py` 中增加：
+    - `ThemeCandidate`
+    - `ThemeLayerFinding`
+    - `ThemeResearchReport`
+  - 在 `config.py` 中增加本地主题研究模板配置：
+    - `AI基础设施`
+    - `机器人`
+    - `电池 / 储能`
+  - 在 `utils.py` 中让 workflow intent 支持 `theme_research`。
+  - 在 `workflows.py` 中新增主题研究推荐路径，接到：
+    - `theme-scan`
+    - `diagnose`
+    - `thesis capture`
+  - 新增 `stockaskill/scripts/theme_research.py`，实现：
+    - 主题解析
+    - 产业链层级模板
+    - 产业链卡点表达
+    - 本地股票池候选映射
+    - 支持证据 / 反证信号 / 下一步检查
+  - 在 `report_generator.py` 中增加 `format_theme_research()`。
+  - 在 `run.py` 中增加 `theme-scan` CLI 命令。
+  - 新增中文说明文档：
+    - `stockaskill/references/theme-research.md`
+  - 更新 `stockaskill/references/research-sources.md`，说明当前主题研究是 local-first 边界。
+  - 更新测试：
+    - `tests/test_theme_research.py`
+    - `tests/test_run.py`
+    - `tests/test_models.py`
+    - `tests/test_utils.py`
+  - 运行 `.venv/bin/python -m py_compile` 做语法校验。
+  - 运行定向测试与全量测试，确认无回归。
+- 测试结果：
+  - 定向测试：`96 passed in 16.12s`
+  - 全量测试：`318 passed, 1 warning in 234.98s`
+- 涉及文件：
+  - `stockaskill/scripts/models.py`
+  - `stockaskill/scripts/config.py`
+  - `stockaskill/scripts/utils.py`
+  - `stockaskill/scripts/workflows.py`
+  - `stockaskill/scripts/theme_research.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/references/theme-research.md`
+  - `stockaskill/references/research-sources.md`
+  - `tests/test_theme_research.py`
+  - `tests/test_run.py`
+  - `tests/test_models.py`
+  - `tests/test_utils.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 30：P1.3 全链路 confidence / provenance 展示
+- 状态：已完成
+- 已执行动作：
+  - 读取 `findings.md` 中的 `P1.3` 规划定义，以及 `data_readiness.py`、`advisor/diagnosis.py`、`market_regime.py`、`theme_research.py`、`thesis_memory.py`、`report_generator.py` 的现有结构。
+  - 在 `data_readiness.py` 中新增统一 data-quality schema：
+    - `build_symbol_quality_summary()`
+    - `build_scope_quality_summary()`
+    - `_build_confidence_block()`
+    - `_build_provenance_block()`
+  - 为 symbol / scope / ETF / market index readiness 结果直接注入 `confidence` 与 `provenance`。
+  - 在 `market_regime.py` 中为姿态分析结果增加 `confidence` 与 `provenance`。
+  - 在 `advisor/diagnosis.py` 中：
+    - 复用 symbol quality summary
+    - 合并 analytical confidence 与 data-quality confidence
+    - 输出顶层 `provenance`
+  - 在 `advisor/scanner.py` 中为候选结果增加 `confidence` 与 `provenance` 摘要。
+  - 在 `theme_research.py` 中为主题研究结果增加 `confidence` 与 `provenance`。
+  - 在 `thesis_memory.py` 中保留并持久化诊断阶段传入的 `provenance`。
+  - 在 `report_generator.py` 中新增统一 `format_confidence_provenance()` 渲染层，并接入：
+    - `format_market_regime_summary()`
+    - `format_diagnosis_summary()`
+    - `format_thesis_summary()`
+    - `format_theme_research()`
+  - 在 `run.py` 中让 `market-regime`、`theme-scan` 的终端输出直接显示 confidence / provenance 摘要。
+  - 更新测试：
+    - `tests/test_data_readiness.py`
+    - `tests/test_advisor.py`
+    - `tests/test_market_regime.py`
+    - `tests/test_theme_research.py`
+    - `tests/test_thesis_memory.py`
+    - `tests/test_run.py`
+  - 运行 `.venv/bin/python -m py_compile` 做语法校验。
+  - 运行定向测试与全量测试，确认无回归。
+- 测试结果：
+  - 定向测试：`69 passed in 6.38s`
+  - 全量测试：`320 passed, 1 warning in 235.94s`
+- 涉及文件：
+  - `stockaskill/scripts/data_readiness.py`
+  - `stockaskill/scripts/advisor/diagnosis.py`
+  - `stockaskill/scripts/advisor/scanner.py`
+  - `stockaskill/scripts/market_regime.py`
+  - `stockaskill/scripts/theme_research.py`
+  - `stockaskill/scripts/thesis_memory.py`
+  - `stockaskill/scripts/report_generator.py`
+  - `stockaskill/scripts/run.py`
+  - `stockaskill/scripts/models.py`
+  - `tests/test_data_readiness.py`
+  - `tests/test_advisor.py`
+  - `tests/test_market_regime.py`
+  - `tests/test_theme_research.py`
+  - `tests/test_thesis_memory.py`
+  - `tests/test_run.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## 测试说明
+- 当前 `.venv` 已安装 `pytest`，并已跑通全量测试。
+- 最近一次完整结果：
+  - `320 passed, 1 warning`
+- 在安装 `pytest` 前，曾做过替代性验证：
+  - `python3 -m py_compile` 检查本次改动脚本与测试文件语法
+  - 设置 `PYTHONPATH=stockaskill/scripts` 后，使用 `uv run python` 做最小导入 / 输出 smoke test
+- 当前工作区仍存在未由本次会话创建的代码改动，需要在后续实现阶段单独处理。

@@ -82,14 +82,34 @@ from data_readiness import (  # noqa: E402
     ensure_market_scan_ready,
     ensure_symbol_analysis_ready,
 )
+from deep_diagnosis import build_deep_diagnosis  # noqa: E402
+from market_regime import analyze_market_regime, summarize_market_regime  # noqa: E402
 from report_generator import (  # noqa: E402
     format_backtest_summary,
+    format_deep_diagnosis_summary,
     format_diagnosis_summary,
+    format_market_regime_summary,
     format_portfolio_summary,
+    format_theme_research,
+    format_thesis_summary,
+    format_workflow_run_summary,
     save_markdown,
     save_report,
 )
+from theme_research import build_theme_report  # noqa: E402
+from thesis_memory import (  # noqa: E402
+    build_thesis_record,
+    get_thesis_record,
+    list_thesis_records,
+    save_thesis_record,
+    update_thesis_postmortem,
+)
 from utils import normalize_code_for_market  # noqa: E402
+from workflows import build_workflow_recommendation  # noqa: E402
+from workflow_runner import (  # noqa: E402
+    build_workflow_run_plan,
+    list_workflow_manifests,
+)
 
 
 def _save_report(
@@ -158,6 +178,325 @@ def _print_refresh_summary(summary: dict) -> None:
         f" fundamentals_hit={summary.get('fundamentals_cache_hits', 0)},"
         f" fundamentals_fetched={summary.get('fundamentals_fetched_count', 0)},"
         f" fundamentals_missing={summary.get('fundamentals_missing_count', 0)}"
+    )
+
+
+def _safe_market_regime(market: str) -> dict:
+    """Return a best-effort market regime analysis."""
+    try:
+        return analyze_market_regime(market)
+    except Exception as exc:
+        return {
+            "market": market,
+            "status": "error",
+            "score": 50.0,
+            "posture": "neutral",
+            "posture_label": "中性",
+            "risk_budget": 1.0,
+            "new_positions_allowed": True,
+            "reasons": [f"market_regime_error: {exc}"],
+            "breadth": {},
+            "technical": {},
+        }
+
+
+def _print_workflow_recommendation(recommendation: dict) -> None:
+    """Print a compact workflow recommendation."""
+    print(f"Intent: {recommendation.get('intent', '?')}")
+    print(f"Market: {recommendation.get('market', '?')}")
+    print(f"Summary: {recommendation.get('summary', '')}")
+    rationale = recommendation.get("rationale", []) or []
+    if rationale:
+        print("Rationale:")
+        for item in rationale:
+            print(f"  - {item}")
+    steps = recommendation.get("steps", []) or []
+    if steps:
+        print("Steps:")
+        for idx, step in enumerate(steps, 1):
+            print(f"  {idx}. {step.get('title', 'step')}")
+            print(f"     {step.get('command', '')}")
+            print(f"     purpose: {step.get('purpose', '')}")
+    notes = recommendation.get("notes", []) or []
+    if notes:
+        print("Notes:")
+        for item in notes:
+            print(f"  - {item}")
+
+
+def cmd_route(args: argparse.Namespace) -> None:
+    """Recommend a bounded workflow for a user goal."""
+    goal = " ".join(getattr(args, "goal", []) or []).strip()
+    market = getattr(args, "market", "A") or "A"
+    code = str(getattr(args, "code", "") or "").strip()
+    codes = [
+        item.strip()
+        for item in str(getattr(args, "codes", "") or "").split(",")
+        if item.strip()
+    ]
+    top_n = int(getattr(args, "top", 10) or 10)
+    capital = float(getattr(args, "capital", 1_000_000) or 1_000_000)
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+
+    recommendation = build_workflow_recommendation(
+        goal=goal,
+        market=market,
+        code=code,
+        codes=codes,
+        top_n=top_n,
+        capital=capital,
+    ).to_dict()
+    _print_workflow_recommendation(recommendation)
+    _save_report(
+        f"route_{market}",
+        fmt,
+        output_dir,
+        data=recommendation,
+        metadata={
+            "command": "route",
+            "market": market,
+            "goal": goal,
+            "code": code,
+            "codes": codes,
+        },
+    )
+
+
+def cmd_workflow(args: argparse.Namespace) -> None:
+    """List or resolve manifest-based workflow routines."""
+    action = getattr(args, "action", "")
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+
+    if action == "list":
+        names = list_workflow_manifests()
+        print(f"Available workflows ({len(names)}):")
+        for idx, name in enumerate(names, 1):
+            print(f"  {idx}. {name}")
+        _save_report(
+            "workflow_list",
+            fmt,
+            output_dir,
+            data={"workflows": names},
+            metadata={"command": "workflow-list"},
+        )
+        return
+
+    if action == "run":
+        name = str(getattr(args, "name", "") or "").strip()
+        plan = build_workflow_run_plan(
+            name=name,
+            market=getattr(args, "market", "A") or "A",
+            code=str(getattr(args, "code", "") or "").strip(),
+            codes=str(getattr(args, "codes", "") or "").strip(),
+            theme=" ".join(getattr(args, "theme", []) or []).strip(),
+            top=int(getattr(args, "top", 10) or 10),
+            capital=float(getattr(args, "capital", 1_000_000) or 1_000_000),
+        ).to_dict()
+        print(f"Workflow: {plan.get('name', '?')} (market={plan.get('market', '?')})")
+        print(plan.get("summary", ""))
+        if plan.get("missing_params"):
+            print("Missing params: " + ", ".join(plan["missing_params"]))
+        for idx, step in enumerate(plan.get("steps", []), 1):
+            print(f"  {idx}. {step.get('title', 'step')}")
+            print(f"     {step.get('command', '')}")
+            print(f"     purpose: {step.get('purpose', '')}")
+        for item in plan.get("notes", [])[:4]:
+            print(f"  Note: {item}")
+        md = format_workflow_run_summary(plan)
+        _save_report(
+            f"workflow_run_{name}",
+            fmt,
+            output_dir,
+            data=plan,
+            md=md,
+            metadata={"command": "workflow-run", "workflow": name},
+        )
+        return
+
+    print(f"Unknown workflow action: {action}")
+
+
+def cmd_thesis(args: argparse.Namespace) -> None:
+    """Manage local thesis memory and postmortem records."""
+    action = getattr(args, "action", "")
+    market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+
+    if action == "capture":
+        code = normalize_code_for_market(args.code, market)
+        print(f"Capturing thesis for {code} (market={market})...")
+        from advisor.diagnosis import StockDiagnosis
+
+        report = StockDiagnosis(code, market).full_report()
+        record = build_thesis_record(
+            report,
+            source="diagnose",
+            thesis_status=getattr(args, "status", "active"),
+            notes=str(getattr(args, "notes", "") or "").strip(),
+        )
+        paths = save_thesis_record(record)
+        payload = record.to_dict()
+        print(format_thesis_summary(payload))
+        print(f"  Thesis JSON: {paths['json_path']}")
+        print(f"  Thesis Markdown: {paths['md_path']}")
+        _save_report(
+            f"thesis_capture_{code}_{market}",
+            fmt,
+            output_dir,
+            data=payload,
+            md=format_thesis_summary(payload),
+            metadata={"command": "thesis-capture", "market": market, "code": code},
+        )
+        return
+
+    if action == "list":
+        code = normalize_code_for_market(args.code, market) if args.code else ""
+        status = str(getattr(args, "status", "") or "").strip()
+        limit = int(
+            getattr(args, "limit", cfg_get("thesis_memory.default_limit", 10)) or 10
+        )
+        records = list_thesis_records(
+            market=market if getattr(args, "market", "") else "",
+            code=code,
+            thesis_status=status,
+            limit=limit,
+        )
+        if not records:
+            print("No thesis records found.")
+            return
+        print(f"Thesis records ({len(records)}):")
+        for idx, record in enumerate(records, 1):
+            print(
+                f"  {idx}. {record.get('thesis_id', '?')} "
+                f"{record.get('code', '?')} {record.get('market', '?')} "
+                f"{record.get('signal', 'HOLD')} "
+                f"score={float(record.get('score', 50) or 50):.1f} "
+                f"status={record.get('thesis_status', 'active')}"
+            )
+            print(f"     {record.get('summary', '')}")
+        _save_report(
+            "thesis_list",
+            fmt,
+            output_dir,
+            data={"records": records},
+            metadata={"command": "thesis-list", "market": market},
+        )
+        return
+
+    if action == "review":
+        thesis_id = str(getattr(args, "thesis_id", "") or "").strip()
+        code = normalize_code_for_market(args.code, market) if args.code else ""
+        record = get_thesis_record(thesis_id=thesis_id, code=code, market=market)
+        if not record:
+            print("Thesis record not found.", file=sys.stderr)
+            return
+        md = format_thesis_summary(record)
+        print(md)
+        _save_report(
+            f"thesis_review_{record.get('code', 'unknown')}_{record.get('market', market)}",
+            fmt,
+            output_dir,
+            data=record,
+            md=md,
+            metadata={
+                "command": "thesis-review",
+                "market": record.get("market", market),
+                "code": record.get("code", ""),
+                "thesis_id": record.get("thesis_id", ""),
+            },
+        )
+        return
+
+    if action == "postmortem":
+        thesis_id = str(getattr(args, "thesis_id", "") or "").strip()
+        code = normalize_code_for_market(args.code, market) if args.code else ""
+        try:
+            record = update_thesis_postmortem(
+                outcome=str(getattr(args, "outcome", "neutral") or "neutral"),
+                notes=str(getattr(args, "notes", "") or "").strip(),
+                thesis_id=thesis_id,
+                code=code,
+                market=market,
+                thesis_status=str(getattr(args, "status", "closed") or "closed"),
+            )
+        except ValueError:
+            print("Thesis record not found.", file=sys.stderr)
+            return
+        md = format_thesis_summary(record)
+        print(md)
+        _save_report(
+            f"thesis_postmortem_{record.get('code', 'unknown')}_{record.get('market', market)}",
+            fmt,
+            output_dir,
+            data=record,
+            md=md,
+            metadata={
+                "command": "thesis-postmortem",
+                "market": record.get("market", market),
+                "code": record.get("code", ""),
+                "thesis_id": record.get("thesis_id", ""),
+            },
+        )
+        return
+
+    print(f"Unknown thesis action: {action}")
+
+
+def cmd_theme_scan(args: argparse.Namespace) -> None:
+    """Run local-first theme research and rank layers before companies."""
+    theme = " ".join(getattr(args, "theme", []) or []).strip()
+    market = getattr(args, "market", "A") or "A"
+    top_n = int(getattr(args, "top", 3) or 3)
+    candidate_limit = int(getattr(args, "candidates", 0) or 0)
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+
+    print(f"Theme research: {theme} (market={market})")
+    report = build_theme_report(
+        theme=theme,
+        market=market,
+        top_n=top_n,
+        candidate_limit=candidate_limit,
+    ).to_dict()
+    print(report.get("summary", ""))
+    print(f"  关键问题: {report.get('key_question', '')}")
+    confidence = report.get("confidence", {}) or {}
+    provenance = report.get("provenance", {}) or {}
+    if confidence:
+        print(
+            "  Confidence:"
+            f" {confidence.get('level', 'medium')}"
+            f" ({float(confidence.get('score', 0.5) or 0.5):.2f})"
+        )
+    if provenance:
+        print(
+            "  Provenance:"
+            f" source={provenance.get('source', 'unknown')},"
+            f" status={provenance.get('source_status', 'unknown')},"
+            f" freshness={provenance.get('freshness', 'unknown')}"
+        )
+    for layer in report.get("layers", [])[:top_n]:
+        print(
+            f"  {layer.get('rank', '?')}. {layer.get('layer', '')} "
+            f"| 卡点={layer.get('scarce_layer', '')} "
+            f"| score={float(layer.get('score', 0) or 0):.1f}"
+        )
+        for candidate in layer.get("candidates", [])[:top_n]:
+            print(
+                f"     - {candidate.get('code', '?')} {candidate.get('name', '')}: "
+                f"{float(candidate.get('score', 0) or 0):.1f}"
+            )
+    md = format_theme_research(report)
+    _save_report(
+        f"theme_scan_{market}",
+        fmt,
+        output_dir,
+        data=report,
+        md=md,
+        metadata={"command": "theme-scan", "market": market, "theme": theme},
     )
 
 
@@ -257,6 +596,53 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
         print(f"Diagnosis failed: {exc}", file=sys.stderr)
 
 
+def cmd_deep_diagnose(args: argparse.Namespace) -> None:
+    """Run a heavier long-form single-symbol diagnosis."""
+    code = args.code
+    market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+    print(f"Deep diagnosing {code} (market={market})...")
+
+    try:
+        report = build_deep_diagnosis(code, market)
+        decision = report.get("final_decision", {}) or {}
+        print(report.get("executive_summary", ""))
+        print(
+            "  Signal / Score:"
+            f" {decision.get('signal', 'HOLD')}"
+            f" / {float(decision.get('adjusted_score', 50) or 50):.1f}"
+        )
+        confidence = report.get("confidence", {}) or {}
+        if confidence:
+            print(
+                "  Confidence:"
+                f" {confidence.get('level', 'medium')}"
+                f" ({float(confidence.get('score', 0.5) or 0.5):.2f})"
+            )
+        conflicts = report.get("conflict_matrix", []) or []
+        for item in conflicts[:3]:
+            print(
+                f"  Conflict {item.get('topic', '?')}:"
+                f" {item.get('status', 'mixed')}"
+                f" | {item.get('implication', '')}"
+            )
+        for item in report.get("next_checks", [])[:3]:
+            print(f"  Next check: {item}")
+
+        md = format_deep_diagnosis_summary(report)
+        _save_report(
+            f"deep_diagnose_{code}_{market}",
+            fmt,
+            output_dir,
+            data=report,
+            md=md,
+            metadata={"command": "deep-diagnose", "market": market, "code": code},
+        )
+    except Exception as exc:
+        print(f"Deep diagnosis failed: {exc}", file=sys.stderr)
+
+
 def cmd_scan(args: argparse.Namespace) -> None:
     """Scan market for top stocks."""
     market = args.market
@@ -290,6 +676,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
         return
 
     print(f"Scanning {market} market for top {top_n}...", flush=True)
+    regime = _safe_market_regime(market)
+    print("  " + summarize_market_regime(regime), flush=True)
     try:
         from advisor.scanner import MarketScanner
 
@@ -423,6 +811,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
             output_dir,
             data={
                 "market": market,
+                "regime": regime,
                 "top_n": top_n,
                 "mode": mode,
                 "results": results,
@@ -442,6 +831,8 @@ def cmd_refresh_scan(args: argparse.Namespace) -> None:
     output_dir = getattr(args, "output_dir", "reports")
     fmt = getattr(args, "format", "both")
     print(f"Refreshing full-market snapshot for {market}...", flush=True)
+    regime = _safe_market_regime(market)
+    print("  " + summarize_market_regime(regime), flush=True)
     try:
         from advisor.scanner import MarketScanner
 
@@ -483,6 +874,7 @@ def cmd_refresh_scan(args: argparse.Namespace) -> None:
             output_dir,
             data={
                 "market": market,
+                "regime": regime,
                 "top_n": top_n,
                 "mode": "snapshot",
                 "results": results,
@@ -504,13 +896,17 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
     fmt = getattr(args, "format", "both")
 
     print(f"Building portfolio with {len(codes)} stocks, capital={capital:,.0f}")
+    regime = _safe_market_regime(market)
+    print("  " + summarize_market_regime(regime))
     try:
         from portfolio.builder import PortfolioBuilder
 
         builder = PortfolioBuilder("My Portfolio", capital=capital)
         for c in codes:
             builder.add_from_strategy(c, market)
-        portfolio = builder.build()
+        portfolio = builder.build(
+            capital_fraction=float(regime.get("risk_budget", 1.0) or 1.0)
+        )
         print(portfolio.summary())
 
         positions_data = []
@@ -528,6 +924,7 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
             "name": portfolio.name,
             "capital": capital,
             "market": market,
+            "regime": regime,
             "positions": positions_data,
             "metrics": portfolio.metrics,
         }
@@ -536,6 +933,7 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
             capital,
             positions_data,
             portfolio.metrics,
+            regime=regime,
         )
         _save_report(
             f"portfolio_{market}",
@@ -994,6 +1392,8 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     fmt = getattr(args, "format", "both")
 
     print(f"Alpha Momentum scan on {market}, top {top_n}...")
+    regime = _safe_market_regime(market)
+    print("  " + summarize_market_regime(regime))
     try:
         pool = get_stock_pool(market)
         max_candidates = getattr(args, "candidates", 0)
@@ -1068,6 +1468,7 @@ def cmd_alpha(args: argparse.Namespace) -> None:
             output_dir,
             data={
                 "market": market,
+                "regime": regime,
                 "top_n": top_n,
                 "results": ranked,
                 "buys": buys,
@@ -1178,6 +1579,8 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
     output_dir = getattr(args, "output_dir", "reports")
     fmt = getattr(args, "format", "both")
     print(f"Building Enhanced Core-Satellite portfolio, capital={capital:,.0f}")
+    regime = _safe_market_regime("A")
+    print("  " + summarize_market_regime(regime))
     try:
         from data_engine import get_stock_pool
         from portfolio.builder import PortfolioBuilder
@@ -1196,7 +1599,9 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
         builder = PortfolioBuilder("Core-Satellite", capital=capital)
         for code in codes:
             builder.add_from_strategy(code, "A")
-        portfolio = builder.build()
+        portfolio = builder.build(
+            capital_fraction=float(regime.get("risk_budget", 1.0) or 1.0)
+        )
         print(portfolio.summary())
 
         positions_data = []
@@ -1213,6 +1618,7 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
         port_data = {
             "name": "Core-Satellite",
             "capital": capital,
+            "regime": regime,
             "etfs": [e["code"] for e in etfs],
             "stocks": selected,
             "positions": positions_data,
@@ -1223,6 +1629,7 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
             capital,
             positions_data,
             portfolio.metrics,
+            regime=regime,
         )
         _save_report(
             "portfolio_enhanced",
@@ -1281,9 +1688,292 @@ def cmd_cache(args: argparse.Namespace) -> None:
         print(f"Unknown cache action: {action}")
 
 
+def cmd_market_regime(args: argparse.Namespace) -> None:
+    """Analyze current market posture and risk budget."""
+    market = getattr(args, "market", "A") or "A"
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+
+    regime = analyze_market_regime(market)
+    print(summarize_market_regime(regime))
+    confidence = regime.get("confidence", {}) or {}
+    provenance = regime.get("provenance", {}) or {}
+    if confidence:
+        print(
+            "  Confidence:"
+            f" {confidence.get('level', 'medium')}"
+            f" ({float(confidence.get('score', 0.5) or 0.5):.2f})"
+        )
+    if provenance:
+        print(
+            "  Provenance:"
+            f" source={provenance.get('source', 'unknown')},"
+            f" status={provenance.get('source_status', 'unknown')},"
+            f" freshness={provenance.get('freshness', 'unknown')}"
+        )
+    technical = regime.get("technical", {}) or {}
+    breadth = regime.get("breadth", {}) or {}
+    if technical:
+        print(
+            "  技术面:"
+            f" current={technical.get('current', 'N/A')},"
+            f" ma20={technical.get('ma20', 'N/A')},"
+            f" ma60={technical.get('ma60', 'N/A')},"
+            f" ret20={float(technical.get('ret20', 0) or 0) * 100:.2f}%"
+        )
+    if breadth:
+        print(
+            "  Breadth:"
+            f" sample={breadth.get('sample_size', 0)}/{breadth.get('sample_limit', 0)},"
+            f" above_ma20={float(breadth.get('above_ma20_ratio', 0.5) or 0.5) * 100:.1f}%,"
+            f" above_ma60={float(breadth.get('above_ma60_ratio', 0.5) or 0.5) * 100:.1f}%"
+        )
+    for reason in regime.get("reasons", [])[:5]:
+        print(f"  - {reason}")
+
+    md = format_market_regime_summary(regime)
+    _save_report(
+        f"market_regime_{market}",
+        fmt,
+        output_dir,
+        data=regime,
+        md=md,
+        metadata={"command": "market-regime", "market": market},
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AKShare Stock Selection System")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    for command_name in ("route", "recommend"):
+        p = sub.add_parser(
+            command_name,
+            help="Recommend a bounded workflow for a user goal",
+        )
+        p.add_argument(
+            "goal",
+            nargs="*",
+            help="Natural-language goal, e.g. find opportunities or review a symbol",
+        )
+        p.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
+        p.add_argument("--code", default="", help="Single symbol for analysis flows")
+        p.add_argument(
+            "--codes",
+            default="",
+            help="Comma-separated symbol codes for portfolio flows",
+        )
+        p.add_argument("--top", type=int, default=10, help="Top candidate count")
+        p.add_argument(
+            "--capital",
+            type=float,
+            default=1000000,
+            help="Portfolio capital used in examples",
+        )
+        p.add_argument(
+            "--output-dir",
+            default="reports",
+            help="Report output directory",
+        )
+        p.add_argument(
+            "--format",
+            choices=["json", "md", "both", "none"],
+            default="both",
+            help="Report output format",
+        )
+        p.set_defaults(func=cmd_route)
+
+    p = sub.add_parser("workflow", help="Manifest-based workflow routines")
+    workflow_sub = p.add_subparsers(dest="action", required=True)
+
+    p_workflow_list = workflow_sub.add_parser(
+        "list",
+        help="List available workflow manifests",
+    )
+    p_workflow_list.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_workflow_list.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_workflow_list.set_defaults(func=cmd_workflow)
+
+    p_workflow_run = workflow_sub.add_parser(
+        "run",
+        help="Resolve one workflow manifest into a concrete routine",
+    )
+    p_workflow_run.add_argument("name", help="Workflow manifest name")
+    p_workflow_run.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_workflow_run.add_argument("--code", default="", help="Single symbol code")
+    p_workflow_run.add_argument(
+        "--codes",
+        default="",
+        help="Comma-separated symbol codes",
+    )
+    p_workflow_run.add_argument(
+        "--theme",
+        nargs="*",
+        default=[],
+        help="Theme name for theme research routines",
+    )
+    p_workflow_run.add_argument("--top", type=int, default=10)
+    p_workflow_run.add_argument("--capital", type=float, default=1000000)
+    p_workflow_run.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_workflow_run.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_workflow_run.set_defaults(func=cmd_workflow)
+
+    p = sub.add_parser("thesis", help="Manage local thesis memory")
+    thesis_sub = p.add_subparsers(dest="action", required=True)
+
+    p_thesis_capture = thesis_sub.add_parser(
+        "capture",
+        help="Run diagnosis and persist a thesis record",
+    )
+    p_thesis_capture.add_argument("code", help="Stock code")
+    p_thesis_capture.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_thesis_capture.add_argument(
+        "--status",
+        default="active",
+        choices=["active", "watch", "closed"],
+        help="Initial thesis status",
+    )
+    p_thesis_capture.add_argument("--notes", default="", help="Optional thesis note")
+    p_thesis_capture.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_thesis_capture.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_thesis_capture.set_defaults(func=cmd_thesis)
+
+    p_thesis_list = thesis_sub.add_parser(
+        "list",
+        help="List saved thesis records",
+    )
+    p_thesis_list.add_argument("--market", default="", help="Filter by market")
+    p_thesis_list.add_argument("--code", default="", help="Filter by code")
+    p_thesis_list.add_argument(
+        "--status",
+        default="",
+        choices=["", "active", "watch", "closed"],
+        help="Filter by thesis status",
+    )
+    p_thesis_list.add_argument("--limit", type=int, default=10)
+    p_thesis_list.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_thesis_list.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_thesis_list.set_defaults(func=cmd_thesis)
+
+    p_thesis_review = thesis_sub.add_parser(
+        "review",
+        help="Review a saved thesis record",
+    )
+    p_thesis_review.add_argument("--thesis-id", default="", help="Saved thesis id")
+    p_thesis_review.add_argument("--code", default="", help="Code for latest thesis")
+    p_thesis_review.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_thesis_review.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_thesis_review.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_thesis_review.set_defaults(func=cmd_thesis)
+
+    p_thesis_postmortem = thesis_sub.add_parser(
+        "postmortem",
+        help="Attach a postmortem to a saved thesis record",
+    )
+    p_thesis_postmortem.add_argument(
+        "--thesis-id",
+        default="",
+        help="Saved thesis id",
+    )
+    p_thesis_postmortem.add_argument(
+        "--code",
+        default="",
+        help="Code for latest thesis",
+    )
+    p_thesis_postmortem.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US)",
+    )
+    p_thesis_postmortem.add_argument(
+        "--outcome",
+        required=True,
+        choices=["win", "loss", "neutral"],
+        help="Outcome classification",
+    )
+    p_thesis_postmortem.add_argument("--notes", default="", help="Review notes")
+    p_thesis_postmortem.add_argument(
+        "--status",
+        default="closed",
+        choices=["watch", "closed"],
+        help="Final thesis status",
+    )
+    p_thesis_postmortem.add_argument(
+        "--output-dir",
+        default="reports",
+        help="Report output directory",
+    )
+    p_thesis_postmortem.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p_thesis_postmortem.set_defaults(func=cmd_thesis)
+
+    p = sub.add_parser("theme-scan", help="Run local-first theme research")
+    p.add_argument("theme", nargs="+", help="Theme name, e.g. AI基础设施 or 机器人")
+    p.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p.add_argument("--top", type=int, default=3, help="Top layers/candidates to print")
+    p.add_argument(
+        "--candidates",
+        type=int,
+        default=0,
+        help="Max pool candidates to inspect before theme mapping (0=auto)",
+    )
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p.set_defaults(func=cmd_theme_scan)
 
     # analyze
     p = sub.add_parser("analyze", help="Analyze a single stock")
@@ -1310,6 +2000,18 @@ def main() -> None:
         help="Report output format",
     )
     p.set_defaults(func=cmd_diagnose)
+
+    p = sub.add_parser("deep-diagnose", help="Long-form stock deep diagnosis")
+    p.add_argument("code", help="Stock code")
+    p.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p.set_defaults(func=cmd_deep_diagnose)
 
     # scan
     p = sub.add_parser("scan", help="Scan market for top stocks")
@@ -1383,6 +2085,23 @@ def main() -> None:
         help="Report output format",
     )
     p.set_defaults(func=cmd_portfolio)
+
+    # market-regime
+    p = sub.add_parser("market-regime", help="Analyze current market posture")
+    p.add_argument(
+        "--market",
+        default="A",
+        choices=["A", "HK", "US"],
+        help="Market to analyze",
+    )
+    p.add_argument("--output-dir", default="reports", help="Report output directory")
+    p.add_argument(
+        "--format",
+        choices=["json", "md", "both", "none"],
+        default="both",
+        help="Report output format",
+    )
+    p.set_defaults(func=cmd_market_regime)
 
     # fetch
     p = sub.add_parser("fetch", help="Refresh data")

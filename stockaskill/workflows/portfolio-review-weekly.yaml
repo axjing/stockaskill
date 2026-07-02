@@ -1,0 +1,41 @@
+{
+  "name": "portfolio-review-weekly",
+  "summary": "每周组合复核：先看市场，再复核 thesis 和组合候选。",
+  "description": "适合对已有组合做周频 review。需要提供 `codes`，可选提供 `capital` 用于重新生成组合建议。",
+  "defaults": {
+    "market": "A",
+    "capital": 1000000
+  },
+  "required_params": ["codes"],
+  "tags": ["weekly", "portfolio", "review"],
+  "notes": [
+    "当前 runner 只负责输出 routine，不直接执行 shell 命令。",
+    "如果已有 thesis，可优先查看 `thesis list --status active` 的记录。"
+  ],
+  "steps": [
+    {
+      "title": "检查市场状态",
+      "command": "python stockaskill/scripts/run.py market-regime --market {market}",
+      "purpose": "判断当前 risk budget 是否支持继续持有或扩仓。",
+      "artifact": "market_regime_{market}.json/.md"
+    },
+    {
+      "title": "查看活跃 thesis",
+      "command": "python stockaskill/scripts/run.py thesis list --market {market} --status active",
+      "purpose": "先回看当前仍在跟踪的投资逻辑。",
+      "artifact": "thesis_list.json"
+    },
+    {
+      "title": "同步组合候选数据",
+      "command": "python stockaskill/scripts/run.py sync portfolio --codes {codes} --market {market}",
+      "purpose": "补齐组合内标的的本地历史与基本面数据。",
+      "artifact": "sync_portfolio_{market}.json"
+    },
+    {
+      "title": "重建组合视图",
+      "command": "python stockaskill/scripts/run.py portfolio --codes {codes} --market {market} --capital {capital}",
+      "purpose": "在当前市场姿态约束下重新审视组合权重建议。",
+      "artifact": "portfolio_{market}.json/.md"
+    }
+  ]
+}
