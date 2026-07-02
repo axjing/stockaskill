@@ -29,8 +29,11 @@ class StrategyAggregator:
         self.code = code
         self.market = market
 
-    def analyze_all(self) -> Dict[str, Any]:
+    def analyze_all(self, cached_only: bool = False) -> Dict[str, Any]:
         """Run all strategies and aggregate signals.
+
+        Args:
+            cached_only: Skip API calls, use only cached data.
 
         Returns:
             Dict with final_signal, final_score, confidence, signals list.
@@ -43,7 +46,7 @@ class StrategyAggregator:
 
         for factory in _STRATEGIES:
             strategy: Strategy = factory()
-            result = strategy.analyze(self.code, self.market)
+            result = strategy.analyze(self.code, self.market, cached_only=cached_only)
             signals.append(result)
 
             w = strategy.weight

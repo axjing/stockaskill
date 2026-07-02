@@ -21,7 +21,7 @@ class PortfolioBuilder:
         self._candidates: List[Dict[str, Any]] = []
 
     def add_from_strategy(
-        self, code: str, market: str = "A", weight: Optional[float] = None
+        self, code: str, market: str = "A", weight: Optional[float] = None, cached_only: bool = False
     ) -> None:
         """Add a stock from strategy analysis.
 
@@ -29,17 +29,18 @@ class PortfolioBuilder:
             code: Stock code.
             market: Market identifier.
             weight: Optional manual weight (auto-computed if None).
+            cached_only: Skip API calls, use only cached data.
         """
         ensure_symbol_analysis_ready(code, market)
         from strategies.aggregator import StrategyAggregator
 
         agg = StrategyAggregator(code, market)
-        result = agg.analyze_all()
+        result = agg.analyze_all(cached_only=cached_only)
 
         score = result.get("final_score", 50)
 
         # Get current price from K-line
-        kline = get_kline(code, market, days=1)
+        kline = get_kline(code, market, days=1, cached_only=cached_only)
         current_price = kline[0].get("close", 0) if kline else 0
 
         pool = self._get_stock_info(code, market)

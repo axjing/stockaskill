@@ -51,11 +51,11 @@ class MomentumEnhancedStrategy(Strategy):
     def weight(self) -> float:
         return 0.20
 
-    def analyze(self, code: str, market: str = "A") -> Dict[str, Any]:
+    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
         from factors.composite import CompositeAnalyzer
 
         analyzer = CompositeAnalyzer(code, market)
-        result = analyzer.analyze()
+        result = analyzer.analyze(cached_only=cached_only)
 
         factors = result.get("factors", {})
         low_vol_score = factors.get("low_vol", 0.5)
@@ -98,13 +98,14 @@ class MomentumEnhancedStrategy(Strategy):
         candidates: List[Dict[str, Any]],
         max_picks: int = 3,
         max_per_board: int = 2,
+        cached_only: bool = False,
     ) -> List[str]:
         """Select top N stocks with board diversification."""
         scored = []
         for stock in candidates:
             code = stock.get("code", "")
             try:
-                r = self.analyze(code, "A")
+                r = self.analyze(code, "A", cached_only=cached_only)
                 if r.get("signal") == "BUY" and r.get("score", 0) > 0:
                     scored.append((code, r["score"]))
             except Exception:

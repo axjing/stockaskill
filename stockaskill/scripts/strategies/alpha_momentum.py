@@ -29,11 +29,11 @@ class AlphaMomentumStrategy(Strategy):
     def name(self) -> str:
         return "alpha_momentum"
 
-    def analyze(self, code: str, market: str = "A") -> Dict[str, Any]:
+    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
         from factors.composite import CompositeAnalyzer
 
         analyzer = CompositeAnalyzer(code, market)
-        result = analyzer.analyze()
+        result = analyzer.analyze(cached_only=cached_only)
 
         factors = result.get("factors", {})
         low_vol_score = factors.get("low_vol", 0.5)

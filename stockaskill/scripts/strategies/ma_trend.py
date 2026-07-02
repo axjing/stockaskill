@@ -20,8 +20,8 @@ class MATrendStrategy(Strategy):
     def name(self) -> str:
         return "ma_trend"
 
-    def analyze(self, code: str, market: str = "A") -> Dict[str, Any]:
-        fund, kline = self._get_data(code, market)
+    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
+        fund, kline = self._get_data(code, market, cached_only=cached_only)
 
         if len(kline) < 60:
             return {

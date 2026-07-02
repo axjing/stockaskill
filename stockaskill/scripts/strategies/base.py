@@ -29,21 +29,22 @@ class Strategy(ABC):
         return weights.get(self.name, 0.1)
 
     @abstractmethod
-    def analyze(self, code: str, market: str = "A") -> Dict[str, Any]:
+    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
         """Analyze a stock and return a signal dict.
 
         Args:
             code: Stock code.
             market: Market identifier.
+            cached_only: Skip API calls, use only cached data.
 
         Returns:
             Dict with signal, score, confidence, detail.
         """
 
-    def _get_data(self, code: str, market: str) -> tuple:
+    def _get_data(self, code: str, market: str, cached_only: bool = False) -> tuple:
         """Fetch fundamentals and K-line data."""
-        fundamentals = get_fundamentals(code, market) or {}
-        kline = get_kline(code, market, days=365)
+        fundamentals = get_fundamentals(code, market, cached_only=cached_only) or {}
+        kline = get_kline(code, market, days=365, cached_only=cached_only)
         return fundamentals, kline
 
     @staticmethod

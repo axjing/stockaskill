@@ -39,8 +39,8 @@ class DeepValueStrategy(Strategy):
     def name(self) -> str:
         return "deep_value"
 
-    def analyze(self, code: str, market: str = "A") -> Dict[str, Any]:
-        fund, kline = self._get_data(code, market)
+    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
+        fund, kline = self._get_data(code, market, cached_only=cached_only)
 
         pe = self._safe(fund.get("pe_ttm", 0))
         pb = self._safe(fund.get("pb", 0))
@@ -49,7 +49,7 @@ class DeepValueStrategy(Strategy):
         # F-Score from composite
         from factors.composite import CompositeAnalyzer
 
-        f_score = CompositeAnalyzer(code, market).analyze().get("f_score", 0)
+        f_score = CompositeAnalyzer(code, market).analyze(cached_only=cached_only).get("f_score", 0)
 
         score = 0
         checks = []

@@ -1689,14 +1689,28 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
     regime = _safe_market_regime("A")
     print("  " + summarize_market_regime(regime))
     try:
-        from data_engine import get_stock_pool
+        from data_engine import get_stock_pool, sync_portfolio_data
         from portfolio.builder import PortfolioBuilder
         from strategies.momentum_enhanced import MomentumEnhancedStrategy
 
         strat = MomentumEnhancedStrategy()
         pool = get_stock_pool("A")
         candidates = pool[:200]
-        selected = strat.select_top_stocks(candidates, max_picks=3)
+
+        # Phase 1: sync only missing data for candidates + ETFs
+        etf_codes = [e["code"] for e in MomentumEnhancedStrategy.get_etf_allocation()]
+        codes_to_sync = [c["code"] for c in candidates] + etf_codes
+        print(f"  Syncing {len(codes_to_sync)} symbols (pool + ETFs)...")
+        sync_result = sync_portfolio_data(codes_to_sync, market="A", history_days=365)
+        print(
+            f"  Sync done: {sync_result['ready']}/{sync_result['requested']} ready, "
+            f"cache_hits={sync_result['cache_hits']}, "
+            f"history_fetched={sync_result['history_fetched_count']}, "
+            f"fundamentals_fetched={sync_result['fundamentals_fetched_count']}"
+        )
+
+        # Phase 2: all analysis reads cache only
+        selected = strat.select_top_stocks(candidates, max_picks=3, cached_only=True)
 
         etfs = MomentumEnhancedStrategy.get_etf_allocation()
         codes = [e["code"] for e in etfs] + selected
@@ -1705,7 +1719,7 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
 
         builder = PortfolioBuilder("Core-Satellite", capital=capital)
         for code in codes:
-            builder.add_from_strategy(code, "A")
+            builder.add_from_strategy(code, "A", cached_only=True)
         portfolio = builder.build(
             capital_fraction=float(regime.get("risk_budget", 1.0) or 1.0)
         )
