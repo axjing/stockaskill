@@ -45,3 +45,9 @@ Snapshot date: 2026-05-03
 - Substack posts are useful for method reconstruction and outside evaluation.
 - Company filings, official press releases, and exchange documents should drive security-specific conclusions.
 - Mainstream media is useful for market impact, social-media influence, and independent framing.
+
+## Local-first theme research note
+
+- Current `theme-scan` implementation in this repo is intentionally local-first.
+- It uses local stock-pool metadata and cached factor signals as the first-pass ranking input.
+- For higher-conviction theme calls, company filings, exchange disclosures, and customer validation still need to be checked manually afterward.

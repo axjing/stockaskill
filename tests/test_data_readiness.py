@@ -3,11 +3,21 @@ from unittest.mock import patch
 
 
 class TestDataReadiness:
+    @patch("data_readiness.get_stock_pool")
     @patch("data_readiness.sync_symbol_data")
     def test_ensure_symbol_ready_uses_local_cache(
         self,
         mock_sync_symbol_data,
+        mock_pool,
     ):
+        mock_pool.return_value = [
+            {
+                "code": "600519",
+                "metadata_source": "manual",
+                "metadata_status": "active",
+                "metadata_completeness": 1.0,
+            }
+        ]
         mock_sync_symbol_data.return_value = {
             "code": "600519",
             "market": "A",
@@ -26,13 +36,25 @@ class TestDataReadiness:
         assert result["history_ready"] is True
         assert result["fundamentals_after"] is True
         assert result["covered_through"]
+        assert result["confidence"]["level"] in {"high", "medium", "low"}
+        assert "provenance" in result
         mock_sync_symbol_data.assert_called_once()
 
+    @patch("data_readiness.get_stock_pool")
     @patch("data_readiness.sync_symbol_data")
     def test_ensure_symbol_ready_fetches_missing_data(
         self,
         mock_sync_symbol_data,
+        mock_pool,
     ):
+        mock_pool.return_value = [
+            {
+                "code": "600519",
+                "metadata_source": "manual",
+                "metadata_status": "active",
+                "metadata_completeness": 1.0,
+            }
+        ]
         mock_sync_symbol_data.return_value = {
             "code": "600519",
             "market": "A",
@@ -50,6 +72,7 @@ class TestDataReadiness:
         result = ensure_symbol_ready("600519", "A", history_days=365)
         assert result["history_ready"] is True
         assert result["fundamentals_after"] is True
+        assert result["confidence"]["score"] >= 0
         mock_sync_symbol_data.assert_called_once()
 
     @patch("data_readiness.sync_watchlist_data")
@@ -92,6 +115,7 @@ class TestDataReadiness:
         result = ensure_etf_ready(["510300", "159915"], history_days=365)
         assert result["requested"] == 2
         assert result["covered_through"] == "2026-07-01"
+        assert result["confidence"]["level"] in {"high", "medium", "low"}
         mock_sync_etf_data.assert_called_once()
 
     @patch("data_readiness.ensure_etf_ready")
@@ -143,3 +167,31 @@ class TestDataReadiness:
         args, kwargs = mock_symbols_ready.call_args
         assert args[0] == ["600001", "600002", "600003"]
         assert kwargs["limit"] == 2
+
+    @patch("data_readiness.get_stock_pool")
+    def test_build_symbol_quality_summary_uses_metadata(self, mock_pool):
+        mock_pool.return_value = [
+            {
+                "code": "600519",
+                "metadata_source": "manual",
+                "metadata_status": "active",
+                "metadata_completeness": 1.0,
+            }
+        ]
+
+        from data_readiness import build_symbol_quality_summary
+
+        result = build_symbol_quality_summary(
+            "600519",
+            "A",
+            {
+                "history_ready": True,
+                "fundamentals_after": True,
+                "fundamentals_required": True,
+                "covered_through": datetime.now().strftime("%Y-%m-%d"),
+                "errors": [],
+            },
+        )
+
+        assert result["confidence"]["level"] in {"high", "medium"}
+        assert result["provenance"]["source"] == "manual"

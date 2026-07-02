@@ -275,6 +275,7 @@ Only erasable Node strip-only syntax is allowed for code under packages/*/src , 
 ### Modification Rules
 - Delete/disable existing features only after user confirmation.
 - Large-scale refactoring: read full file/module first.
+- When CLI surface, capability scope, or user-facing workflows change, check whether `README.md`, `stockaskill/SKILL.md`, and `AGENTS.md` need synchronized updates.
 
 ### 3rdparty Directory
 - `3rdparty/` is read-only. Never modify files inside it.
@@ -349,20 +350,22 @@ source .venv/bin/activate             # Unix
 uv sync --extra dev                   # install with dev deps
 
 # Lint & Type Check
-uv run ruff check agentsx/ tests/
-uv run ruff format --check agentsx/ tests/
-uv run mypy agentsx/ tests/ --strict
+uv run ruff check stockaskill/scripts tests
+uv run ruff format --check stockaskill/scripts tests
+uv run mypy stockaskill/scripts tests
 
 # Test
 uv run python -m pytest -v
 
 # Run CLI
-uv run agentsx chat
-uv run agentsx chat --model gpt-4o --allow-all
+uv run python stockaskill/scripts/run.py diagnose 600519 --market A
+uv run python stockaskill/scripts/run.py deep-diagnose 600519 --market A
+uv run python stockaskill/scripts/run.py workflow list
+uv run python stockaskill/scripts/run.py scorecard diagnose 600519 --market A
 
 # Git
 git status
 git add <file-path>
-git commit -m "feat(harness): add session management"
+git commit -m "docs(agent): sync project instructions"
 git push
 ```

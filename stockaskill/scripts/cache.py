@@ -158,6 +158,45 @@ class CacheManager:
             for sql in _SCHEMA:
                 conn.execute(sql)
             self._ensure_stock_pool_metadata_columns(conn)
+        self._migrate_from_v1()
+
+    def _migrate_from_v1(self) -> None:
+        """One-time migration: copy v1 data to v2 tables if v2 is empty.
+        Runs only once; the v1 tables are kept but no longer written to.
+        """
+        with self._conn() as conn:
+            for v2_table, v1_table, cols in [
+                (
+                    "stock_pool_v2",
+                    "stock_pool",
+                    "market, code, name, sector, industry, list_date, "
+                    "total_market_cap, is_active, '' as metadata_source, "
+                    "'' as metadata_status, 0.0 as metadata_completeness, "
+                    "coalesce(updated_at, datetime('now')) as updated_at",
+                ),
+                (
+                    "daily_price_v2",
+                    "daily_price",
+                    "market, code, date, open, high, low, close, volume, amount",
+                ),
+                (
+                    "factor_snapshot_v2",
+                    "factor_snapshot",
+                    "'' as market, code, date, market_cap, pe_ttm, pe_static, pb, "
+                    "ps_ttm, pcf_ttm, dividend_yield, roe, roa, gross_margin, "
+                    "net_margin, revenue_growth, profit_growth, debt_ratio, "
+                    "current_ratio, eps, bvps",
+                ),
+            ]:
+                try:
+                    row = conn.execute(f"SELECT COUNT(*) FROM {v2_table}").fetchone()
+                    if row and row[0] == 0:
+                        conn.execute(
+                            f"INSERT OR IGNORE INTO {v2_table} SELECT {cols} "
+                            f"FROM {v1_table}"
+                        )
+                except Exception:
+                    pass
 
     @contextmanager
     def _conn(self):
@@ -171,7 +210,7 @@ class CacheManager:
     # -- stock pool ---------------------------------------------------------
 
     def upsert_stock_pool(self, rows: List[Dict[str, Any]]) -> None:
-        """Bulk upsert stock pool entries."""
+        """Bulk upsert stock pool entries (v2 table only)."""
         normalized_rows = []
         for row in rows:
             normalized = dict(row)
@@ -180,19 +219,6 @@ class CacheManager:
             normalized.setdefault("metadata_completeness", 0.0)
             normalized_rows.append(normalized)
         with self._conn() as conn:
-            conn.executemany(
-                "INSERT INTO stock_pool (code, name, market, sector, industry, "
-                "list_date, total_market_cap, is_active, updated_at) "
-                "VALUES (:code, :name, :market, :sector, :industry, "
-                ":list_date, :total_market_cap, :is_active, :updated_at) "
-                "ON CONFLICT(code) DO UPDATE SET "
-                "name=excluded.name, market=excluded.market, "
-                "sector=excluded.sector, industry=excluded.industry, "
-                "list_date=excluded.list_date, "
-                "total_market_cap=excluded.total_market_cap, "
-                "is_active=excluded.is_active, updated_at=excluded.updated_at",
-                normalized_rows,
-            )
             conn.executemany(
                 "INSERT INTO stock_pool_v2 ("
                 "market, code, name, sector, industry, list_date, "
@@ -221,18 +247,11 @@ class CacheManager:
                 self._touch_meta(self._stock_pool_meta_key(market), count, conn)
 
     def get_stock_pool(self, market: str = "A") -> List[Dict[str, Any]]:
-        """Get stock pool for a market."""
+        """Get stock pool for a market (v2 table)."""
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
                 "SELECT * FROM stock_pool_v2 WHERE market=? AND is_active=1",
-                (market,),
-            )
-            rows = [dict(r) for r in cur.fetchall()]
-            if rows:
-                return rows
-            cur = conn.execute(
-                "SELECT * FROM stock_pool WHERE market=? AND is_active=1",
                 (market,),
             )
             return [dict(r) for r in cur.fetchall()]
@@ -248,19 +267,8 @@ class CacheManager:
     # -- daily price (K-line) ----------------------------------------------
 
     def upsert_daily_price(self, rows: List[Dict[str, Any]]) -> None:
-        """Bulk upsert daily K-line data."""
+        """Bulk upsert daily K-line data (v2 table only)."""
         with self._conn() as conn:
-            conn.executemany(
-                "INSERT INTO daily_price "
-                "(code, date, open, high, low, close, volume, amount, market) "
-                "VALUES (:code, :date, :open, :high, :low, :close, "
-                ":volume, :amount, :market) "
-                "ON CONFLICT(code, date) DO UPDATE SET "
-                "open=excluded.open, high=excluded.high, low=excluded.low, "
-                "close=excluded.close, volume=excluded.volume, "
-                "amount=excluded.amount, market=excluded.market",
-                rows,
-            )
             conn.executemany(
                 "INSERT INTO daily_price_v2 "
                 "(market, code, date, open, high, low, close, volume, amount) "
@@ -278,115 +286,43 @@ class CacheManager:
         code: str,
         start_date: str = "",
         end_date: str = "",
-        market: str = "",
+        market: str = "A",
     ) -> List[Dict[str, Any]]:
-        """Get K-line data for a stock, optionally date-filtered."""
+        """Get K-line data for a stock (v2 table), optionally date-filtered."""
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
-            target_table = "daily_price_v2" if market else "daily_price"
-            if start_date and end_date:
-                if market:
-                    cur = conn.execute(
-                        "SELECT * FROM daily_price_v2 "
-                        "WHERE market=? AND code=? AND date>=? AND date<=? "
-                        "ORDER BY date DESC",
-                        (market, code, start_date, end_date),
-                    )
-                else:
-                    cur = conn.execute(
-                        "SELECT * FROM daily_price "
-                        "WHERE code=? AND date>=? AND date<=? "
-                        "ORDER BY date DESC",
-                        (code, start_date, end_date),
-                    )
-            else:
-                if market:
-                    cur = conn.execute(
-                        "SELECT * FROM daily_price_v2 "
-                        "WHERE market=? AND code=? ORDER BY date DESC",
-                        (market, code),
-                    )
-                else:
-                    cur = conn.execute(
-                        f"SELECT * FROM {target_table} WHERE code=? ORDER BY date DESC",
-                        (code,),
-                    )
-            rows = [dict(r) for r in cur.fetchall()]
-            if rows or not market:
-                return rows
-            if start_date and end_date:
-                cur = conn.execute(
-                    "SELECT * FROM daily_price "
-                    "WHERE code=? AND date>=? AND date<=? "
-                    "ORDER BY date DESC",
-                    (code, start_date, end_date),
-                )
-            else:
-                cur = conn.execute(
-                    "SELECT * FROM daily_price WHERE code=? ORDER BY date DESC",
-                    (code,),
-                )
+            params: List[Any] = [market, code]
+            query = "SELECT * FROM daily_price_v2 WHERE market=? AND code=?"
+            if start_date:
+                query += " AND date>=?"
+                params.append(start_date)
+            if end_date:
+                query += " AND date<=?"
+                params.append(end_date)
+            query += " ORDER BY date DESC"
+            cur = conn.execute(query, tuple(params))
             return [dict(r) for r in cur.fetchall()]
 
-    def get_latest_date(self, code: str, market: str = "") -> str | None:
-        """Get the latest cached date for a stock."""
+    def get_latest_date(self, code: str, market: str = "A") -> str | None:
+        """Get the latest cached date for a stock (v2 table)."""
         with self._conn() as conn:
-            if market:
-                cur = conn.execute(
-                    "SELECT MAX(date) FROM daily_price_v2 WHERE market=? AND code=?",
-                    (market, code),
-                )
-            else:
-                cur = conn.execute(
-                    "SELECT MAX(date) FROM daily_price WHERE code=?",
-                    (code,),
-                )
+            cur = conn.execute(
+                "SELECT MAX(date) FROM daily_price_v2 WHERE market=? AND code=?",
+                (market, code),
+            )
             row = cur.fetchone()
-            if row and row[0]:
-                return row[0]
-            if market:
-                cur = conn.execute(
-                    "SELECT MAX(date) FROM daily_price WHERE code=?",
-                    (code,),
-                )
-                row = cur.fetchone()
-                return row[0] if row and row[0] else None
-            return None
+            return row[0] if row and row[0] else None
 
     # -- factor snapshot ----------------------------------------------------
 
     def upsert_factor_snapshot(self, rows: List[Dict[str, Any]]) -> None:
-        """Upsert fundamental snapshots."""
+        """Upsert fundamental snapshots (v2 table only)."""
+        v2_rows = []
+        for row in rows:
+            r = dict(row)
+            r.setdefault("market", "")
+            v2_rows.append(r)
         with self._conn() as conn:
-            conn.executemany(
-                "INSERT INTO factor_snapshot "
-                "(code, date, market_cap, pe_ttm, pe_static, pb, ps_ttm, "
-                "pcf_ttm, dividend_yield, roe, roa, gross_margin, net_margin, "
-                "revenue_growth, profit_growth, debt_ratio, current_ratio, "
-                "eps, bvps) "
-                "VALUES (:code, :date, :market_cap, :pe_ttm, :pe_static, :pb, "
-                ":ps_ttm, :pcf_ttm, :dividend_yield, :roe, :roa, "
-                ":gross_margin, :net_margin, :revenue_growth, :profit_growth, "
-                ":debt_ratio, :current_ratio, :eps, :bvps) "
-                "ON CONFLICT(code, date) DO UPDATE SET "
-                "market_cap=excluded.market_cap, pe_ttm=excluded.pe_ttm, "
-                "pe_static=excluded.pe_static, pb=excluded.pb, "
-                "ps_ttm=excluded.ps_ttm, pcf_ttm=excluded.pcf_ttm, "
-                "dividend_yield=excluded.dividend_yield, roe=excluded.roe, "
-                "roa=excluded.roa, gross_margin=excluded.gross_margin, "
-                "net_margin=excluded.net_margin, "
-                "revenue_growth=excluded.revenue_growth, "
-                "profit_growth=excluded.profit_growth, "
-                "debt_ratio=excluded.debt_ratio, "
-                "current_ratio=excluded.current_ratio, "
-                "eps=excluded.eps, bvps=excluded.bvps",
-                rows,
-            )
-            v2_rows = []
-            for row in rows:
-                row_with_market = dict(row)
-                row_with_market["market"] = str(row.get("market", ""))
-                v2_rows.append(row_with_market)
             conn.executemany(
                 "INSERT INTO factor_snapshot_v2 ("
                 "market, code, date, market_cap, pe_ttm, pe_static, pb, ps_ttm, "
@@ -416,33 +352,17 @@ class CacheManager:
     def get_latest_factor_snapshot(
         self,
         code: str,
-        market: str = "",
+        market: str = "A",
     ) -> Dict[str, Any] | None:
-        """Get the most recent fundamental snapshot for a stock."""
+        """Get the most recent fundamental snapshot for a stock (v2 table)."""
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
-            if market:
-                cur = conn.execute(
-                    "SELECT * FROM factor_snapshot_v2 "
-                    "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
-                    (market, code),
-                )
-            else:
-                cur = conn.execute(
-                    "SELECT * FROM factor_snapshot "
-                    "WHERE code=? ORDER BY date DESC LIMIT 1",
-                    (code,),
-                )
+            cur = conn.execute(
+                "SELECT * FROM factor_snapshot_v2 "
+                "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
+                (market, code),
+            )
             row = cur.fetchone()
-            if row:
-                return dict(row)
-            if market:
-                cur = conn.execute(
-                    "SELECT * FROM factor_snapshot "
-                    "WHERE code=? ORDER BY date DESC LIMIT 1",
-                    (code,),
-                )
-                row = cur.fetchone()
             return dict(row) if row else None
 
     # -- sync state ---------------------------------------------------------
@@ -476,9 +396,7 @@ class CacheManager:
         data_kind: str = "",
     ) -> List[Dict[str, Any]]:
         """Return sync-state rows for a scope, optionally filtered."""
-        query = [
-            "SELECT * FROM sync_state WHERE scope_type=? AND scope_key=?"
-        ]
+        query = ["SELECT * FROM sync_state WHERE scope_type=? AND scope_key=?"]
         params: List[Any] = [scope_type, scope_key]
         if market:
             query.append("AND market=?")
@@ -733,9 +651,7 @@ class CacheManager:
         target_date = trade_date or self.get_latest_market_scan_trade_date(market)
         if not target_date:
             return []
-        query = [
-            "SELECT * FROM market_scan_snapshot WHERE market=? AND trade_date=?"
-        ]
+        query = ["SELECT * FROM market_scan_snapshot WHERE market=? AND trade_date=?"]
         params: List[Any] = [market, target_date]
         if not include_ineligible:
             query.append("AND eligible=1")
@@ -1013,9 +929,16 @@ class CacheManager:
         """Get cache statistics: table row counts, size, API usage."""
         stats_dict: Dict[str, Any] = {}
         tables = [
-            "stock_pool", "daily_price", "factor_snapshot",
-            "computed_factors", "market_scan_snapshot", "sentiment", "fund_info",
-            "fund_nav", "market_index", "api_usage",
+            "stock_pool_v2",
+            "daily_price_v2",
+            "factor_snapshot_v2",
+            "computed_factors",
+            "market_scan_snapshot",
+            "sentiment",
+            "fund_info",
+            "fund_nav",
+            "market_index",
+            "api_usage",
         ]
         with self._conn() as conn:
             for tbl in tables:
@@ -1043,30 +966,27 @@ class CacheManager:
         db_size = os.path.getsize(self.db_path) / (1024 * 1024)
 
         with self._conn() as conn:
-            # Remove old daily_price entries
             cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime(
                 "%Y-%m-%d"
             )
             cur = conn.execute(
-                "DELETE FROM daily_price WHERE date < ?",
+                "DELETE FROM daily_price_v2 WHERE date < ?",
                 (cutoff,),
             )
-            removed["daily_price"] = cur.rowcount
+            removed["daily_price_v2"] = cur.rowcount
 
-            # Remove old sentiment entries
             cur = conn.execute(
                 "DELETE FROM sentiment WHERE date < ?",
                 (cutoff,),
             )
             removed["sentiment"] = cur.rowcount
 
-            # If DB is still too large, clean more aggressively
             if db_size > max_size_mb:
                 cur = conn.execute(
-                    "DELETE FROM factor_snapshot WHERE date < ?",
+                    "DELETE FROM factor_snapshot_v2 WHERE date < ?",
                     (cutoff,),
                 )
-                removed["factor_snapshot"] = cur.rowcount
+                removed["factor_snapshot_v2"] = cur.rowcount
 
         # VACUUM must run outside an active transaction.
         with sqlite3.connect(str(self.db_path), timeout=5.0) as conn:

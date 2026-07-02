@@ -216,6 +216,49 @@ class ThesisPostmortem:
 
 
 @dataclass
+class ScorecardDimension:
+    """One dimension inside a research scorecard."""
+
+    name: str
+    score: float
+    verdict: str
+    evidence: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ScorecardReport:
+    """Structured scorecard for a research artifact."""
+
+    name: str
+    score: float
+    level: str
+    summary: str
+    dimensions: List[ScorecardDimension] = field(default_factory=list)
+    strengths: List[str] = field(default_factory=list)
+    gaps: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass
+class AttributionReport:
+    """Structured postmortem attribution output."""
+
+    outcome: str
+    primary_driver: str
+    summary: str
+    positives: List[str] = field(default_factory=list)
+    negatives: List[str] = field(default_factory=list)
+    adjustments: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
+
+
+@dataclass
 class ThesisRecord:
     """Local-first thesis memory record."""
 
@@ -236,6 +279,8 @@ class ThesisRecord:
     notes: str = ""
     postmortem: ThesisPostmortem | None = None
     provenance: Dict[str, Any] = field(default_factory=dict)
+    scorecard: Dict[str, Any] = field(default_factory=dict)
+    attribution: Dict[str, Any] = field(default_factory=dict)
     diagnosis_report: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -287,6 +332,7 @@ class ThemeResearchReport:
     layers: List[ThemeLayerFinding] = field(default_factory=list)
     confidence: Dict[str, Any] = field(default_factory=dict)
     provenance: Dict[str, Any] = field(default_factory=dict)
+    scorecard: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serializable representation."""

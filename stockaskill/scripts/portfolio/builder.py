@@ -60,12 +60,14 @@ class PortfolioBuilder:
         self,
         method: str = "signal",
         position_method: str = "kelly",
+        capital_fraction: float = 1.0,
     ) -> Portfolio:
         """Build the portfolio.
 
         Args:
             method: Allocation method ('equal', 'signal', 'risk_parity').
             position_method: Position sizing ('kelly', 'fixed').
+            capital_fraction: Fraction of total capital to deploy.
 
         Returns:
             Portfolio dataclass.
@@ -73,6 +75,7 @@ class PortfolioBuilder:
         if not self._candidates:
             return Portfolio(name=self.name, capital=self.capital)
 
+        capital_fraction = max(0.0, min(1.0, float(capital_fraction)))
         weights = self._resolve_weights(method)
 
         positions: List[Position] = []
@@ -81,13 +84,13 @@ class PortfolioBuilder:
                 code=cand["code"],
                 name=cand["name"],
                 market=cand["market"],
-                capital=self.capital * weights[i],
+                capital=self.capital * capital_fraction * weights[i],
                 score=cand["score"],
                 current_price=cand["current_price"],
                 method=position_method,
             )
             if pos.shares > 0:
-                pos.weight = weights[i]
+                pos.weight = weights[i] * capital_fraction
                 positions.append(pos)
 
         portfolio = Portfolio(

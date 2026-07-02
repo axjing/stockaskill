@@ -251,6 +251,41 @@ class TestPortfolioBuilder:
         assert weights["AAA"] == pytest.approx(0.8, abs=1e-3)
         assert weights["BBB"] == pytest.approx(0.2, abs=1e-3)
 
+    @patch("portfolio.builder.ensure_symbol_analysis_ready")
+    @patch("portfolio.builder.PortfolioBuilder._get_stock_info")
+    @patch("portfolio.builder.get_kline")
+    @patch("strategies.aggregator.StrategyAggregator.analyze_all")
+    def test_capital_fraction_reduces_allocated_weights(
+        self,
+        mock_analyze_all,
+        mock_get_kline,
+        mock_get_stock_info,
+        mock_ready,
+    ):
+        mock_analyze_all.side_effect = [
+            {"final_score": 80},
+            {"final_score": 60},
+        ]
+        mock_get_kline.return_value = [{"close": 10.0}]
+        mock_get_stock_info.side_effect = [
+            {"name": "A"},
+            {"name": "B"},
+        ]
+
+        from portfolio.builder import PortfolioBuilder
+
+        builder = PortfolioBuilder("Risk Budget", capital=100000)
+        builder.add_from_strategy("AAA", weight=0.5)
+        builder.add_from_strategy("BBB", weight=0.5)
+
+        portfolio = builder.build(
+            method="signal",
+            position_method="fixed",
+            capital_fraction=0.4,
+        )
+        total_weight = sum(position.weight for position in portfolio.positions)
+        assert total_weight == pytest.approx(0.4, abs=1e-3)
+
 
 class TestRebalancer:
     def test_calendar_rebalance_due(self):

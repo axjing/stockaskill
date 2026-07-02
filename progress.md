@@ -2,6 +2,20 @@
 
 ## 会话：2026-07-01 至 2026-07-02
 
+### 阶段 36：文档入口与说明同步
+- 状态：已完成
+- 已执行动作：
+  - 检查 `README.md`、`stockaskill/SKILL.md`、`AGENTS.md` 是否覆盖本轮新增能力。
+  - 确认 `README.md` 与 `stockaskill/SKILL.md` 尚未覆盖 `deep-diagnose`、`workflow list/run`、`thesis`、`theme-scan`、`scorecard` 等入口。
+  - 更新 `README.md`，补充高阶研究工作流与最新 CLI 示例。
+  - 更新 `stockaskill/SKILL.md`，补充 workflow / thesis / theme / scorecard 触发词与工作流说明。
+  - 更新 `AGENTS.md`，修正过时的 `agentsx` 快速命令示例，并增加用户入口变更时的文档同步要求。
+- 涉及文件：
+  - `README.md`
+  - `stockaskill/SKILL.md`
+  - `AGENTS.md`
+  - `task_plan.md`
+
 ### 阶段 1：需求确认与仓库发现
 - 状态：已完成
 - 已执行动作：

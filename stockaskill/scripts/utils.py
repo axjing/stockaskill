@@ -3,6 +3,52 @@
 from datetime import datetime
 
 
+def contains_any_keyword(text: str, keywords: list[str]) -> bool:
+    """Return True when *text* contains any keyword in *keywords*."""
+    normalized = text.strip().lower()
+    if not normalized:
+        return False
+    return any(keyword.lower() in normalized for keyword in keywords)
+
+
+def detect_workflow_intent(
+    goal: str,
+    code: str = "",
+    codes: list[str] | None = None,
+) -> str:
+    """Classify a workflow intent from bounded user inputs."""
+    codes = [item for item in (codes or []) if item]
+    normalized = goal.strip().lower()
+
+    if contains_any_keyword(normalized, ["回测", "backtest", "历史表现"]):
+        return "backtest_strategy"
+    if contains_any_keyword(
+        normalized,
+        ["主题", "产业链", "价值链", "证据链", "theme", "scarce layer", "卡点"],
+    ):
+        return "theme_research"
+    if contains_any_keyword(normalized, ["同步", "sync", "刷新", "预热", "cache"]):
+        return "sync_data"
+    if contains_any_keyword(
+        normalized,
+        ["市场状态", "regime", "risk budget", "风险姿态", "仓位上限", "市场风险"],
+    ):
+        return "market_check"
+    if codes or contains_any_keyword(
+        normalized,
+        ["组合", "portfolio", "持仓", "建仓", "再平衡", "仓位"],
+    ):
+        return "build_portfolio"
+    if code and contains_any_keyword(
+        normalized,
+        ["诊断", "deep", "bull", "bear", "失效", "review", "复核"],
+    ):
+        return "diagnose_symbol"
+    if code:
+        return "analyze_symbol"
+    return "opportunity_scan"
+
+
 def normalize_code(code: str) -> str:
     """Strip non-digit chars and return pure numeric code."""
     return "".join(c for c in code if c.isdigit())

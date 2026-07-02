@@ -392,4 +392,4 @@ class TestCacheManager:
         ]
         cache.upsert_daily_price(rows)
         removed = cache.cleanup(max_age_days=30, max_size_mb=0)
-        assert "daily_price" in removed
+        assert "daily_price_v2" in removed

@@ -46,6 +46,7 @@ FACTOR_W = {
     "growth": 0.10,
 }
 
+
 class EtfCoreHolding(TypedDict):
     """Static ETF allocation entry."""
 
@@ -107,10 +108,10 @@ def run_backtest():
 
     cur = conn.execute("""
         SELECT d.code, d.date, d.close, COALESCE(s.name, '') as name
-        FROM daily_price d
-        LEFT JOIN stock_pool s ON d.code = s.code
-        WHERE d.code IN (
-            SELECT code FROM daily_price
+        FROM daily_price_v2 d
+        LEFT JOIN stock_pool_v2 s ON s.market='A' AND d.code = s.code
+        WHERE d.market='A' AND d.code IN (
+            SELECT code FROM daily_price_v2 WHERE market='A'
             GROUP BY code HAVING COUNT(*) >= 1200
         )
         OR d.code IN ('510300', '159915', '588000')

@@ -43,6 +43,10 @@ Activate on any of these user intents:
 | Portfolio, 组合, allocation | Portfolio construction |
 | Backtest, 回测, validation | Historical backtest |
 | ETF, 场内基金, 510300, 159915 | ETF screening / ETF data sync |
+| Workflow, route, routine, 路线图 | Workflow recommendation / manifest routine |
+| Thesis, postmortem, 复盘, thesis memory | Thesis capture / review / postmortem |
+| Theme, 主题, 产业链 | Theme research |
+| Scorecard, attribution, 评分卡 | Structured evaluation / attribution |
 | Sentiment, sentiment, 情绪 | Market sentiment check |
 | Refresh, 刷新, cache | Data operations |
 
@@ -91,7 +95,28 @@ Present results:
 - SELL -> explain risk factors
 - HOLD -> explain what would need to change
 
-### 3. Market scan
+For long-form reports:
+
+    python stockaskill/scripts/run.py deep-diagnose 600519 --market A --format both
+
+Use `deep-diagnose` when the user wants a full memo-style diagnosis with
+decision summary, evidence, risks, invalidation, and follow-up questions.
+
+### 3. Workflow routing and manifests
+
+Recommend a bounded workflow for a user goal:
+
+    python stockaskill/scripts/run.py route "复盘当前市场并筛选候选股"
+
+Inspect built-in workflow manifests:
+
+    python stockaskill/scripts/run.py workflow list
+    python stockaskill/scripts/run.py workflow run market-regime-daily --market A
+
+Important: `workflow run` only resolves a manifest into a concrete routine. It
+does not execute shell commands or background jobs.
+
+### 4. Market scan
 
     python stockaskill/scripts/run.py scan A --top 20
     # default mode=auto: prefer fresh snapshot, else fallback to bounded realtime
@@ -110,7 +135,7 @@ For sector-filtered scanning:
 
     python -c "from advisor.scanner import MarketScanner; print(MarketScanner().scan_by_sector('A', top_n=5))"
 
-### 4. Alpha momentum scan
+### 5. Alpha momentum scan
 
 Full multi-factor ranking with thread-parallel scoring:
 
@@ -119,7 +144,7 @@ Full multi-factor ranking with thread-parallel scoring:
 Results include ranked list with scores, signals, F-Score, and BUY summary.
 Explain which factors drove top rankings (momentum + low-vol + quality ~73% combined).
 
-### 5. Portfolio construction
+### 6. Portfolio construction
 
 Standard portfolio:
 
@@ -129,7 +154,7 @@ Enhanced core-satellite:
 
     python stockaskill/scripts/run.py portfolio-enhanced --capital 1000000
 
-### 6. Backtest
+### 7. Backtest
 
 Standard backtest (Alpha Momentum, 2018-2026):
 
@@ -142,7 +167,7 @@ Enhanced backtest (core-satellite):
 Backtest paths warm a bounded batch of missing symbols plus market index data.
 They do not force a full-market historical sync on every run.
 
-### 7. Fund/ETF screening
+### 8. Fund/ETF screening
 
     python stockaskill/scripts/run.py scan FUND --top 20
 
@@ -155,7 +180,29 @@ For deeper programmatic access:
 Current `FUND` behavior is ETF-first. Broad mutual-fund NAV ingestion is not a
 core supported workflow yet.
 
-### 8. Data operations
+### 9. Research memory and theme workflows
+
+Thesis memory:
+
+    python stockaskill/scripts/run.py thesis capture 600519 --market A
+    python stockaskill/scripts/run.py thesis list --market A
+    python stockaskill/scripts/run.py thesis review --code 600519 --market A
+    python stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome win
+
+Theme research:
+
+    python stockaskill/scripts/run.py theme-scan AI 算力 --market A --top 5
+
+Scorecards:
+
+    python stockaskill/scripts/run.py scorecard diagnose 600519 --market A
+    python stockaskill/scripts/run.py scorecard thesis --code 600519 --market A
+    python stockaskill/scripts/run.py scorecard theme AI 算力 --market A --top 5
+
+Use these when the user wants a saved research trail, a review loop, or a
+structured scorecard rather than a one-off diagnosis.
+
+### 10. Data operations
 
     python stockaskill/scripts/run.py fetch pool                # full pool refresh
     python stockaskill/scripts/run.py fetch kline 600519        # single stock K-line
@@ -224,7 +271,8 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 6. **Metadata-aware cross-market support** - HK/US pools carry source, status, and completeness signals; low-quality metadata may be soft-penalized in ranking.
 7. **Script-driven** - Run `python stockaskill/scripts/run.py`, never reimplement logic.
 8. **Parallel scoring** - Thread pool (8 workers) for alpha scans.
-9. **Graceful degradation** - Cache-only mode on API limit. Partial results over failures.
+9. **Research-memory aware** - Prefer thesis/theme/scorecard workflows when the user asks for follow-up, review, or attribution.
+10. **Graceful degradation** - Cache-only mode on API limit. Partial results over failures.
 
 ## Reference files
 
@@ -239,6 +287,16 @@ Load only the references needed for the current task:
 - Data-source coverage, market limitations, or cache/sync behavior:
   `references/market-source-playbook.md`,
   `references/akshare_official_docs.md`
+- Workflow routing or manifest routines:
+  `references/workflows.md`
+- Deep diagnosis long-report output:
+  `references/deep-diagnosis.md`
+- Thesis memory / postmortem:
+  `references/thesis-memory.md`
+- Theme research:
+  `references/theme-research.md`
+- Scorecards / attribution:
+  `references/scorecards.md`
 - Output wording and response style:
   `references/output-style-and-language.md`
 - Sentiment-specific work:
@@ -250,7 +308,7 @@ Load only the references needed for the current task:
 - Dialogue constraints specific to this skill:
   `references/serenity-dialogue-protocol.md`
 
-Skill version: `1.3`
+Skill version: `1.4`
 
 ## Output file specs
 

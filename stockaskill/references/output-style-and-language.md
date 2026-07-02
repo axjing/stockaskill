@@ -54,6 +54,16 @@ For company rankings, prefer columns or sentences like:
 
 `标的 / 卡住的环节 / 为什么排这里 / 关键证据 / 主要风险`
 
+For diagnosis-style outputs, prefer this order:
+
+`结论 / 置信度 / 支持这个判断的理由 / 反方理由 / 什么情况说明这个判断错了`
+
+Do not stop at a raw score. Every diagnosis should name:
+
+- why the view can work;
+- why it can fail;
+- what specific condition would invalidate the view.
+
 Avoid heavy English jargon unless the user uses it.
 
 ## English answer style
