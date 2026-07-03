@@ -142,7 +142,9 @@ class CompositeAnalyzer:
         9. Asset turnover increase (simplified)
         """
         score = 0
-        roa = fundamentals.get("roe", 0) or 0  # Use ROE as ROA proxy
+        roa = fundamentals.get("roa", 0) or 0
+        if not roa:
+            roa = fundamentals.get("roe", 0) or 0  # fallback: ROE as ROA proxy
         eps = fundamentals.get("eps", 0) or 0
         profit_g = fundamentals.get("profit_growth", 0) or 0
         debt = fundamentals.get("debt_ratio", 0) or 0

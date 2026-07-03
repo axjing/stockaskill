@@ -1311,6 +1311,17 @@ def _fetch_fundamentals_yfinance(
         if not info:
             return None
         today = datetime.now().strftime("%Y-%m-%d")
+        # Normalize yfinance scales to match AKShare expectations:
+        # - dividendYield: 0-1 fraction (not percentage)
+        # - roe/roa: decimal (0.15 = 15%)
+        # - debtToEquity: raw ratio (1.5 = 1.5, not percentage)
+        # - growth/margins: decimal
+        _div_yield = safe_float(info.get("dividendYield", 0))
+        if _div_yield > 1:
+            _div_yield /= 100.0
+        _debt = safe_float(info.get("debtToEquity", 0))
+        if _debt > 10:
+            _debt /= 100.0
         return {
             "code": code,
             "date": today,
@@ -1320,14 +1331,18 @@ def _fetch_fundamentals_yfinance(
             "pb": safe_float(info.get("priceToBook", 0)),
             "ps_ttm": safe_float(info.get("priceToSalesTrailing12Months", 0)),
             "pcf_ttm": safe_float(info.get("priceToCashflow", 0)),
-            "dividend_yield": safe_float(info.get("dividendYield", 0)),
-            "roe": safe_float(info.get("returnOnEquity", 0)),
-            "roa": safe_float(info.get("returnOnAssets", 0)),
+            "dividend_yield": _div_yield,
+            "roe": safe_float(info.get("returnOnEquity", 0)) / 100.0
+                if safe_float(info.get("returnOnEquity", 0)) > 1
+                else safe_float(info.get("returnOnEquity", 0)),
+            "roa": safe_float(info.get("returnOnAssets", 0)) / 100.0
+                if safe_float(info.get("returnOnAssets", 0)) > 1
+                else safe_float(info.get("returnOnAssets", 0)),
             "gross_margin": safe_float(info.get("grossMargins", 0)),
             "net_margin": safe_float(info.get("profitMargins", 0)),
             "revenue_growth": safe_float(info.get("revenueGrowth", 0)),
             "profit_growth": safe_float(info.get("earningsGrowth", 0)),
-            "debt_ratio": safe_float(info.get("debtToEquity", 0)),
+            "debt_ratio": _debt,
             "current_ratio": safe_float(info.get("currentRatio", 0)),
             "eps": safe_float(info.get("trailingEps", 0)),
             "bvps": safe_float(info.get("bookValue", 0)),
