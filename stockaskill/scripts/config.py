@@ -78,6 +78,7 @@ _DEFAULTS: Dict[str, Any] = {
     "retry_max_delay": 30,
     "pool_size_warn_min": 4000,
     "pool_size_warn_max": 6000,
+    "fetch_timeout": 15,  # HTTP request timeout in seconds
     "fund_metadata_completeness_default": 0.25,
     "metadata_completeness_threshold": 0.75,
     "full_history_start_date": "20000101",

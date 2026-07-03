@@ -2,7 +2,9 @@
 
 # Import the global AKShare lock to prevent Chromium allocator crashes
 # when multiple threads initialize AKShare simultaneously
+import os
 import sys
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
@@ -15,6 +17,22 @@ if _de not in sys.path:
 from data_engine import _akshare_lock  # noqa: E402
 
 from sentiment.dictionary import analyze_sentiment  # noqa: E402
+from utils import normalize_code  # noqa: E402
+
+_cache = get_cache()
+
+
+@contextmanager
+def _suppress_output():
+    """Temporarily suppress stdout/stderr to prevent library error leaks."""
+    devnull = open(os.devnull, 'w')
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = devnull, devnull
+    try:
+        yield
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+        devnull.close()
 
 _cache = get_cache()
 
@@ -34,7 +52,8 @@ def get_market_breadth() -> Dict[str, Any]:
         import akshare as ak
 
         with _akshare_lock:
-            df = ak.stock_zh_a_spot_em()
+            with _suppress_output():
+                df = ak.stock_zh_a_spot_em()
         if df is not None and not df.empty:
             total = len(df)
             advancers = len(df[df.get("涨跌幅", 0) > 0])
@@ -84,7 +103,8 @@ def get_north_flow(days: int = 20) -> List[Dict[str, Any]]:
         _start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
         _end = datetime.now().strftime("%Y%m%d")
         with _akshare_lock:
-            df = ak.stock_hsgt_hist_em(symbol="沪股通")
+            with _suppress_output():
+                df = ak.stock_hsgt_hist_em(symbol="沪股通")
         if df is not None and not df.empty:
             for _, row in df.iterrows():
                 records.append(
@@ -112,6 +132,11 @@ def get_guba_sentiment(code: str) -> Dict[str, Any]:
     Returns:
         Dict with post_count, hot_score, sentiment_score in [-1, 1].
     """
+    # Guba sentiment is A-share only — skip for HK/US/FUND
+    digits = normalize_code(code)
+    if len(digits) != 6 or not digits.startswith(("0", "3", "6", "9")):
+        return {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
+
     try:
         import akshare as ak
         from utils import exchange_suffix
@@ -119,7 +144,8 @@ def get_guba_sentiment(code: str) -> Dict[str, Any]:
         prefix = exchange_suffix(code)
         # Fetch guba posts for the stock
         with _akshare_lock:
-            df = ak.stock_comment_em(symbol=prefix + code)
+            with _suppress_output():
+                df = ak.stock_comment_em(symbol=prefix + code)
 
         if df is not None and not df.empty:
             posts = df.head(20)  # Analyze latest 20 posts
