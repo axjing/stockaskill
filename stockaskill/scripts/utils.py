@@ -1,4 +1,10 @@
-"""Utility functions for stock code handling and filtering."""
+"""Utility functions for stock code handling, filtering, and shared helpers.
+
+Provides code normalization (A/HK/US/FUND), market detection, symbol
+conversion for AKShare/Xueqiu, ST/new/suspended stock detection, safe
+numeric conversion, percentile ranking, and shared utility functions
+(_suppress_output, _board).
+"""
 
 import os
 import sys

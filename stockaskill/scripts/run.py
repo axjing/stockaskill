@@ -1,4 +1,14 @@
-"""Unified CLI entry point for the stock selection system."""
+"""Unified CLI entry point for the stockaskill stock selection system.
+
+Provides commands for stock analysis, diagnosis, market scanning, portfolio
+building, backtesting, and data synchronization. All commands follow a
+local-first pattern: sync missing data, then read from cache.
+
+Usage:
+    python stockaskill/scripts/run.py diagnose 600519 --market A
+    python stockaskill/scripts/run.py scan A --top 20
+    python stockaskill/scripts/run.py sync symbol 600519 --market A --days 365
+"""
 
 # /// script
 # requires-python = ">=3.10"

@@ -21,6 +21,13 @@ _akshare_lock = threading.RLock()
 _cache = get_cache()
 logger = logging.getLogger(__name__)
 
+# Configure logging if not already configured by the caller
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
 
 def _is_etf_market(market: str) -> bool:
     """Return True when a market identifier represents the ETF asset path."""
@@ -288,7 +295,11 @@ def _report_no_data(code: str, market: str, data_kind: str) -> None:
 
 
 def _api_call(api_name: str):
-    """Decorator: rate-limit + exponential backoff + usage tracking."""
+    """Decorator: rate-limit + exponential backoff + usage tracking.
+
+    Retries up to retry_max times with exponential backoff.
+    Raises the last exception if all attempts fail — never returns None.
+    """
 
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -299,17 +310,20 @@ def _api_call(api_name: str):
             interval = cfg_get("request_interval", [0.5, 2.0])
             mul = cfg_get("retry_backoff_multiplier", 2)
             cap = cfg_get("retry_max_delay", 30)
+            last_exc: Exception | None = None
             for attempt in range(retry_max):
                 try:
                     time.sleep(interval[0])
                     result = func(*args, **kwargs)
                     return result
-                except Exception:
+                except Exception as exc:
+                    last_exc = exc
                     if attempt == retry_max - 1:
                         raise
                     delay = min(retry_base**attempt * mul, cap)
                     time.sleep(delay)
-            return None
+            # Should never reach here (last attempt always raises)
+            raise last_exc  # type: ignore[misc]
 
         return wrapper
 
@@ -1954,11 +1968,22 @@ def get_etf_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
 
 
 def get_market_index(
-    index_code: str = "000001", days: int = 250
+    index_code: str = "000001",
+    days: int = 250,
+    cached_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Get market index K-line. Graceful degradation."""
+    """Get market index K-line. Graceful degradation.
+
+    Args:
+        index_code: Index code.
+        days: Number of trading days to return.
+        cached_only: Skip API calls, use only cached data.
+
+    Returns:
+        List of index K-line dicts.
+    """
     cached = _cache.get_market_index(index_code, days)
-    if cached:
+    if cached or cached_only:
         return cached
     try:
         rows = _fetch_market_index(index_code, days)
