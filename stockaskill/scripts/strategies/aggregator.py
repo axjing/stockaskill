@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List
 
+from config import get as cfg_get
 from strategies.alpha_momentum import AlphaMomentumStrategy
 from strategies.base import Strategy
 from strategies.contrarian import ContrarianStrategy
@@ -67,9 +68,11 @@ class StrategyAggregator:
         avg_confidence = sum(confidences) / max(len(confidences), 1)
 
         # Final signal
-        if final_score >= 65:
+        buy_threshold = cfg_get("signal_thresholds.buy", 65)
+        sell_threshold = cfg_get("signal_thresholds.sell", 35)
+        if final_score >= buy_threshold:
             final_signal = "BUY"
-        elif final_score <= 35:
+        elif final_score <= sell_threshold:
             final_signal = "SELL"
         else:
             final_signal = "HOLD"
@@ -77,7 +80,8 @@ class StrategyAggregator:
         # Adjust confidence based on strategy agreement
         buy_count = sum(1 for s in signals if s.get("signal") == "BUY")
         sell_count = sum(1 for s in signals if s.get("signal") == "SELL")
-        if buy_count >= 4 or sell_count >= 4:
+        buy_consensus = cfg_get("signal_thresholds.buy_consensus_count", 4)
+        if buy_count >= buy_consensus or sell_count >= buy_consensus:
             avg_confidence = min(0.95, avg_confidence + 0.1)
 
         return {

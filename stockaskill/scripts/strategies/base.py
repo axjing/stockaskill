@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+from config import get as cfg_get
 from data_engine import get_fundamentals, get_kline
 from models import Signal
 
@@ -56,8 +57,10 @@ class Strategy(ABC):
 
     @staticmethod
     def _signal_from_score(score: float) -> Signal:
-        if score >= 65:
+        buy = cfg_get("signal_thresholds.buy", 65)
+        sell = cfg_get("signal_thresholds.sell", 35)
+        if score >= buy:
             return Signal.BUY
-        if score <= 35:
+        if score <= sell:
             return Signal.SELL
         return Signal.HOLD

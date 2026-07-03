@@ -1,5 +1,8 @@
 """Pure-Python config with dot-path access. No YAML dependency."""
 
+import os
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 _DEFAULTS: Dict[str, Any] = {
@@ -28,6 +31,12 @@ _DEFAULTS: Dict[str, Any] = {
         "cagr": 0.18,
         "max_drawdown": 0.20,
         "max_positions": 6,
+    },
+    "signal_thresholds": {
+        "buy": 65,
+        "sell": 35,
+        "buy_consensus_count": 4,
+        "sell_consensus_count": 4,
     },
     "cache_ttl": {
         "realtime": 60,
@@ -349,6 +358,11 @@ def load_config() -> Dict[str, Any]:
     if _cache is not None:
         return _cache
     _cache = dict(_DEFAULTS)
+    config_path = os.environ.get("STOCKSKILL_CONFIG")
+    if config_path and Path(config_path).is_file():
+        with open(config_path) as f:
+            user_config = json.load(f)
+        _deep_merge(_cache, user_config)
     return _cache
 
 

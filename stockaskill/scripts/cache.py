@@ -365,6 +365,25 @@ class CacheManager:
             row = cur.fetchone()
             return dict(row) if row else None
 
+    def factor_snapshot_needs_refresh(
+        self,
+        code: str,
+        market: str = "A",
+        max_age_days: int = 120,
+    ) -> bool:
+        """Check whether the cached fundamental snapshot is stale."""
+        snapshot = self.get_latest_factor_snapshot(code, market=market)
+        if not snapshot:
+            return True
+        date_str = str(snapshot.get("date", "")).strip()
+        if not date_str:
+            return True
+        try:
+            snapshot_date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return True
+        return (datetime.now() - snapshot_date).days > max_age_days
+
     # -- sync state ---------------------------------------------------------
 
     def upsert_sync_state(self, rows: List[Dict[str, Any]]) -> None:
@@ -987,6 +1006,13 @@ class CacheManager:
                     (cutoff,),
                 )
                 removed["factor_snapshot_v2"] = cur.rowcount
+
+            # Clean up expired KV store entries
+            cur = conn.execute(
+                "DELETE FROM kv_store WHERE expires < ?",
+                (time.time(),),
+            )
+            removed["kv_store"] = cur.rowcount
 
         # VACUUM must run outside an active transaction.
         with sqlite3.connect(str(self.db_path), timeout=5.0) as conn:
