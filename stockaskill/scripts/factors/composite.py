@@ -168,7 +168,7 @@ class CompositeAnalyzer:
         if curr > 1:
             score += 1
         # 7. Revenue growth > 0 (proxy for no economic deterioration)
-        if fundamentals.get("revenue_growth", 0) or 0 > 0:
+        if safe_float(fundamentals.get("revenue_growth", 0)) > 0:
             score += 1
         # 8. Gross margin > 20% (proxy for margin quality)
         if gm > 0.2:

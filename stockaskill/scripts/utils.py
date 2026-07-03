@@ -1,6 +1,32 @@
 """Utility functions for stock code handling and filtering."""
 
+import os
+import sys
+from contextlib import contextmanager
 from datetime import datetime
+
+
+@contextmanager
+def _suppress_output():
+    """Temporarily suppress stdout/stderr to prevent library error leaks."""
+    devnull = open(os.devnull, "w")
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = devnull, devnull
+    try:
+        yield
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+        devnull.close()
+
+
+def _board(code: str) -> str:
+    """Return exchange board label for a stock code."""
+    c = code.strip()
+    if c.startswith(("6", "9")):
+        return "SH"
+    if c.startswith("8") or c.startswith("4") or c.startswith("92"):
+        return "BJ"
+    return "SZ"
 
 
 def contains_any_keyword(text: str, keywords: list[str]) -> bool:
@@ -171,7 +197,7 @@ def is_suspended(code: str, kline_data: list | None) -> bool:
     return False
 
 
-def safe_float(val, default: float = 0.0) -> float:
+def safe_float(val: object, default: float = 0.0) -> float:
     """Safely convert to float."""
     try:
         return float(val)
@@ -179,7 +205,7 @@ def safe_float(val, default: float = 0.0) -> float:
         return default
 
 
-def safe_int(val, default: int = 0) -> int:
+def safe_int(val: object, default: int = 0) -> int:
     """Safely convert to int."""
     try:
         return int(float(val))

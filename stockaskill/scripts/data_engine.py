@@ -960,7 +960,7 @@ def get_kline(
         return cached[:days]
 
     if full_history:
-        start = "20000101"
+        start = cfg_get("full_history_start_date", "20000101")
     elif cached:
         latest = cached[0].get("date", "")
         if latest:
@@ -975,7 +975,6 @@ def get_kline(
             start = _date_str(datetime.now() - timedelta(days=days + 30))
 
     end = _date_str(datetime.now())
-    _ = max(days, 1500) if full_history else days
     try:
         new_data = _fetch_kline(code, market, start, end)
         if new_data:
