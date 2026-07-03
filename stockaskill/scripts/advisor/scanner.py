@@ -27,7 +27,6 @@ class MarketScanner:
     """Scan and rank stocks by composite score."""
 
     def __init__(self) -> None:
-        self._cache: Dict[str, Dict[str, Any]] = {}
         self.cache = get_cache()
 
     def scan_top(

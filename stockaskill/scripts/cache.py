@@ -504,8 +504,6 @@ class CacheManager:
 
     def get_sentiment(self, code: str, days: int = 7) -> List[Dict[str, Any]]:
         """Get recent sentiment data for a stock."""
-        from datetime import datetime, timedelta
-
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
@@ -559,8 +557,6 @@ class CacheManager:
 
     def get_fund_nav(self, code: str, days: int = 365) -> List[Dict[str, Any]]:
         """Get fund NAV history."""
-        from datetime import datetime, timedelta
-
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
@@ -591,8 +587,6 @@ class CacheManager:
         self, index_code: str, days: int = 250
     ) -> List[Dict[str, Any]]:
         """Get market index K-line data."""
-        from datetime import datetime, timedelta
-
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
