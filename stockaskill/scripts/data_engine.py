@@ -1293,7 +1293,9 @@ def _fetch_fundamentals_openbb(
             "pb": safe_float(row.get("priceToBook", row.get("price_to_book", 0))),
             "ps_ttm": safe_float(row.get("priceToSalesTrailing12Months", 0)),
             "pcf_ttm": safe_float(row.get("priceToCashflow", 0)),
-            "dividend_yield": safe_float(row.get("dividendYield", 0)),
+            "dividend_yield": safe_float(row.get("dividendYield", 0)) * 100
+                if safe_float(row.get("dividendYield", 0)) <= 1
+                else safe_float(row.get("dividendYield", 0)),
             "roe": safe_float(row.get("returnOnEquity", 0)),
             "roa": safe_float(row.get("returnOnAssets", 0)),
             "gross_margin": safe_float(row.get("grossMargins", 0)),
