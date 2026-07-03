@@ -2,6 +2,7 @@
 
 # Import the global AKShare lock to prevent Chromium allocator crashes
 # when multiple threads initialize AKShare simultaneously
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List

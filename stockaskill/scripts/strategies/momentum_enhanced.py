@@ -8,11 +8,6 @@ Strategy architecture:
 
 Factor weights (optimized for higher target return):
   - Momentum:  35% (was 30%)
-"""
-
-from typing import Any, Dict, List
-
-from utils import _board  # noqa: E402
   - Low Vol:   18% (was 28%)
   - Quality:   20% (was 21%)
   - Value:     17% (was 14%)
@@ -22,6 +17,7 @@ from utils import _board  # noqa: E402
 from typing import Any, Dict, List
 
 from strategies.base import Strategy
+from utils import _board  # noqa: E402
 
 LOW_VOL_MIN = 0.40
 
