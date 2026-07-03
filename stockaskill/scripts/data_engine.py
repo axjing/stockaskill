@@ -1320,18 +1320,14 @@ def _fetch_fundamentals_yfinance(
             "pb": safe_float(info.get("priceToBook", 0)),
             "ps_ttm": safe_float(info.get("priceToSalesTrailing12Months", 0)),
             "pcf_ttm": safe_float(info.get("priceToCashflow", 0)),
-            "dividend_yield": safe_float(info.get("dividendYield", 0)) / 100.0
-                if info.get("dividendYield") and info["dividendYield"] > 1
-                else safe_float(info.get("dividendYield", 0)),
+            "dividend_yield": safe_float(info.get("dividendYield", 0)),
             "roe": safe_float(info.get("returnOnEquity", 0)),
             "roa": safe_float(info.get("returnOnAssets", 0)),
             "gross_margin": safe_float(info.get("grossMargins", 0)),
             "net_margin": safe_float(info.get("profitMargins", 0)),
             "revenue_growth": safe_float(info.get("revenueGrowth", 0)),
             "profit_growth": safe_float(info.get("earningsGrowth", 0)),
-            "debt_ratio": safe_float(info.get("debtToEquity", 0)) / 100.0
-                if info.get("debtToEquity") and info["debtToEquity"] > 1
-                else safe_float(info.get("debtToEquity", 0)),
+            "debt_ratio": safe_float(info.get("debtToEquity", 0)),
             "current_ratio": safe_float(info.get("currentRatio", 0)),
             "eps": safe_float(info.get("trailingEps", 0)),
             "bvps": safe_float(info.get("bookValue", 0)),
@@ -1428,7 +1424,15 @@ def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any
             "bvps": 0.0,
         }
         # Build lookup: indicator name -> value (latest quarterly column)
-        latest_col = df.columns[2]  # first date column
+        # Find the first column that looks like a date (has >6 digits or contains '-')
+        latest_col = None
+        for col_idx in range(2, len(df.columns)):
+            col_name = str(df.columns[col_idx])
+            if len(col_name.replace("-", "")) >= 6:
+                latest_col = col_name
+                break
+        if latest_col is None:
+            latest_col = df.columns[2]  # fallback to hard-coded position
         for i in range(len(df)):
             name = str(df.iloc[i, 1])
             val = df.iloc[i][latest_col]
@@ -1856,15 +1860,6 @@ def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
             conn.row_factory = sqlite3.Row
             cur = conn.execute("SELECT * FROM fund_info")
             funds = [dict(r) for r in cur.fetchall()]
-    # Auto-refresh if pool is empty (same behavior as get_stock_pool)
-    if not funds:
-        _refresh_fund_pool()
-        funds = _cache.get_stock_pool("FUND")
-        if not funds:
-            with _cache._conn() as conn:
-                conn.row_factory = sqlite3.Row
-                cur = conn.execute("SELECT * FROM fund_info")
-                funds = [dict(r) for r in cur.fetchall()]
     return funds
 
 

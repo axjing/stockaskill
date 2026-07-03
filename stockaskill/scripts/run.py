@@ -30,7 +30,6 @@ _scripts_root = str(Path(__file__).resolve().parent)
 if _scripts_root not in sys.path:
     sys.path.insert(0, _scripts_root)
 
-_SCORE_BADGES = [(70, "##"), (40, "==")]
 _DEFAULT_BADGE = "--"
 _MIN_PYTHON = (3, 10)
 
@@ -54,6 +53,9 @@ def _require_supported_python() -> None:
 
 
 _require_supported_python()
+
+
+_SCORE_BADGES = [(65, "##"), (35, "==")]
 
 
 def _badge(score: float) -> str:

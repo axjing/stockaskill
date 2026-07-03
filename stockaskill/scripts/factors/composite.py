@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from cache import get_cache
 from config import get as cfg_get
 from data_engine import get_fundamentals, get_kline
+from utils import safe_float
 
 from factors.base import Factor
 from factors.growth import GrowthFactor
@@ -146,8 +147,8 @@ class CompositeAnalyzer:
         profit_g = fundamentals.get("profit_growth", 0) or 0
         debt = fundamentals.get("debt_ratio", 0) or 0
         curr = fundamentals.get("current_ratio", 0) or 0
-        gm = fundamentals.get("gross_margin", 0) or 0
-        net_m = fundamentals.get("net_margin", 0) or 0
+        gm = safe_float(fundamentals.get("gross_margin", 0))
+        net_m = safe_float(fundamentals.get("net_margin", 0))
 
         # 1. ROA > 0
         if roa > 0:

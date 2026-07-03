@@ -1,7 +1,5 @@
 """Lightweight market-regime and risk-posture analysis."""
 
-from __future__ import annotations
-
 from math import sqrt
 from typing import Any, Dict, List, Sequence
 
@@ -194,7 +192,7 @@ def _window_return(closes: Sequence[float], window: int) -> float:
     """Return the percentage return over the provided trailing window."""
     if len(closes) <= window:
         return 0.0
-    start = float(closes[-window - 1] or 0)
+    start = float(closes[-window] or 0)
     end = float(closes[-1] or 0)
     if start <= 0:
         return 0.0
@@ -246,19 +244,34 @@ def _compute_breadth(market: str) -> Dict[str, Any]:
     ]
     selected = eligible[:sample_limit]
 
+    def _check_one(row: Dict[str, Any]):
+        """Check if a stock is above MA20/MA60."""
+        code = str(row["code"])
+        rows = get_kline(code, market, days=history_days, cached_only=True)
+        closes = _extract_closes(rows)
+        if len(closes) < 60:
+            return None
+        current = closes[-1]
+        return (
+            1 if current > _moving_average(closes, 20) else 0,
+            1 if current > _moving_average(closes, 60) else 0,
+        )
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     above_ma20 = 0
     above_ma60 = 0
     sample_size = 0
-    for row in selected:
-        closes = _extract_closes(get_kline(str(row["code"]), market, days=history_days))
-        if len(closes) < 60:
-            continue
-        sample_size += 1
-        current = closes[-1]
-        if current > _moving_average(closes, 20):
-            above_ma20 += 1
-        if current > _moving_average(closes, 60):
-            above_ma60 += 1
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(_check_one, row): row for row in selected}
+        for future in as_completed(futures):
+            result = future.result()
+            if result is None:
+                continue
+            sample_size += 1
+            a20, a60 = result
+            above_ma20 += a20
+            above_ma60 += a60
 
     if sample_size < min_sample:
         return {
