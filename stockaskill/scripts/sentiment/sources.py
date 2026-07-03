@@ -2,14 +2,12 @@
 
 # Import the global AKShare lock to prevent Chromium allocator crashes
 # when multiple threads initialize AKShare simultaneously
-import os
-import sys
-from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
 from cache import get_cache
+from utils import _suppress_output, normalize_code  # noqa: E402
 
 _de = str(Path(__file__).resolve().parent.parent)
 if _de not in sys.path:
@@ -17,22 +15,6 @@ if _de not in sys.path:
 from data_engine import _akshare_lock  # noqa: E402
 
 from sentiment.dictionary import analyze_sentiment  # noqa: E402
-from utils import normalize_code  # noqa: E402
-
-_cache = get_cache()
-
-
-@contextmanager
-def _suppress_output():
-    """Temporarily suppress stdout/stderr to prevent library error leaks."""
-    devnull = open(os.devnull, 'w')
-    old_stdout, old_stderr = sys.stdout, sys.stderr
-    sys.stdout, sys.stderr = devnull, devnull
-    try:
-        yield
-    finally:
-        sys.stdout, sys.stderr = old_stdout, old_stderr
-        devnull.close()
 
 _cache = get_cache()
 

@@ -18,6 +18,9 @@ import argparse
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
+from typing import Any, Dict, List
+
+from utils import _board, normalize_code_for_market  # noqa: E402
 from typing import TypedDict
 
 import numpy as np
@@ -65,20 +68,6 @@ ETF_TOTAL = sum(float(e["target"]) for e in ETF_CORE)
 
 STOCK_TARGET = 0.60
 MAX_PER_BOARD = 2
-
-
-def _board(code: str) -> str:
-    if code.startswith("60"):
-        return "SH"
-    if code.startswith("688"):
-        return "STAR"
-    if code.startswith("000"):
-        return "SZ"
-    if code.startswith("002"):
-        return "SME"
-    if code.startswith("300"):
-        return "GEM"
-    return "OTHER"
 
 
 def _trend_filter(

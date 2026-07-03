@@ -19,11 +19,31 @@ def _suppress_output():
         devnull.close()
 
 
-def _board(code: str) -> str:
-    """Return exchange board label for a stock code."""
+def _board(code: str, market: str = "A") -> str:
+    """Return exchange board label for a stock code.
+
+    Args:
+        code: Stock code.
+        market: Market identifier ("A", "HK", "US").
+
+    Returns:
+        Board name: SH, STAR, SZ, SME, GEM, HK, US, BJ, or SZ.
+    """
     c = code.strip()
-    if c.startswith(("6", "9")):
+    if market == "HK":
+        return "HK"
+    if market == "US":
+        return "US"
+    if c.startswith("688"):
+        return "STAR"
+    if c.startswith("60"):
         return "SH"
+    if c.startswith("002"):
+        return "SME"
+    if c.startswith("300"):
+        return "GEM"
+    if c.startswith("000"):
+        return "SZ"
     if c.startswith("8") or c.startswith("4") or c.startswith("92"):
         return "BJ"
     return "SZ"

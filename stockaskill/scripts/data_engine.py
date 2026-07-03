@@ -1,24 +1,22 @@
 """Core data engine: AKShare (Sina primary) with caching and fallbacks."""
 
 import logging
-import os
 import sqlite3
-import sys
 import threading
 import time
-from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 from cache import get_cache
 from config import get as cfg_get
-
-_akshare_lock = threading.RLock()
 from utils import (  # noqa: E402
+    _suppress_output,
     normalize_code_for_market,
     safe_float,
 )
+
+_akshare_lock = threading.RLock()
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
@@ -268,20 +266,7 @@ def _aggregate_covered_through(symbols: Sequence[Dict[str, Any]]) -> str:
 
 
 # -- Output suppression for noisy libraries ---------------------------------
-
-
-@contextmanager
-def _suppress_output():
-    """Temporarily suppress stdout/stderr to prevent library error leaks."""
-    devnull = open(os.devnull, 'w')
-    old_stdout, old_stderr = sys.stdout, sys.stderr
-    sys.stdout, sys.stderr = devnull, devnull
-    try:
-        yield
-    finally:
-        sys.stdout, sys.stderr = old_stdout, old_stderr
-        devnull.close()
-
+# _suppress_output is imported from utils
 
 # -- Error reporting helpers ------------------------------------------------
 

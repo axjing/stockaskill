@@ -15,7 +15,7 @@ from factors.low_vol import LowVolFactor
 from factors.momentum import MomentumFactor
 from factors.quality import QualityFactor
 from factors.value import ValueFactor
-from utils import is_st
+from utils import _board, is_st
 
 from portfolio.risk import RiskMetrics
 
@@ -390,30 +390,7 @@ class AlphaMomentumBacktest:
 
     @staticmethod
     def _board(code: str, market: str = "A") -> str:
-        """Get exchange board for a stock code.
-
-        Args:
-            code: Stock code.
-            market: Market ("A", "HK", "US").
-
-        Returns:
-            Board name: SH, STAR, SZ, SME, GEM, HK, US, or OTHER.
-        """
-        if market == "HK":
-            return "HK"
-        if market == "US":
-            return "US"
-        if code.startswith("60"):
-            return "SH"
-        if code.startswith("688"):
-            return "STAR"
-        if code.startswith("000"):
-            return "SZ"
-        if code.startswith("002"):
-            return "SME"
-        if code.startswith("300"):
-            return "GEM"
-        return "OTHER"
+        return _board(code, market=market)
 
     def _select_diversified(self, scored: List[Tuple[str, float]]) -> List[str]:
         """Select top stocks with board diversification.

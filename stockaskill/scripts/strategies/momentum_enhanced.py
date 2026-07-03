@@ -8,6 +8,11 @@ Strategy architecture:
 
 Factor weights (optimized for higher target return):
   - Momentum:  35% (was 30%)
+"""
+
+from typing import Any, Dict, List
+
+from utils import _board  # noqa: E402
   - Low Vol:   18% (was 28%)
   - Quality:   20% (was 21%)
   - Value:     17% (was 14%)
@@ -116,7 +121,7 @@ class MomentumEnhancedStrategy(Strategy):
         selected = []
         board_count: Dict[str, int] = {}
         for code, score in scored:
-            board = self._board(code)
+            board = _board(code)
             if board_count.get(board, 0) >= max_per_board:
                 continue
             selected.append(code)
@@ -125,20 +130,6 @@ class MomentumEnhancedStrategy(Strategy):
                 break
 
         return selected
-
-    @staticmethod
-    def _board(code: str) -> str:
-        if code.startswith("60"):
-            return "SH"
-        if code.startswith("688"):
-            return "STAR"
-        if code.startswith("000"):
-            return "SZ"
-        if code.startswith("002"):
-            return "SME"
-        if code.startswith("300"):
-            return "GEM"
-        return "OTHER"
 
     @staticmethod
     def get_etf_allocation() -> List[Dict[str, Any]]:
