@@ -1,4 +1,4 @@
-﻿---
+---
 name: stockaskill
 description: >-
   Multi-market intelligent stock selection for A-share, HK, US, and
