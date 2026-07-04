@@ -81,7 +81,7 @@ and `backtest` now warm only the data they actually need before scoring.
 
 ## Local cache
 
-All market data is stored in a local SQLite database at `C:\Users\AxJ\.agents\skills\.cache\quant_cache.db`
+All market data is stored in a local SQLite database at `<skill-root>/.cache/quant_cache.db`.
 relative to the project root. The cache contains:
 
 | Table | Content |
