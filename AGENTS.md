@@ -92,7 +92,7 @@ As a general design philosophy, the project favors exposing simple and explicit 
 
 Some classic arguments in favor of this sort of design come from foundational literature on distributed computation (**TLDR:** Do not model resources with very different performance characteristics uniformly, the details will leak) and the End-to-End Principle (TLDR: building smarts into the lower layers of the stack can prevent building performant features at higher layers, and often doesn’t work anyway). For example, we could build operator-level or global device movement rules, but the precise choices aren’t obvious and building an extensible mechanism has unavoidable complexity and latency costs.
 
-A caveat here is that this does not mean that higher-level “easy” APIs are not valuable; certainly there is value in, for example, higher layers in the stack to support efficient tensor computations across heterogeneous compute in a large cluster. Instead, what we mean is that focusing on simple lower-level building blocks helps inform the easy API while still maintaining a good experience when users need to leave the beaten path. It also allows space for innovation and the growth of more opinionated tools at a rate we cannot support in the core library, but ultimately benefit from, as evidenced by our rich ecosystem. In other words, not automating at the start allows us to potentially reach levels of good automation faster.
+A caveat here is that this does not mean that higher-level “easy�?APIs are not valuable; certainly there is value in, for example, higher layers in the stack to support efficient tensor computations across heterogeneous compute in a large cluster. Instead, what we mean is that focusing on simple lower-level building blocks helps inform the easy API while still maintaining a good experience when users need to leave the beaten path. It also allows space for innovation and the growth of more opinionated tools at a rate we cannot support in the core library, but ultimately benefit from, as evidenced by our rich ecosystem. In other words, not automating at the start allows us to potentially reach levels of good automation faster.
 
 #### Principle 3: Primary Language First with Best-in-Class Language Interoperability
 
@@ -111,7 +111,7 @@ These design principles are not hard-and-fast rules, but hard-won choices and an
 
 ## Git Workflow
 
-Multiple concurrent development sessions may run in the same directory. All Git operations must avoid overwriting other sessions’ work.
+Multiple concurrent development sessions may run in the same directory. All Git operations must avoid overwriting other sessions�?work.
 
 ### Commit Rules
 
@@ -269,7 +269,7 @@ Only erasable Node strip-only syntax is allowed for code under packages/*/src , 
 ## Engineering Restrictions
 
 ### No Hardcoding
-- API URLs, ports, file paths, secrets, tokens — all in config/env variables.
+- API URLs, ports, file paths, secrets, tokens �?all in config/env variables.
 - No magic numbers.
 
 ### Modification Rules
@@ -350,18 +350,18 @@ source .venv/bin/activate             # Unix
 uv sync --extra dev                   # install with dev deps
 
 # Lint & Type Check
-uv run ruff check stockaskill/scripts tests
-uv run ruff format --check stockaskill/scripts tests
-uv run mypy stockaskill/scripts tests
+uv run ruff check skills/stockaskill/scripts tests
+uv run ruff format --check skills/stockaskill/scripts tests
+uv run mypy skills/stockaskill/scripts tests
 
 # Test
 uv run python -m pytest -v
 
 # Run CLI
-uv run python stockaskill/scripts/run.py diagnose 600519 --market A
-uv run python stockaskill/scripts/run.py deep-diagnose 600519 --market A
-uv run python stockaskill/scripts/run.py workflow list
-uv run python stockaskill/scripts/run.py scorecard diagnose 600519 --market A
+uv run python skills/stockaskill/scripts/run.py diagnose 600519 --market A
+uv run python skills/stockaskill/scripts/run.py deep-diagnose 600519 --market A
+uv run python skills/stockaskill/scripts/run.py workflow list
+uv run python skills/stockaskill/scripts/run.py scorecard diagnose 600519 --market A
 
 # Git
 git status

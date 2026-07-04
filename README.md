@@ -1,4 +1,4 @@
-# stockaskill
+﻿# stockaskill
 
 A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股、组合构建、风险控制、买卖时机全流程。数据源为 AKShare, 本地 SQLite 积累式缓存。
 
@@ -320,7 +320,7 @@ HK/US 池子会缓存以下额外字段:
 
 ## 配置参数
 
-直接在 `stockaskill/scripts/config.py` 中修改 `_DEFAULTS` 字典。
+直接在 `skills/stockaskill/scripts/config.py` 中修改 `_DEFAULTS` 字典。
 
 ## 与框架集成
 
@@ -478,26 +478,26 @@ print(portfolio.summary())
 
 ```bash
 cd path/to/stockaskill
-python stockaskill/scripts/run.py diagnose 600519 --market A       # 深度诊断
-python stockaskill/scripts/run.py deep-diagnose 600519 --market A  # 长报告诊断
-python stockaskill/scripts/run.py scan A --top 20                  # 默认 auto: 优先快照, 缺失时回退有界 realtime
-python stockaskill/scripts/run.py scan A --mode snapshot --top 20  # 仅读取全市场快照
-python stockaskill/scripts/run.py scan A --mode realtime --top 20  # 有界候选实时扫描
-python stockaskill/scripts/run.py alpha A --top 10                 # Alpha动量扫描
-python stockaskill/scripts/run.py analyze 600519 --market A        # 个股分析
-python stockaskill/scripts/run.py market-regime --market A         # 市场状态 / 风险姿态
-python stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
-python stockaskill/scripts/run.py backtest                         # 回测验证
-python stockaskill/scripts/run.py fetch pool                       # 刷新数据池
-python stockaskill/scripts/run.py sync symbol 600519 --market A    # 单标的有界同步
-python stockaskill/scripts/run.py sync etf --codes 510300,159915   # ETF有界同步
-python stockaskill/scripts/run.py status data watchlist --market US # 数据状态诊断
-python stockaskill/scripts/run.py workflow list                    # 查看内置工作流
-python stockaskill/scripts/run.py workflow run market-regime-daily --market A
-python stockaskill/scripts/run.py thesis capture 600519 --market A # 保存 thesis
-python stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome win
-python stockaskill/scripts/run.py theme-scan AI 算力 --market A    # 主题研究
-python stockaskill/scripts/run.py scorecard diagnose 600519 --market A
+python skills/stockaskill/scripts/run.py diagnose 600519 --market A       # 深度诊断
+python skills/stockaskill/scripts/run.py deep-diagnose 600519 --market A  # 长报告诊断
+python skills/stockaskill/scripts/run.py scan A --top 20                  # 默认 auto: 优先快照, 缺失时回退有界 realtime
+python skills/stockaskill/scripts/run.py scan A --mode snapshot --top 20  # 仅读取全市场快照
+python skills/stockaskill/scripts/run.py scan A --mode realtime --top 20  # 有界候选实时扫描
+python skills/stockaskill/scripts/run.py alpha A --top 10                 # Alpha动量扫描
+python skills/stockaskill/scripts/run.py analyze 600519 --market A        # 个股分析
+python skills/stockaskill/scripts/run.py market-regime --market A         # 市场状态 / 风险姿态
+python skills/stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
+python skills/stockaskill/scripts/run.py backtest                         # 回测验证
+python skills/stockaskill/scripts/run.py fetch pool                       # 刷新数据池
+python skills/stockaskill/scripts/run.py sync symbol 600519 --market A    # 单标的有界同步
+python skills/stockaskill/scripts/run.py sync etf --codes 510300,159915   # ETF有界同步
+python skills/stockaskill/scripts/run.py status data watchlist --market US # 数据状态诊断
+python skills/stockaskill/scripts/run.py workflow list                    # 查看内置工作流
+python skills/stockaskill/scripts/run.py workflow run market-regime-daily --market A
+python skills/stockaskill/scripts/run.py thesis capture 600519 --market A # 保存 thesis
+python skills/stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome win
+python skills/stockaskill/scripts/run.py theme-scan AI 算力 --market A    # 主题研究
+python skills/stockaskill/scripts/run.py scorecard diagnose 600519 --market A
 ```
 
 ### 高阶研究工作流
@@ -506,25 +506,25 @@ python stockaskill/scripts/run.py scorecard diagnose 600519 --market A
 
 ```bash
 # 1. 路由到推荐工作流
-python stockaskill/scripts/run.py route "复盘当前市场并筛选可跟踪主题"
+python skills/stockaskill/scripts/run.py route "复盘当前市场并筛选可跟踪主题"
 
 # 2. 查看 / 解析内置 workflow manifest
-python stockaskill/scripts/run.py workflow list
-python stockaskill/scripts/run.py workflow run portfolio-review-weekly --market A --codes 600519,000858
+python skills/stockaskill/scripts/run.py workflow list
+python skills/stockaskill/scripts/run.py workflow run portfolio-review-weekly --market A --codes 600519,000858
 
 # 3. 长报告诊断
-python stockaskill/scripts/run.py deep-diagnose 600519 --market A --format both
+python skills/stockaskill/scripts/run.py deep-diagnose 600519 --market A --format both
 
 # 4. Thesis memory / postmortem
-python stockaskill/scripts/run.py thesis capture 600519 --market A --notes "等待估值回到合理区间"
-python stockaskill/scripts/run.py thesis list --market A
-python stockaskill/scripts/run.py thesis review --code 600519 --market A
-python stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome loss --return-pct -8
+python skills/stockaskill/scripts/run.py thesis capture 600519 --market A --notes "等待估值回到合理区间"
+python skills/stockaskill/scripts/run.py thesis list --market A
+python skills/stockaskill/scripts/run.py thesis review --code 600519 --market A
+python skills/stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome loss --return-pct -8
 
 # 5. Theme research / scorecard
-python stockaskill/scripts/run.py theme-scan AI 算力 --market A --top 5
-python stockaskill/scripts/run.py scorecard theme AI 算力 --market A --top 5
-python stockaskill/scripts/run.py scorecard thesis --code 600519 --market A
+python skills/stockaskill/scripts/run.py theme-scan AI 算力 --market A --top 5
+python skills/stockaskill/scripts/run.py scorecard theme AI 算力 --market A --top 5
+python skills/stockaskill/scripts/run.py scorecard thesis --code 600519 --market A
 ```
 
 说明:
@@ -538,11 +538,11 @@ python stockaskill/scripts/run.py scorecard thesis --code 600519 --market A
 项目已经不再建议“先全量拉完再分析”的使用方式。推荐直接按任务范围同步:
 
 ```bash
-python stockaskill/scripts/run.py sync symbol 600519 --market A
-python stockaskill/scripts/run.py sync watchlist --market HK
-python stockaskill/scripts/run.py sync portfolio --codes AAPL,MSFT --market US
-python stockaskill/scripts/run.py sync scan-universe --market A --limit 200
-python stockaskill/scripts/run.py sync etf --codes 510300,159915
+python skills/stockaskill/scripts/run.py sync symbol 600519 --market A
+python skills/stockaskill/scripts/run.py sync watchlist --market HK
+python skills/stockaskill/scripts/run.py sync portfolio --codes AAPL,MSFT --market US
+python skills/stockaskill/scripts/run.py sync scan-universe --market A --limit 200
+python skills/stockaskill/scripts/run.py sync etf --codes 510300,159915
 ```
 
 `scan` 现在默认使用 `--mode auto`:
@@ -554,11 +554,11 @@ python stockaskill/scripts/run.py sync etf --codes 510300,159915
 查看数据状态与元数据健康度:
 
 ```bash
-python stockaskill/scripts/run.py status data symbol 600519 --market A
-python stockaskill/scripts/run.py status data watchlist --market US
-python stockaskill/scripts/run.py status data portfolio --codes 0700,9988 --market HK
-python stockaskill/scripts/run.py status data etf --codes 510300,159915
-python stockaskill/scripts/run.py status data scan-universe --market A --limit 200
+python skills/stockaskill/scripts/run.py status data symbol 600519 --market A
+python skills/stockaskill/scripts/run.py status data watchlist --market US
+python skills/stockaskill/scripts/run.py status data portfolio --codes 0700,9988 --market HK
+python skills/stockaskill/scripts/run.py status data etf --codes 510300,159915
+python skills/stockaskill/scripts/run.py status data scan-universe --market A --limit 200
 ```
 
 ## 数据来源
