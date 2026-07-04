@@ -284,9 +284,9 @@ def _aggregate_covered_through(symbols: Sequence[Dict[str, Any]]) -> str:
 def _report_no_data(code: str, market: str, data_kind: str) -> None:
     """Log a user-visible message when no data source succeeded."""
     if market in ("HK", "US"):
-        sources = "AKShare → OpenBB → yfinance"
+        sources = "AKShare -> OpenBB -> yfinance"
     else:
-        sources = "AKShare → baostock → efinance"
+        sources = "AKShare -> baostock -> efinance"
     logger.warning(
         "No %s data for %s (%s). All sources exhausted (%s). "
         "Retry with 'sync %s --market %s' when network is available.",
@@ -310,8 +310,8 @@ def _api_call(api_name: str):
             if not _cache.record_api_call(api_name):
                 _api_limit_exhausted = True
                 print(
-                    "[WARN] 今日 API 调用已耗尽（限额 500），"
-                    "剩余操作使用缓存数据。",
+                    "[WARN] API calls exhausted for today (limit 500),"
+                    " using cached data.",
                     flush=True,
                 )
                 raise RuntimeError(f"Daily API limit reached for {api_name}")
@@ -1013,13 +1013,15 @@ def get_kline(
         if latest:
             # Pad forward past the latest cached date so the fetch window
             # actually includes new trading days that arrived after our last sync.
-            start = _add_days(latest, cfg_get("kline_incremental_padding_days", 30))
+            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
     else:
         latest = _cache.get_latest_date(code, market=market) or ""
         if latest:
-            start = _add_days(latest, cfg_get("kline_incremental_padding_days", 30))
+            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
 
@@ -1043,7 +1045,7 @@ def get_kline(
 
 
 def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str, Any]]:
-    """Fetch K-line with true fallback: AKShare → baostock → efinance → OpenBB → yfinance."""
+    """Fetch K-line with true fallback: AKShare -> baostock -> efinance -> OpenBB -> yfinance."""
     ak = _try_akshare()
     if ak is not None:
         try:

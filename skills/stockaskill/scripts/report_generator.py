@@ -62,7 +62,7 @@ def save_json(data: Any, title: str, output_dir: str = "reports") -> str:
     path = report_filename(title, "json", output_dir)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-    print(f"  JSON report: {path}", file=sys.stderr)
+    print(f"  JSON report: {path}")
     return path
 
 
@@ -71,7 +71,7 @@ def save_markdown(text: str, title: str, output_dir: str = "reports") -> str:
     path = report_filename(title, "md", output_dir)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
-    print(f"  Markdown report: {path}", file=sys.stderr)
+    print(f"  Markdown report: {path}")
     return path
 
 
