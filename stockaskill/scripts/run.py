@@ -68,6 +68,26 @@ _require_supported_python()
 _SCORE_BADGES = [(65, "##"), (35, "==")]
 
 
+def _print_api_usage() -> None:
+    """Print today's API usage breakdown by API name."""
+    cache = get_cache()
+    total = cache.get_api_usage_today()
+    limit = cfg_get("daily_api_limit", 500)
+    if is_api_limit_exhausted():
+        print(
+            f"[WARN] 今日 API 调用已耗尽（限额 {limit}），"
+            f"部分数据可能不完整。",
+            flush=True,
+        )
+    breakdown = cache.get_api_usage_breakdown()
+    if not breakdown:
+        return
+    print(f"API usage today: {total}/{limit}", flush=True)
+    for name, count in sorted(breakdown.items(), key=lambda x: -x[1]):
+        bar = "#" * min(count, 50)
+        print(f"  {name:25s} {count:4d} {bar}", flush=True)
+
+
 def _badge(score: float) -> str:
     """Return a compact badge for a numeric score."""
     for threshold, b in _SCORE_BADGES:
@@ -79,10 +99,12 @@ def _badge(score: float) -> str:
 from cache import get_cache  # noqa: E402
 from config import get as cfg_get  # noqa: E402
 from data_engine import (  # noqa: E402
+    _is_cache_empty,
     get_etf_pool,
     get_fundamentals,
     get_kline,
     get_stock_pool,
+    is_api_limit_exhausted,
     sync_etf_data,
     sync_portfolio_data,
     sync_scan_universe_data,
@@ -795,9 +817,29 @@ def cmd_scan(args: argparse.Namespace) -> None:
         return
 
     print(f"Scanning {market} market for top {top_n}...", flush=True)
-    regime = _safe_market_regime(market)
-    print("  " + summarize_market_regime(regime), flush=True)
+
+    # Cold start: run bounded warmup before regime analysis needs data
+    if _is_cache_empty(market):
+        warmup_n = min(top_n * 3, 30)
+        print(
+            f"  缓存为空，预热点 {warmup_n} 只股票数据...",
+            flush=True,
+        )
+        pool = get_stock_pool(market)
+        codes = [
+            str(item.get("code", ""))
+            for item in pool[:warmup_n]
+            if str(item.get("code", "")).strip()
+        ]
+        for code in codes:
+            try:
+                sync_symbol_data(code, market, history_days=365)
+            except RuntimeError:
+                pass  # API limit hit during warmup, continue with what we have
+
     try:
+        regime = _safe_market_regime(market)
+        print("  " + summarize_market_regime(regime), flush=True)
         from advisor.scanner import MarketScanner
 
         scanner = MarketScanner()
@@ -942,6 +984,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
         )
     except Exception as exc:
         print(f"Scan failed: {exc}", file=sys.stderr)
+    finally:
+        _print_api_usage()
 
 
 def cmd_refresh_scan(args: argparse.Namespace) -> None:
@@ -1820,6 +1864,11 @@ def cmd_cache(args: argparse.Namespace) -> None:
             if tbl in ("db_size_mb", "api_calls_today"):
                 continue
             print(f"  {tbl}: {cnt}")
+        breakdown = cache.get_api_usage_breakdown()
+        if breakdown:
+            print("API usage breakdown:")
+            for name, count in sorted(breakdown.items(), key=lambda x: -x[1]):
+                print(f"  {name:25s} {count:4d}", flush=True)
     elif action == "cleanup":
         days = getattr(args, "days", 30)
         removed = cache.cleanup(max_age_days=days)

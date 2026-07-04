@@ -21,6 +21,9 @@ _akshare_lock = threading.RLock()
 _cache = get_cache()
 logger = logging.getLogger(__name__)
 
+# Track whether any API limit was hit during this session
+_api_limit_exhausted = False
+
 # Configure logging if not already configured by the caller
 if not logging.getLogger().handlers:
     logging.basicConfig(
@@ -303,7 +306,14 @@ def _api_call(api_name: str):
 
     def decorator(func):
         def wrapper(*args, **kwargs):
+            global _api_limit_exhausted
             if not _cache.record_api_call(api_name):
+                _api_limit_exhausted = True
+                print(
+                    "[WARN] 今日 API 调用已耗尽（限额 500），"
+                    "剩余操作使用缓存数据。",
+                    flush=True,
+                )
                 raise RuntimeError(f"Daily API limit reached for {api_name}")
             retry_max = cfg_get("retry_max", 3)
             retry_base = cfg_get("retry_base", 2)
@@ -328,6 +338,21 @@ def _api_call(api_name: str):
         return wrapper
 
     return decorator
+
+
+def is_api_limit_exhausted() -> bool:
+    """Return True if any API limit was hit during this session."""
+    return _api_limit_exhausted
+
+
+def _is_cache_empty(market: str) -> bool:
+    """Return True when the cache has no K-line data for the given market."""
+    with _cache._conn() as conn:
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM daily_price_v2 WHERE market=?",
+            (market,),
+        )
+        return cur.fetchone()[0] == 0
 
 
 # -- Data source: AKShare (primary) -----------------------------------------
@@ -746,7 +771,9 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
     if bs is None:
         print("Baostock not available for pool fetch.")
         return None
+    global _api_limit_exhausted
     if not _cache.record_api_call("stock_pool_baostock"):
+        _api_limit_exhausted = True
         print("Baostock pool API limit reached.")
         return None
     try:
@@ -790,7 +817,9 @@ def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
     bs = _try_baostock()
     if bs is None or df is None or df.empty:
         return df
+    global _api_limit_exhausted
     if not _cache.record_api_call("stock_pool_baostock"):
+        _api_limit_exhausted = True
         return df
     try:
         rs = bs.query_stock_basic()
@@ -841,6 +870,8 @@ def _fetch_a_stock_profile_metadata(code: str) -> Dict[str, str]:
     if ak is None:
         return {}
     if not _cache.record_api_call("stock_profile"):
+        global _api_limit_exhausted
+        _api_limit_exhausted = True
         return {}
     try:
         df = ak.stock_profile_cninfo(symbol=code)
@@ -886,7 +917,7 @@ def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
 @_api_call("stock_pool_hk")
 def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch HK pool via Sina and extract minimal metadata when available."""
-    with _suppress_output():
+    with _suppress_output(capture_exceptions=True):
         df = ak.stock_hk_spot()
     if df is None or df.empty:
         return df
@@ -900,7 +931,7 @@ def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
 @_api_call("stock_pool_us")
 def _fetch_us_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch US pool via Sina and extract minimal metadata when available."""
-    with _suppress_output():
+    with _suppress_output(capture_exceptions=True):
         df = ak.stock_us_spot()
     if df is None or df.empty:
         return df
@@ -1029,6 +1060,7 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                 return result
         except Exception as exc:
             logger.debug("yfinance kline failed for %s: %s", code, exc)
+    _report_no_data(code, market, "K-line")
     return []
 
 
@@ -1046,10 +1078,10 @@ def _fetch_kline_sina(
     elif market == "A":
         df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
     elif market == "HK":
-        with _suppress_output():
+        with _suppress_output(capture_exceptions=True):
             df = ak.stock_hk_daily(symbol=code, adjust="qfq")
     elif market == "US":
-        with _suppress_output():
+        with _suppress_output(capture_exceptions=True):
             df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
     else:
         return []
@@ -1413,6 +1445,7 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
         result = _fetch_fundamentals_yfinance(code, market, yf)
         if result:
             return result
+    _report_no_data(code, market, "fundamentals")
     return None
 
 
@@ -1423,10 +1456,10 @@ def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any
         if market == "A":
             df = ak.stock_financial_report_sina(symbol=code, name="主要指标")
         elif market == "HK":
-            with _suppress_output():
+            with _suppress_output(capture_exceptions=True):
                 df = ak.stock_financial_hk_report_em(symbol=code)
         elif market == "US":
-            with _suppress_output():
+            with _suppress_output(capture_exceptions=True):
                 df = ak.stock_financial_us_report_em(symbol=code)
         else:
             return None

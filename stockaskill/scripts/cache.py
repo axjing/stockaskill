@@ -862,6 +862,17 @@ class CacheManager:
             )
             return False
 
+    def get_api_usage_breakdown(self) -> Dict[str, int]:
+        """Return today's API call count per API name."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT api_name, call_count FROM api_usage "
+                "WHERE date=? ORDER BY call_count DESC",
+                (today,),
+            )
+            return {row[0]: row[1] for row in cur.fetchall()}
+
     def get_api_usage_today(self) -> int:
         """Get total API calls today."""
         today = datetime.now().strftime("%Y-%m-%d")
