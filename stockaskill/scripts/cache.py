@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 from config import get as cfg_get
 
-_CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache"
+_CACHE_DIR = Path(__file__).resolve().parents[1] / ".cache"
 _DB_PATH = _CACHE_DIR / "quant_cache.db"
 
 
