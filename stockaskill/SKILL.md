@@ -43,10 +43,10 @@ Activate on any of these user intents:
 | Portfolio, 组合, allocation | Portfolio construction |
 | Backtest, 回测, validation | Historical backtest |
 | ETF, 场内基金, 510300, 159915 | ETF screening / ETF data sync |
-| Workflow, route, routine, 路线图 | Workflow recommendation / manifest routine |
+| Workflow, route, routine, 路线�?| Workflow recommendation / manifest routine |
 | Thesis, postmortem, 复盘, thesis memory | Thesis capture / review / postmortem |
-| Theme, 主题, 产业链 | Theme research |
-| Scorecard, attribution, 评分卡 | Structured evaluation / attribution |
+| Theme, 主题, 产业�?| Theme research |
+| Scorecard, attribution, 评分�?| Structured evaluation / attribution |
 | Sentiment, sentiment, 情绪 | Market sentiment check |
 | Refresh, 刷新, cache | Data operations |
 
@@ -110,7 +110,7 @@ and re-warm via `fetch pool` or `sync symbol <code>`.
 
 Normalize code by convention: 6xxxxx/0xxxxx/3xxxxx = A, xxxx.HK = HK, plain ticker = US.
 
-    python $SKILL/scripts/run.py analyze 600519 --market A
+    uv run python "$SKILL/scripts/run.py" analyze 600519 --market A
 
 Output: PE/PB/ROE/Dividend, composite factor scores, strategy signal.
 
@@ -118,7 +118,7 @@ Output: PE/PB/ROE/Dividend, composite factor scores, strategy signal.
 
 Comprehensive BUY/SELL/HOLD with risk assessment:
 
-    python $SKILL/scripts/run.py diagnose 600519 --market A
+    uv run python "$SKILL/scripts/run.py" diagnose 600519 --market A
 
 JSON structure: final_decision.signal, adjusted_score, factors, strategy,
 technical, sentiment, fundamentals, risks.
@@ -130,7 +130,7 @@ Present results:
 
 For long-form reports:
 
-    python $SKILL/scripts/run.py deep-diagnose 600519 --market A --format both
+    uv run python "$SKILL/scripts/run.py" deep-diagnose 600519 --market A --format both
 
 Use `deep-diagnose` when the user wants a full memo-style diagnosis with
 decision summary, evidence, risks, invalidation, and follow-up questions.
@@ -139,30 +139,30 @@ decision summary, evidence, risks, invalidation, and follow-up questions.
 
 Recommend a bounded workflow for a user goal:
 
-    python $SKILL/scripts/run.py route "复盘当前市场并筛选候选股"
+    uv run python "$SKILL/scripts/run.py" route "复盘当前市场并筛选候选股"
 
 Inspect built-in workflow manifests:
 
-    python $SKILL/scripts/run.py workflow list
-    python $SKILL/scripts/run.py workflow run market-regime-daily --market A
+    uv run python "$SKILL/scripts/run.py" workflow list
+    uv run python "$SKILL/scripts/run.py" workflow run market-regime-daily --market A
 
 Important: `workflow run` only resolves a manifest into a concrete routine. It
 does not execute shell commands or background jobs.
 
 ### 4. Market scan
 
-    python $SKILL/scripts/run.py scan A --top 20
+    uv run python "$SKILL/scripts/run.py" scan A --top 20
     # default mode=auto: prefer fresh snapshot, else fallback to bounded realtime
     # Also: scan HK --top 10, scan US --top 15, scan FUND --top 20
 
 Explicit modes:
 
-    python $SKILL/scripts/run.py scan A --mode snapshot --top 20
-    python $SKILL/scripts/run.py scan A --mode realtime --top 20
+    uv run python "$SKILL/scripts/run.py" scan A --mode snapshot --top 20
+    uv run python "$SKILL/scripts/run.py" scan A --mode realtime --top 20
 
 If scan returns all zeros, fall back to alpha mode:
 
-    python $SKILL/scripts/run.py alpha A --top 20 --candidates 200
+    uv run python "$SKILL/scripts/run.py" alpha A --top 20 --candidates 200
 
 For sector-filtered scanning:
 
@@ -176,7 +176,7 @@ you are using the skill-local Python environment (`$SKILL/.venv/bin/python` or
 
 Full multi-factor ranking with thread-parallel scoring:
 
-    python $SKILL/scripts/run.py alpha A --top 10 --candidates 200
+    uv run python "$SKILL/scripts/run.py" alpha A --top 10 --candidates 200
 
 Results include ranked list with scores, signals, F-Score, and BUY summary.
 Explain which factors drove top rankings (momentum + low-vol + quality ~73% combined).
@@ -189,32 +189,32 @@ entirely from local cache. This avoids duplicate API fetches during analysis.
 
 Standard portfolio:
 
-    python $SKILL/scripts/run.py portfolio --codes 600519,000858,002475 --capital 1000000 --market A
+    uv run python "$SKILL/scripts/run.py" portfolio --codes 600519,000858,002475 --capital 1000000 --market A
 
 Enhanced core-satellite:
 
-    python $SKILL/scripts/run.py portfolio-enhanced --capital 1000000
+    uv run python "$SKILL/scripts/run.py" portfolio-enhanced --capital 1000000
 
 Pre-warm portfolio data independently (optional):
 
-    python $SKILL/scripts/run.py sync portfolio --codes 600519,000858,002475 --market A
+    uv run python "$SKILL/scripts/run.py" sync portfolio --codes 600519,000858,002475 --market A
 
 ### 7. Backtest
 
 Standard backtest (Alpha Momentum, 2018-2026):
 
-    python $SKILL/scripts/run.py backtest
+    uv run python "$SKILL/scripts/run.py" backtest
 
 Enhanced backtest (core-satellite):
 
-    python $SKILL/scripts/run.py backtest-enhanced
+    uv run python "$SKILL/scripts/run.py" backtest-enhanced
 
 Backtest paths warm a bounded batch of missing symbols plus market index data.
 They do not force a full-market historical sync on every run.
 
 ### 8. Fund/ETF screening
 
-    python $SKILL/scripts/run.py scan FUND --top 20
+    uv run python "$SKILL/scripts/run.py" scan FUND --top 20
 
 For deeper programmatic access:
 
@@ -229,40 +229,40 @@ core supported workflow yet.
 
 Thesis memory:
 
-    python $SKILL/scripts/run.py thesis capture 600519 --market A
-    python $SKILL/scripts/run.py thesis list --market A
-    python $SKILL/scripts/run.py thesis review --code 600519 --market A
-    python $SKILL/scripts/run.py thesis postmortem --code 600519 --market A --outcome win
+    uv run python "$SKILL/scripts/run.py" thesis capture 600519 --market A
+    uv run python "$SKILL/scripts/run.py" thesis list --market A
+    uv run python "$SKILL/scripts/run.py" thesis review --code 600519 --market A
+    uv run python "$SKILL/scripts/run.py" thesis postmortem --code 600519 --market A --outcome win
 
 Theme research:
 
-    python $SKILL/scripts/run.py theme-scan AI 算力 --market A --top 5
+    uv run python "$SKILL/scripts/run.py" theme-scan AI 算力 --market A --top 5
 
 Scorecards:
 
-    python $SKILL/scripts/run.py scorecard diagnose 600519 --market A
-    python $SKILL/scripts/run.py scorecard thesis --code 600519 --market A
-    python $SKILL/scripts/run.py scorecard theme AI 算力 --market A --top 5
+    uv run python "$SKILL/scripts/run.py" scorecard diagnose 600519 --market A
+    uv run python "$SKILL/scripts/run.py" scorecard thesis --code 600519 --market A
+    uv run python "$SKILL/scripts/run.py" scorecard theme AI 算力 --market A --top 5
 
 Use these when the user wants a saved research trail, a review loop, or a
 structured scorecard rather than a one-off diagnosis.
 
 ### 10. Data operations
 
-    python $SKILL/scripts/run.py fetch pool                # full pool refresh
-    python $SKILL/scripts/run.py fetch kline 600519        # single stock K-line
-    python $SKILL/scripts/run.py fetch fundamentals 600519 # single stock fundamentals
+    uv run python "$SKILL/scripts/run.py" fetch pool                # full pool refresh
+    uv run python "$SKILL/scripts/run.py" fetch kline 600519        # single stock K-line
+    uv run python "$SKILL/scripts/run.py" fetch fundamentals 600519 # single stock fundamentals
 
 Bounded sync and diagnostics:
 
-    python $SKILL/scripts/run.py sync symbol 600519 --market A
-    python $SKILL/scripts/run.py sync watchlist --market US
-    python $SKILL/scripts/run.py sync portfolio --codes 0700,9988 --market HK
-    python $SKILL/scripts/run.py sync etf --codes 510300,159915
-    python $SKILL/scripts/run.py sync scan-universe --market A --limit 200
-    python $SKILL/scripts/run.py status data symbol 600519 --market A
-    python $SKILL/scripts/run.py status data watchlist --market US
-    python $SKILL/scripts/run.py status data etf --codes 510300,159915
+    uv run python "$SKILL/scripts/run.py" sync symbol 600519 --market A
+    uv run python "$SKILL/scripts/run.py" sync watchlist --market US
+    uv run python "$SKILL/scripts/run.py" sync portfolio --codes 0700,9988 --market HK
+    uv run python "$SKILL/scripts/run.py" sync etf --codes 510300,159915
+    uv run python "$SKILL/scripts/run.py" sync scan-universe --market A --limit 200
+    uv run python "$SKILL/scripts/run.py" status data symbol 600519 --market A
+    uv run python "$SKILL/scripts/run.py" status data watchlist --market US
+    uv run python "$SKILL/scripts/run.py" status data etf --codes 510300,159915
 
 ## Output guidelines
 
@@ -273,8 +273,8 @@ Use indicators for scannability:
     600519 贵州茅台
     评分 82.3/100 | 信号: BUY (F=8)
     核心驱动: 质量(88.7) + 动量(76.5)
-    风险: 低
-    参考止损/止盈: 1480.50 / 1980.00
+    风险: �?
+    参考止�?止盈: 1480.50 / 1980.00
 
 ### Full diagnosis report format:
 
@@ -297,12 +297,12 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| ModuleNotFoundError: No module named config | Wrong working directory | Run from project root and call `python $SKILL/scripts/run.py ...` |
-| Scan returns 0 results | Cache empty or candidate history missing | run `python $SKILL/scripts/run.py fetch pool` once, then retry |
+| ModuleNotFoundError: No module named config | Wrong working directory | Run from project root and call `uv run python "$SKILL/scripts/run.py" ...` |
+| Scan returns 0 results | Cache empty or candidate history missing | run `uv run python "$SKILL/scripts/run.py" fetch pool` once, then retry |
 | Daily API limit reached | Local API budget or upstream throttling reached | Wait; use cached data |
 | No BUY signals | Market weakness or cold cache | Run diagnose on individual stocks |
-| import akshare fails | Not installed | pip install akshare efinance baostock |
-| Code not found | Pool not fetched for that market | `python $SKILL/scripts/run.py fetch pool` |
+| import akshare fails | Not installed | uv pip install akshare efinance baostock |
+| Code not found | Pool not fetched for that market | `uv run python "$SKILL/scripts/run.py" fetch pool` |
 | Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or prefetch pools first |
 | HK/US candidates look noisy | Cross-market metadata incomplete | check `status data` metadata summary before trusting rankings |
 
@@ -314,7 +314,7 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 4. **Market-aware caching** - A/HK/US/FUND pools and TTL metadata are tracked independently.
 5. **ETF-first fund semantics** - `FUND` currently means exchange-traded ETF workflows, not broad mutual-fund coverage.
 6. **Metadata-aware cross-market support** - HK/US pools carry source, status, and completeness signals; low-quality metadata may be soft-penalized in ranking.
-7. **Script-driven** - Run `python $SKILL/scripts/run.py`, never reimplement logic.
+7. **Script-driven** - Run `uv run python "$SKILL/scripts/run.py"`, never reimplement logic.
 8. **Parallel scoring** - Thread pool (8 workers) for alpha scans.
 9. **Research-memory aware** - Prefer thesis/theme/scorecard workflows when the user asks for follow-up, review, or attribution.
 10. **Graceful degradation** - Cache-only mode on API limit. Partial results over failures.
