@@ -1011,8 +1011,8 @@ def get_kline(
     elif cached:
         latest = cached[0].get("date", "")
         if latest:
-            # Pad forward past the latest cached date so the fetch window
-            # actually includes new trading days that arrived after our last sync.
+            # Overlap past the latest cached date so the fetch window
+            # actually includes any new trading days since the last sync.
             latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
             start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
