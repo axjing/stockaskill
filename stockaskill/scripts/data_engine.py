@@ -718,8 +718,15 @@ def _refresh_stock_pool(market: str) -> None:
                     }
                 )
             _cache.upsert_stock_pool(rows)
+        else:
+            # API returned empty data (rate-limited or temporary outage).
+            # Preserve existing cached pool and bump the refresh timestamp
+            # so callers don't hammer the API on every invocation.
+            _cache._touch_meta(_cache._stock_pool_meta_key(market), 0)
     except Exception as exc:
         print(f"[WARN] Failed to refresh stock pool for {market}: {exc}")
+        # Same fallback on exception: bump TTL so we don't retry immediately.
+        _cache._touch_meta(_cache._stock_pool_meta_key(market), 0)
 
 
 
@@ -987,20 +994,32 @@ def get_kline(
     if cached_only:
         return cached[:days] if cached else []
     if cached and not force_refresh and not full_history and len(cached) >= days:
-        return cached[:days]
+        # Check whether the cached data is still fresh enough; avoid serving
+        # stale data when the latest cached date is older than ~2 weeks.
+        latest_cached_date = cached[0].get("date", "")
+        if latest_cached_date:
+            try:
+                latest_dt = datetime.strptime(latest_cached_date, "%Y-%m-%d")
+                age_days = (datetime.now() - latest_dt).days
+                if age_days <= 14:
+                    return cached[:days]
+            except ValueError:
+                pass
 
     if full_history:
         start = cfg_get("full_history_start_date", "20000101")
     elif cached:
         latest = cached[0].get("date", "")
         if latest:
-            start = _add_days(latest, -30)
+            # Pad forward past the latest cached date so the fetch window
+            # actually includes new trading days that arrived after our last sync.
+            start = _add_days(latest, cfg_get("kline_incremental_padding_days", 30))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
     else:
         latest = _cache.get_latest_date(code, market=market) or ""
         if latest:
-            start = _add_days(latest, -30)
+            start = _add_days(latest, cfg_get("kline_incremental_padding_days", 30))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
 
@@ -1010,6 +1029,11 @@ def get_kline(
         if new_data:
             _cache.upsert_daily_price(new_data)
             cached = _cache.get_daily_price(code, market=market)
+        else:
+            # API returned zero rows for the requested window (e.g. non-trading
+            # days, or the stock was suspended).  Fall back to the full cached
+            # set so callers still get the last-known-good data instead of [].
+            cached = cached or _cache.get_daily_price(code, market=market)
     except Exception as exc:
         logger.warning("get_kline fetch failed for %s: %s", code, exc)
 
@@ -1405,6 +1429,7 @@ def get_fundamentals(
     market: str = "A",
     force_refresh: bool = False,
     cached_only: bool = False,
+    max_age_days: int = 120,
 ) -> Optional[Dict[str, Any]]:
     """Get latest fundamental snapshot. Graceful degradation."""
     code = normalize_code_for_market(code, market)
@@ -1412,7 +1437,15 @@ def get_fundamentals(
     if cached_only:
         return cached
     if cached and not force_refresh:
-        return cached
+        # Add TTL check: if cached data is stale, refresh it.
+        date_str = str(cached.get("date", "")).strip()
+        if date_str:
+            try:
+                snapshot_date = datetime.strptime(date_str, "%Y-%m-%d")
+                if (datetime.now() - snapshot_date).days <= max_age_days:
+                    return cached
+            except ValueError:
+                pass
     try:
         snapshot = _fetch_fundamentals(code, market)
         if snapshot:
