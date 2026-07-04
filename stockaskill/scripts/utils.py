@@ -6,6 +6,8 @@ numeric conversion, percentile ranking, and shared utility functions
 (_suppress_output, _board).
 """
 
+import io
+import logging
 import os
 import sys
 from contextlib import contextmanager
@@ -13,16 +15,32 @@ from datetime import datetime
 
 
 @contextmanager
-def _suppress_output():
-    """Temporarily suppress stdout/stderr to prevent library error leaks."""
+def _suppress_output(capture_exceptions: bool = False):
+    """Temporarily suppress stdout/stderr to prevent library error leaks.
+
+    When *capture_exceptions* is True, stderr is captured and any content
+    is logged at DEBUG level after the context exits, so exception
+    messages are not completely silenced.
+    """
     devnull = open(os.devnull, "w")
     old_stdout, old_stderr = sys.stdout, sys.stderr
-    sys.stdout, sys.stderr = devnull, devnull
+    if capture_exceptions:
+        stderr_buf: io.StringIO | None = io.StringIO()
+        sys.stdout, sys.stderr = devnull, stderr_buf
+    else:
+        stderr_buf = None
+        sys.stdout, sys.stderr = devnull, devnull
     try:
         yield
     finally:
         sys.stdout, sys.stderr = old_stdout, old_stderr
         devnull.close()
+        if capture_exceptions and stderr_buf is not None:
+            captured = stderr_buf.getvalue().strip()
+            if captured:
+                logging.getLogger(__name__).debug(
+                    "Suppressed output: %s", captured[:500]
+                )
 
 
 def _board(code: str, market: str = "A") -> str:
