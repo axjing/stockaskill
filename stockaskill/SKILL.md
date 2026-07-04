@@ -1,4 +1,4 @@
----
+﻿---
 name: stockaskill
 description: >-
   Multi-market intelligent stock selection for A-share, HK, US, and
@@ -43,10 +43,10 @@ Activate on any of these user intents:
 | Portfolio, 组合, allocation | Portfolio construction |
 | Backtest, 回测, validation | Historical backtest |
 | ETF, 场内基金, 510300, 159915 | ETF screening / ETF data sync |
-| Workflow, route, routine, 路线�?| Workflow recommendation / manifest routine |
+| Workflow, route, routine, 路线图?| Workflow recommendation / manifest routine |
 | Thesis, postmortem, 复盘, thesis memory | Thesis capture / review / postmortem |
-| Theme, 主题, 产业�?| Theme research |
-| Scorecard, attribution, 评分�?| Structured evaluation / attribution |
+| Theme, 主题, 产业链?| Theme research |
+| Scorecard, attribution, 评分卡?| Structured evaluation / attribution |
 | Sentiment, sentiment, 情绪 | Market sentiment check |
 | Refresh, 刷新, cache | Data operations |
 
@@ -273,8 +273,8 @@ Use indicators for scannability:
     600519 贵州茅台
     评分 82.3/100 | 信号: BUY (F=8)
     核心驱动: 质量(88.7) + 动量(76.5)
-    风险: �?
-    参考止�?止盈: 1480.50 / 1980.00
+    风险: 低
+    参考止损/止盈: 1480.50 / 1980.00
 
 ### Full diagnosis report format:
 
