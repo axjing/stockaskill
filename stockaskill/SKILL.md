@@ -60,8 +60,11 @@ Check the Python environment first:
 If `python` is not `>=3.10`, or `uv pip list` fails because the environment is
 missing, build a local environment with `uv`:
 
-    uv venv --python 3.10 .venv
-    source .venv/bin/activate
+    uv venv --python 3.10 "$SKILL/.venv"
+    # On Linux/macOS:
+    source "$SKILL/.venv/bin/activate"
+    # On Windows:
+    # "$SKILL\.venv\Scripts\activate.ps1"
     uv pip install akshare efinance baostock pandas numpy scipy
 
 The skill scripts live under the skill installation directory. On most systems
@@ -69,10 +72,12 @@ this is `~/.claude/skills/stockaskill/` (Linux/macOS) or
 `%USERPROFILE%\.claude\skills\stockaskill\` (Windows). Use the absolute path
 to `run.py`:
 
-    python ~/.claude/skills/stockaskill/scripts/run.py fetch pool
+    # Use the skill-local Python environment for all commands:
+    # Linux/macOS:
+    "$SKILL/.venv/bin/python" "$SKILL/scripts/run.py" fetch pool
 
-    # or on Windows:
-    python %USERPROFILE%\.claude\skills\stockaskill\scripts\run.py fetch pool
+    # Windows:
+    "$SKILL\.venv\Scripts\python.exe" "$SKILL\scripts\run.py" fetch pool
 
 For brevity, commands below use `$SKILL` to mean the skill installation directory.
 
@@ -162,6 +167,10 @@ If scan returns all zeros, fall back to alpha mode:
 For sector-filtered scanning:
 
     python -c "from advisor.scanner import MarketScanner; print(MarketScanner().scan_by_sector('A', top_n=5))"
+
+**Note**: When running ad-hoc Python one-liners or importing skill modules, ensure
+you are using the skill-local Python environment (`$SKILL/.venv/bin/python` or
+`$SKILL\.venv\Scripts\python.exe`) so that dependencies resolve correctly.
 
 ### 5. Alpha momentum scan
 
