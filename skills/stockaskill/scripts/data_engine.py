@@ -1090,40 +1090,38 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
     return []
 
 
-@_api_call("kline")
-def _fetch_kline_sina(
-    code: str, market: str, start: str, end: str, ak
+
+
+def _normalize_kline_df(
+    df, code: str, market: str
 ) -> List[Dict[str, Any]]:
-    """Fetch K-line via Sina (daily, all history, then filter)."""
-    sina_sym = _sina_code(code, market)
-    if _is_etf_market(market):
-        try:
-            df = ak.fund_etf_hist_sina(symbol=sina_sym)
-        except Exception:
-            df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
-    elif market == "A":
-        df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
-    elif market == "HK":
-        with _suppress_output(capture_exceptions=True):
-            df = ak.stock_hk_daily(symbol=code, adjust="qfq")
-    elif market == "US":
-        with _suppress_output(capture_exceptions=True):
-            df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
-    else:
-        return []
-    if df is None or df.empty or "date" not in df.columns:
-        return []
-    # Filter to date range
-    df["date"] = df["date"].astype(str)
-    clean_start = start.replace("-", "")
-    clean_end = end.replace("-", "")
-    dates_clean = df["date"].str.replace("-", "")
-    mask = (dates_clean >= clean_start) & (dates_clean <= clean_end)
-    df = df[mask]
+    """Normalize a pandas DataFrame into K-line row dicts.
 
-    if df.empty:
+    Handles both EastMoney (stock_zh_a_hist) and Sina column names.
+    """
+    east_cols = {
+        "\u65e5\u671f": "date",
+        "\u5f00\u76d8": "open",
+        "\u6700\u9ad8": "high",
+        "\u6700\u4f4e": "low",
+        "\u6536\u76d8": "close",
+        "\u6210\u4ea4\u91cf": "volume",
+        "\u6210\u4ea4\u989d": "amount",
+    }
+    # Map column names to standard names
+    col_map = {}
+    for cn, std in east_cols.items():
+        if cn in df.columns:
+            col_map[cn] = std
+    # Handle Sina column names (already lowercase)
+    for std in ("date", "open", "high", "low", "close", "volume", "amount"):
+        if std in df.columns and std not in col_map.values():
+            col_map[std] = std
+
+    if "date" not in col_map.values():
         return []
 
+    df = df.rename(columns=col_map)
     rows = []
     for _, r in df.iterrows():
         rows.append(
@@ -1142,6 +1140,76 @@ def _fetch_kline_sina(
     return rows
 
 
+@_api_call("kline")
+def _fetch_kline_sina(
+    code: str, market: str, start: str, end: str, ak
+) -> List[Dict[str, Any]]:
+    """Fetch K-line via EastMoney (date-range aware, incremental).
+
+    Uses ak.stock_zh_a_hist() which accepts start_date/end_date,
+    avoiding downloading ALL history every time. Falls back to
+    stock_zh_a_daily() only when the date-range API fails.
+    """
+    if market == "A" or _is_etf_market(market):
+        # Normalize dates to YYYYMMDD for EastMoney API
+        clean_start = start.replace("-", "")
+        clean_end = end.replace("-", "")
+        try:
+            df = ak.stock_zh_a_hist(
+                symbol=code,
+                period="daily",
+                start_date=clean_start,
+                end_date=clean_end,
+                adjust="qfq",
+            )
+            if df is not None and not df.empty:
+                return _normalize_kline_df(df, code, market)
+        except Exception:
+            pass
+        # Fallback: Sina daily returns all history, filter after download.
+        # This is a last resort for A-shares/ETFs.
+        sina_sym = _sina_code(code, market)
+        try:
+            df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
+        except Exception:
+            df = None
+        if df is not None and not df.empty and "date" in df.columns:
+            df["date"] = df["date"].astype(str)
+            dates_clean = df["date"].str.replace("-", "")
+            mask = (dates_clean >= clean_start) & (dates_clean <= clean_end)
+            df = df[mask]
+            if not df.empty:
+                return _normalize_kline_df(df, code, market)
+        return []
+    elif market == "HK":
+        with _suppress_output(capture_exceptions=True):
+            df = ak.stock_hk_daily(symbol=code, adjust="qfq")
+        if df is not None and not df.empty and "date" in df.columns:
+            df["date"] = df["date"].astype(str)
+            clean_start = start.replace("-", "")
+            clean_end = end.replace("-", "")
+            dates_clean = df["date"].str.replace("-", "")
+            mask = (dates_clean >= clean_start) & (dates_clean <= clean_end)
+            df = df[mask]
+            if not df.empty:
+                return _normalize_kline_df(df, code, market)
+        return []
+    elif market == "US":
+        with _suppress_output(capture_exceptions=True):
+            df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
+        if df is not None and not df.empty and "date" in df.columns:
+            df["date"] = df["date"].astype(str)
+            clean_start = start.replace("-", "")
+            clean_end = end.replace("-", "")
+            dates_clean = df["date"].str.replace("-", "")
+            mask = (dates_clean >= clean_start) & (dates_clean <= clean_end)
+            df = df[mask]
+            if not df.empty:
+                return _normalize_kline_df(df, code, market)
+        return []
+    return []
+
+
 @_api_call("kline_ef")
 def _fetch_kline_ef(
     code: str, market: str, start: str, end: str, ef
@@ -1154,6 +1222,15 @@ def _fetch_kline_ef(
         return []
     date_col = "\u65e5\u671f"
     if date_col not in df.columns:
+        return []
+    # Filter to requested date range to avoid returning all history
+    df[date_col] = df[date_col].astype(str)
+    clean_start = start.replace("-", "")
+    clean_end = end.replace("-", "")
+    dates_clean = df[date_col].str.replace("-", "")
+    mask = (dates_clean >= clean_start) & (dates_clean <= clean_end)
+    df = df[mask]
+    if df.empty:
         return []
     rows = []
     for _, r in df.iterrows():
