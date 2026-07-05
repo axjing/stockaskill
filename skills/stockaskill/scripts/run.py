@@ -811,6 +811,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
     print(f"Scanning {market} market for top {top_n}...", flush=True)
 
     # Cold start: run bounded warmup before regime analysis needs data
+    cache = get_cache()
     if cache.is_market_data_empty(market):
         warmup_n = min(top_n * 3, 30)
         print(
