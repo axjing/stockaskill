@@ -1130,8 +1130,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
     if fetch_type == "pool":
         print("Refreshing stock pool...")
         for mkt in ["A", "HK", "US", "FUND"]:
-            from data_engine import get_fund_pool, get_stock_pool
-
             if mkt == "FUND":
                 get_fund_pool(force_refresh=True)
             else:
@@ -1402,12 +1400,14 @@ def cmd_status(args: argparse.Namespace) -> None:
             if dates:
                 print(f"  Last updated: {dates[-1]}")
                 print(f"  Oldest entry: {dates[0]}")
+        rows: List[dict] = []
     else:
         print(f"Unknown status type: {status_type}")
         return
 
     if not rows:
-        print("No sync state found.")
+        if status_type != "pool":
+            print("No sync state found.")
         return
     print(f"Sync state for {status_type} (market={market}):")
     for row in rows:
