@@ -74,10 +74,10 @@ to `run.py`:
 
     # Use the skill-local Python environment for all commands:
     # Linux/macOS:
-    "$SKILL/.venv/bin/python" "$SKILL/scripts/run.py" fetch pool
+    "$SKILL/.venv/bin/python" "$SKILL/scripts/run.py" f`fetch pool`
 
     # Windows:
-    "$SKILL\.venv\Scripts\python.exe" "$SKILL\scripts\run.py" fetch pool
+    "$SKILL\.venv\Scripts\python.exe" "$SKILL\scripts\run.py" f`fetch pool`
 
 For brevity, commands below use `$SKILL` to mean the skill installation directory.
 
@@ -101,16 +101,16 @@ The cache contains:
 |---|---|
 | stock_pool | A/HK/US/FUND symbol lists with metadata |
 | daily_price | K-line history (OHLCV), keyed by code+date |
-| actor_snapshot | Fundamental snapshots (PE/PB/ROE/etc.) |
+| `factor_snapshot` | Fundamental snapshots (PE/PB/ROE/etc.) |
 | computed_factors | Pre-computed factor scores |
-| und_info | ETF pool metadata |
-| und_nav | ETF NAV history |
+| `fund_info` | ETF pool metadata |
+| `fund_nav` | ETF NAV history |
 | market_index | Index K-line history |
-| pi_usage | Daily API call tracking |
+| `api_usage` | Daily API call tracking |
 | sync_state | Per-symbol sync status and covered dates |
 
 The cache is created automatically on first data fetch or sync. Safe to delete
-and re-warm via etch pool or sync symbol <code>.
+and re-warm via `fetch pool` or sync symbol <code>.
 
 ## Workflows
 
@@ -257,7 +257,7 @@ structured scorecard rather than a one-off diagnosis.
 
 ### 10. Data operations
 
-    uv run python "$SKILL/scripts/run.py" fetch pool                # full pool refresh
+    uv run python "$SKILL/scripts/run.py" f`fetch pool`                # full pool refresh
     uv run python "$SKILL/scripts/run.py" fetch kline 600519        # single stock K-line
     uv run python "$SKILL/scripts/run.py" fetch fundamentals 600519 # single stock fundamentals
 
@@ -308,12 +308,12 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 | Symptom | Cause | Fix |
 |---|---|---|
 | ModuleNotFoundError: No module named config | Wrong working directory | Run from project root and call `uv run python "$SKILL/scripts/run.py" ...` |
-| Scan returns 0 results | Cache empty or candidate history missing | run `uv run python "$SKILL/scripts/run.py" fetch pool` once, then retry |
+| Scan returns 0 results | Cache empty or candidate history missing | run `uv run python "$SKILL/scripts/run.py" f`fetch pool`` once, then retry |
 | Daily API limit reached | Local API budget or upstream throttling reached | Wait; use cached data |
 | No BUY signals | Market weakness or cold cache | Run diagnose on individual stocks |
 | import akshare fails | Not installed | uv pip install akshare efinance baostock |
-| Code not found | Pool not fetched for that market | `uv run python "$SKILL/scripts/run.py" fetch pool` |
-| Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or prefetch pools first |
+| Code not found | Pool not fetched for that market | `uv run python "$SKILL/scripts/run.py" f`fetch pool`` |
+| Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or pref`fetch pool`s first |
 | HK/US candidates look noisy | Cross-market metadata incomplete | check `status data` metadata summary before trusting rankings |
 
 ## Key principles

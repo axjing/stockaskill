@@ -278,7 +278,7 @@ All OHLCV/fundamental data fetches MUST follow this pattern:
 
 1. **Cache is the source of truth** — SQLite quant_cache.db is the primary read path. Remote APIs are sync mechanisms, not query layers.
 2. **Incremental by default** — Check sync_watermarks / sync_state for the latest cached date. Compute the missing gap and only fetch that range. Never pull full history unless cache is empty (cold start).
-3. **Date-range-aware APIs** — Use k.stock_zh_a_hist(symbol, start_date, end_date) or equivalent. Never use k.stock_zh_a_daily() or similar full-history-download APIs as the primary data path.
+3. **Date-range-aware APIs** — Use `ak.stock_zh_a_hist`(symbol, start_date, end_date) or equivalent. Never use `ak.stock_zh_a_daily`() or similar full-history-download APIs as the primary data path.
 4. **Overlap on incremental fetch** — When backfilling, start from last_cached_date - 3 trading days to catch weekend/holiday corrections and late data updates.
 5. **UPSERT semantics** — Use ON CONFLICT ... DO UPDATE for writes. Latest data always wins.
 6. **Validate before cache** — Reject malformed data (negative prices, high < low, future dates) at ingestion time.
