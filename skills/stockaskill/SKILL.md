@@ -84,25 +84,33 @@ For brevity, commands below use `$SKILL` to mean the skill installation director
 If the cache is cold, `analyze`, `diagnose`, `scan`, `alpha`, `portfolio`,
 and `backtest` now warm only the data they actually need before scoring.
 
-## Local cache
+## Local cache and data strategy
 
-All market data is stored in a local SQLite database at `<skill-root>/.cache/quant_cache.db`.
-relative to the project root. The cache contains:
+All market data is stored in a local SQLite database at <skill-root>/.cache/quant_cache.db
+relative to the project root. The cache follows a **cache-first + incremental sync** strategy:
+
+1. **Read from cache first** — Every data request checks SQLite before making any API call.
+2. **Fetch only missing gaps** — If cache has data through date X, only fetch from X to today (with 3-day overlap for corrections). Never redownload full history.
+3. **Cold start seeds full history** — First run for a symbol pulls from a safe baseline (A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01). Subsequent reads are incremental.
+4. **Multi-source fallback** — AKShare (primary) -> baostock -> efinance. Sources with repeated failures are backed off automatically.
+5. **UPSERT writes** — Latest data always wins; duplicates are overwritten.
+
+The cache contains:
 
 | Table | Content |
 |---|---|
-| `stock_pool` | A/HK/US/FUND symbol lists with metadata |
-| `daily_price` | K-line history (OHLCV), keyed by code+date |
-| `factor_snapshot` | Fundamental snapshots (PE/PB/ROE/etc.) |
-| `computed_factors` | Pre-computed factor scores |
-| `fund_info` | ETF pool metadata |
-| `fund_nav` | ETF NAV history |
-| `market_index` | Index K-line history |
-| `api_usage` | Daily API call tracking |
-| `sync_state` | Per-symbol sync status and covered dates |
+| stock_pool | A/HK/US/FUND symbol lists with metadata |
+| daily_price | K-line history (OHLCV), keyed by code+date |
+| actor_snapshot | Fundamental snapshots (PE/PB/ROE/etc.) |
+| computed_factors | Pre-computed factor scores |
+| und_info | ETF pool metadata |
+| und_nav | ETF NAV history |
+| market_index | Index K-line history |
+| pi_usage | Daily API call tracking |
+| sync_state | Per-symbol sync status and covered dates |
 
 The cache is created automatically on first data fetch or sync. Safe to delete
-and re-warm via `fetch pool` or `sync symbol <code>`.
+and re-warm via etch pool or sync symbol <code>.
 
 ## Workflows
 
@@ -310,7 +318,7 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 
 ## Key principles
 
-1. **Local-first, fetch on miss** - SQLite cache before AKShare API. Reuse cached data whenever it is sufficient and fresh.
+1. **Local-first, fetch on miss** — SQLite quant_cache.db before any AKShare API call. Incrementally backfill only missing date ranges. Never download full history on a warm cache. Reuse cached data whenever it is sufficient and fresh.
 2. **Multi-factor, multi-strategy** - Weighted vote across 6 strategies from 7 factor dimensions.
 3. **Task-scoped warmup** - `analyze`/`scan`/`backtest` fetch only the minimal missing pool, history, fundamentals, or index data.
 4. **Market-aware caching** - A/HK/US/FUND pools and TTL metadata are tracked independently.

@@ -268,6 +268,18 @@ openclaw skills install @axjing/stockaskill --global
 
 ## 数据架构
 
+### 数据策略：缓存优先 + 增量同步 (Cache-First + Incremental Sync)
+
+本项目的数据获取遵循**缓存优先、增量同步**原则：
+
+- **SQLite 是唯一数据源**：所有读取操作先查本地 quant_cache.db，远端 API 仅作为同步手段，不作为查询层。
+- **增量补全，不全量重拉**：检查缓存最新日期，只拉取缺失区间（带 3 天重叠以修正节假日/延迟数据）。首次运行全量种子，之后永远只补缺失。
+- **日期范围 API 优先**：使用 k.stock_zh_a_hist(symbol, start_date, end_date) 等支持区间的接口。禁止使用 k.stock_zh_a_daily() 等无视日期、全量下载历史数据的 API 作为主路径。
+- **多源容错 + 熔断**：AKShare (主) -> baostock -> efinance (备)。连续失败的源自动进入退避状态，避免浪费 API 配额。
+- **UPSERT 写入**：最新数据覆盖旧数据，ON CONFLICT DO UPDATE 保证一致性。
+
+违反此策略（如对每只股票每次请求都全量下载历史）是致命 bug，会导致 API 限额耗尽和 RemoteDisconnected 错误。
+
 ### SQLite 表结构 (`quant_cache.db`)
 
 | 表 | 内容 | 更新策略 |

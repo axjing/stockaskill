@@ -64,17 +64,17 @@ Read full file contents before performing wide-ranging changes, code investigati
 
 #### Principle 1: Usability over Performance
 
-* The project’s primary goal is usability
+* The project鈥檚 primary goal is usability
 * A secondary goal is to have _reasonable_ performance
 
-We believe the ability to maintain our flexibility to support researchers who are building on top of our abstractions remains critical. We can’t see what the future of workloads will be, but we know we want them to be built first on this platform, and that requires flexibility.
+We believe the ability to maintain our flexibility to support researchers who are building on top of our abstractions remains critical. We can鈥檛 see what the future of workloads will be, but we know we want them to be built first on this platform, and that requires flexibility.
 
 In more concrete terms, we operate in a _usability-first_ manner and try to avoid jumping to _restriction-first_ regimes (for example, static shapes, graph-mode only) without a clear-eyed view of the tradeoffs. Often there is a temptation to impose strict user restrictions upfront because it can simplify implementation, but this comes with risks:
 
 * The performance may not be worth the user friction, either because the performance benefit is not compelling enough or it only applies to a relatively narrow set of subproblems.
 * Even if the performance benefit is compelling, the restrictions can fragment the ecosystem into different sets of limitations that can quickly become incomprehensible to users.
 
-We want users to be able to seamlessly move their code built with this framework to different hardware and software platforms, to interoperate with different libraries and frameworks, and to experience the full richness of the framework’s user experience, not a least common denominator subset.
+We want users to be able to seamlessly move their code built with this framework to different hardware and software platforms, to interoperate with different libraries and frameworks, and to experience the full richness of the framework鈥檚 user experience, not a least common denominator subset.
 
 #### Principle 2: Simple Over Easy
 
@@ -83,16 +83,16 @@ Here, we borrow from The Zen of Python:
 * _Explicit is better than implicit_
 * _Simple is better than complex_
 
-A more concise way of describing these two goals is **Simple Over Easy**. Let’s start with an example because _simple_ and _easy_ are often used interchangeably in everyday English. Consider how one may model computational devices in such a framework:
+A more concise way of describing these two goals is **Simple Over Easy**. Let鈥檚 start with an example because _simple_ and _easy_ are often used interchangeably in everyday English. Consider how one may model computational devices in such a framework:
 
 * **Simple / Explicit (to understand, debug)**
 * **Easy / Implicit (to use)**
 
 As a general design philosophy, the project favors exposing simple and explicit building blocks rather than APIs that are easy-to-use by practitioners. The simple version is immediately understandable and debuggable by a new user. The easy solution may let a new user move faster initially, but debugging such a system can be complex: How did the system make its determination? What is the API for plugging into such a system and how are objects represented in its intermediate representation?
 
-Some classic arguments in favor of this sort of design come from foundational literature on distributed computation (**TLDR:** Do not model resources with very different performance characteristics uniformly, the details will leak) and the End-to-End Principle (TLDR: building smarts into the lower layers of the stack can prevent building performant features at higher layers, and often doesn’t work anyway). For example, we could build operator-level or global device movement rules, but the precise choices aren’t obvious and building an extensible mechanism has unavoidable complexity and latency costs.
+Some classic arguments in favor of this sort of design come from foundational literature on distributed computation (**TLDR:** Do not model resources with very different performance characteristics uniformly, the details will leak) and the End-to-End Principle (TLDR: building smarts into the lower layers of the stack can prevent building performant features at higher layers, and often doesn鈥檛 work anyway). For example, we could build operator-level or global device movement rules, but the precise choices aren鈥檛 obvious and building an extensible mechanism has unavoidable complexity and latency costs.
 
-A caveat here is that this does not mean that higher-level “easy�?APIs are not valuable; certainly there is value in, for example, higher layers in the stack to support efficient tensor computations across heterogeneous compute in a large cluster. Instead, what we mean is that focusing on simple lower-level building blocks helps inform the easy API while still maintaining a good experience when users need to leave the beaten path. It also allows space for innovation and the growth of more opinionated tools at a rate we cannot support in the core library, but ultimately benefit from, as evidenced by our rich ecosystem. In other words, not automating at the start allows us to potentially reach levels of good automation faster.
+A caveat here is that this does not mean that higher-level 鈥渆asy鈥?APIs are not valuable; certainly there is value in, for example, higher layers in the stack to support efficient tensor computations across heterogeneous compute in a large cluster. Instead, what we mean is that focusing on simple lower-level building blocks helps inform the easy API while still maintaining a good experience when users need to leave the beaten path. It also allows space for innovation and the growth of more opinionated tools at a rate we cannot support in the core library, but ultimately benefit from, as evidenced by our rich ecosystem. In other words, not automating at the start allows us to potentially reach levels of good automation faster.
 
 #### Principle 3: Primary Language First with Best-in-Class Language Interoperability
 
@@ -111,7 +111,7 @@ These design principles are not hard-and-fast rules, but hard-won choices and an
 
 ## Git Workflow
 
-Multiple concurrent development sessions may run in the same directory. All Git operations must avoid overwriting other sessions�?work.
+Multiple concurrent development sessions may run in the same directory. All Git operations must avoid overwriting other sessions鈥?work.
 
 ### Commit Rules
 
@@ -269,8 +269,23 @@ Only erasable Node strip-only syntax is allowed for code under packages/*/src , 
 ## Engineering Restrictions
 
 ### No Hardcoding
-- API URLs, ports, file paths, secrets, tokens �?all in config/env variables.
+- API URLs, ports, file paths, secrets, tokens 鈥?all in config/env variables.
 - No magic numbers.
+
+
+### Data Strategy: Cache-First + Incremental Sync
+All OHLCV/fundamental data fetches MUST follow this pattern:
+
+1. **Cache is the source of truth** — SQLite quant_cache.db is the primary read path. Remote APIs are sync mechanisms, not query layers.
+2. **Incremental by default** — Check sync_watermarks / sync_state for the latest cached date. Compute the missing gap and only fetch that range. Never pull full history unless cache is empty (cold start).
+3. **Date-range-aware APIs** — Use k.stock_zh_a_hist(symbol, start_date, end_date) or equivalent. Never use k.stock_zh_a_daily() or similar full-history-download APIs as the primary data path.
+4. **Overlap on incremental fetch** — When backfilling, start from last_cached_date - 3 trading days to catch weekend/holiday corrections and late data updates.
+5. **UPSERT semantics** — Use ON CONFLICT ... DO UPDATE for writes. Latest data always wins.
+6. **Validate before cache** — Reject malformed data (negative prices, high < low, future dates) at ingestion time.
+7. **Multi-source fallback with circuit breaker** — Try AKShare first, then baostock, then efinance. Track source health and back off on repeated failures.
+8. **Full history preserved** — Cold start seeds from a safe baseline (A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01). Once seeded, all subsequent reads are incremental.
+
+Violation of this strategy (e.g., downloading all history per symbol per request) is a critical bug that causes API rate-limit exhaustion and RemoteDisconnected errors.
 
 ### Modification Rules
 - Delete/disable existing features only after user confirmation.
