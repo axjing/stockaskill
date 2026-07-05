@@ -1386,6 +1386,22 @@ def cmd_status(args: argparse.Namespace) -> None:
         _print_status_summary(symbol_rows, label="etf", requested=len(codes))
         _print_market_metadata_summary(_scope_pool_rows(codes, market), label="etf")
         rows.extend(symbol_rows)
+    elif status_type == "pool":
+        pool = get_stock_pool(market)
+        pool_count = len(pool) if pool else 0
+        needs_refresh = cache.pool_needs_refresh(market)
+        print(f"  Pool: {market}")
+        print(f"  Count: {pool_count}")
+        print(f"  Needs refresh: {needs_refresh}")
+        if pool:
+            dates = sorted(
+                r.get("updated_at", "")
+                for r in pool
+                if r.get("updated_at")
+            )
+            if dates:
+                print(f"  Last updated: {dates[-1]}")
+                print(f"  Oldest entry: {dates[0]}")
     else:
         print(f"Unknown status type: {status_type}")
         return
@@ -1883,7 +1899,7 @@ def cmd_cache(args: argparse.Namespace) -> None:
 
 def cmd_market_regime(args: argparse.Namespace) -> None:
     """Analyze current market posture and risk budget."""
-    market = getattr(args, "market", "A") or "A"
+    market = getattr(args, "market_flag", None) or getattr(args, "market", "A") or "A"
     output_dir = getattr(args, "output_dir", "reports")
     fmt = getattr(args, "format", "both")
 
@@ -2347,10 +2363,18 @@ def main() -> None:
     # market-regime
     p = sub.add_parser("market-regime", help="Analyze current market posture")
     p.add_argument(
-        "--market",
+        "market",
+        nargs="?",
         default="A",
         choices=["A", "HK", "US"],
-        help="Market to analyze",
+        help="Market to analyze (positional or --market)",
+    )
+    p.add_argument(
+        "--market",
+        dest="market_flag",
+        default=None,
+        choices=["A", "HK", "US"],
+        help="Market to analyze (named alternative)",
     )
     p.add_argument("--output-dir", default="reports", help="Report output directory")
     p.add_argument(
@@ -2619,6 +2643,17 @@ def main() -> None:
         help="Candidate scope size used during sync.",
     )
     p_status_scan.set_defaults(func=cmd_status)
+
+    p_status_pool = data_sub.add_parser(
+        "pool",
+        help="Show pool metadata and refresh state",
+    )
+    p_status_pool.add_argument(
+        "--market",
+        default="A",
+        help="Market (A/HK/US/FUND)",
+    )
+    p_status_pool.set_defaults(func=cmd_status)
 
     # alpha
     p = sub.add_parser("alpha", help="Alpha momentum stock scan")

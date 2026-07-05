@@ -263,6 +263,8 @@ Bounded sync and diagnostics:
     uv run python "$SKILL/scripts/run.py" status data symbol 600519 --market A
     uv run python "$SKILL/scripts/run.py" status data watchlist --market US
     uv run python "$SKILL/scripts/run.py" status data etf --codes 510300,159915
+    uv run python "$SKILL/scripts/run.py" status data pool --market A
+    uv run python "$SKILL/scripts/run.py" market-regime --market A
 
 ## Output guidelines
 
