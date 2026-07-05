@@ -1593,7 +1593,15 @@ def cmd_alpha(args: argparse.Namespace) -> None:
         candidate_rows = [
             {"code": stock["code"], "market": market} for stock in candidates
         ]
-        ensure_market_scan_ready(market, candidate_rows)
+
+        # Pre-sync only the actual candidate count. The pre-sync fetches
+        # kline + fundamentals (2 API calls per stock), so syncing 200 stocks
+        # (the global default) would burn 400 calls, leaving only 100 for
+        # the 50 stocks in the scoring loop — causing immediate exhaustion.
+        actual_n = len(candidate_rows)
+        print(f"  Pre-syncing {actual_n} candidates (cached_only for scoring)...", flush=True)
+        ensure_market_scan_ready(market, candidate_rows, limit=actual_n)
+
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         from strategies.alpha_momentum import AlphaMomentumStrategy
@@ -1604,7 +1612,9 @@ def cmd_alpha(args: argparse.Namespace) -> None:
         def score_one(stock):
             code = stock["code"]
             try:
-                r = strat.analyze(code, market)
+                # Use cached_only: pre-sync already ensured data availability.
+                # This avoids double-counting API calls (pre-sync + scoring).
+                r = strat.analyze(code, market, cached_only=True)
                 return (
                     code,
                     stock.get("name", ""),

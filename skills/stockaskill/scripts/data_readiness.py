@@ -102,12 +102,23 @@ def ensure_symbols_ready(
 def ensure_market_scan_ready(
     market: str,
     candidates: Sequence[Dict[str, Any]],
+    limit: int = 0,
 ) -> Dict[str, Any]:
-    """Warm local data for scan candidates before cached-only scoring."""
+    """Warm local data for scan candidates before cached-only scoring.
+
+    Args:
+        market: Market identifier.
+        candidates: List of candidate dicts with 'code' and 'market' keys.
+        limit: Override the global prefetch limit. When 0, uses the default
+            (scan_max_candidates, typically 200). When >0, caps sync to min(
+            len(candidates), limit), so passing the actual candidate count
+            avoids wasting API calls on unused slots.
+    """
     history_days = cfg_get("data_readiness.scan_history_days", 365)
-    prefetch_limit = cfg_get(
+    default_limit = cfg_get("scan_max_candidates", 200)
+    prefetch_limit = limit if limit else cfg_get(
         "data_readiness.scan_prefetch_limit",
-        cfg_get("scan_max_candidates", 200),
+        default_limit,
     )
     need_fundamentals = bool(cfg_get("data_readiness.scan_fundamentals", True))
     codes = [str(candidate.get("code", "")) for candidate in candidates if candidate]

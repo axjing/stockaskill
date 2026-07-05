@@ -257,7 +257,7 @@ structured scorecard rather than a one-off diagnosis.
 
 ### 10. Data operations
 
-    uv run python "$SKILL/scripts/run.py" f`fetch pool`                # full pool refresh
+    uv run python "$SKILL/scripts/run.py" fetch pool               # full pool refresh
     uv run python "$SKILL/scripts/run.py" fetch kline 600519        # single stock K-line
     uv run python "$SKILL/scripts/run.py" fetch fundamentals 600519 # single stock fundamentals
 
