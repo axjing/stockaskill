@@ -222,6 +222,8 @@ They do not force a full-market historical sync on every run.
 
 For deeper programmatic access:
 
+    # Must prepend the scripts directory to sys.path first
+    import sys, os; sys.path.insert(0, os.path.join(os.environ.get("SKILL", "."), "scripts"))
     from data_engine import get_etf_pool, get_etf_nav
     funds = get_etf_pool()
     nav = get_etf_nav("510300", days=365)
