@@ -566,6 +566,16 @@ class CacheManager:
             )
             return [dict(r) for r in cur.fetchall()]
 
+    def get_latest_fund_nav_date(self, code: str) -> str | None:
+        """Get the latest cached date for a fund NAV."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT MAX(date) FROM fund_nav WHERE code=?",
+                (code,),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
     # -- market index -------------------------------------------------------
 
     def upsert_market_index(self, rows: List[Dict[str, Any]]) -> None:
@@ -596,6 +606,16 @@ class CacheManager:
                 (index_code, cutoff),
             )
             return [dict(r) for r in cur.fetchall()]
+
+    def get_latest_market_index_date(self, index_code: str) -> str | None:
+        """Get the latest cached date for a market index."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT MAX(date) FROM market_index WHERE index_code=?",
+                (index_code,),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
 
     # -- market scan snapshot ----------------------------------------------
 

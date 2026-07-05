@@ -975,7 +975,15 @@ def get_kline(
     full_history: bool = False,
     cached_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Get K-line data with incremental cache update. Graceful degradation.
+    """Get K-line data with incremental cache update.
+
+    Cache-first: always attempt to fetch up to today's date.
+    - If cached data already has enough rows AND the latest date equals today,
+      skip the API call (nothing new to fetch).
+    - Otherwise, incrementally fetch from the day after the latest cached date
+      up to today (end_date is always today).
+    - Falls back to cached data on fetch failure.
+    - Supports full_history mode for first-time bootstrapping.
 
     Args:
         code: Stock code.
@@ -993,18 +1001,14 @@ def get_kline(
     cached = _cache.get_daily_price(code, market=market)
     if cached_only:
         return cached[:days] if cached else []
+
+    today_str = _date_str(datetime.now())
+
+    # If cache has enough rows and is already up to today, skip API call.
     if cached and not force_refresh and not full_history and len(cached) >= days:
-        # Check whether the cached data is still fresh enough; avoid serving
-        # stale data when the latest cached date is older than ~2 weeks.
         latest_cached_date = cached[0].get("date", "")
-        if latest_cached_date:
-            try:
-                latest_dt = datetime.strptime(latest_cached_date, "%Y-%m-%d")
-                age_days = (datetime.now() - latest_dt).days
-                if age_days <= 14:
-                    return cached[:days]
-            except ValueError:
-                pass
+        if latest_cached_date == today_str:
+            return cached[:days]
 
     if full_history:
         start = cfg_get("full_history_start_date", "20000101")
@@ -1167,8 +1171,12 @@ def _fetch_kline_sina(
         except Exception:
             pass
         # Fallback: Sina daily returns all history, filter after download.
-        # This is a last resort for A-shares/ETFs.
+        # Only pull when cache is empty to avoid full download on every retry.
         sina_sym = _sina_code(code, market)
+        cached_fallback = _cache.get_daily_price(code, market)
+        if cached_fallback:
+            # Cache exists but had a fetch error — use what we have.
+            return []
         try:
             df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
         except Exception:
@@ -2073,10 +2081,23 @@ def _refresh_fund_pool() -> None:
 
 
 def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
-    """Get ETF-style NAV/history for the ETF-oriented FUND path."""
+    """Get ETF-style NAV/history with incremental cache update."""
     cached = _cache.get_fund_nav(code, days)
-    if cached:
+    if len(cached) >= days:
         return cached
+
+    # Compute incremental fetch range.
+    if cached:
+        latest = cached[0].get("date", "")
+        if latest:
+            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            start = _date_str(latest_dt - timedelta(days=3))
+        else:
+            start = _date_str(datetime.now() - timedelta(days=days + 30))
+    else:
+        start = _date_str(datetime.now() - timedelta(days=days + 30))
+    end = _date_str(datetime.now())
+
     try:
         ak = _try_akshare()
         if ak:
@@ -2084,10 +2105,10 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
                 df = ak.stock_zh_a_daily(symbol=_sina_code(code, "A"), adjust="qfq")
             if df is not None and not df.empty:
                 df["date"] = df["date"].astype(str)
-                cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-                cutoff_clean = cutoff.replace("-", "")
+                clean_start = start.replace("-", "")
+                clean_end = end.replace("-", "")
                 dates_clean = df["date"].str.replace("-", "")
-                df = df[dates_clean >= cutoff_clean]
+                df = df[(dates_clean >= clean_start) & (dates_clean <= clean_end)]
                 rows = []
                 for _, r in df.iterrows():
                     rows.append(
@@ -2103,7 +2124,7 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
                     return _cache.get_fund_nav(code, days)
     except Exception:
         pass
-    return []
+    return cached
 
 
 def get_etf_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
@@ -2119,32 +2140,59 @@ def get_market_index(
     days: int = 250,
     cached_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Get market index K-line. Graceful degradation.
+    """Get market index K-line with incremental cache update.
 
-    Args:
-        index_code: Index code.
-        days: Number of trading days to return.
-        cached_only: Skip API calls, use only cached data.
-
-    Returns:
-        List of index K-line dicts.
+    Cache-first: always attempt to fetch up to today's date.
+    - If cached data is already up to today, skip the API call.
+    - Otherwise, incrementally fetch from the day after the latest cached date
+      up to today. Falls back to cached data on fetch failure.
     """
     cached = _cache.get_market_index(index_code, days)
-    if cached or cached_only:
+    if cached_only:
         return cached
+
+    today_str = _date_str(datetime.now())
+
+    # If cache is already up to today, skip API call.
+    if cached:
+        latest_cached_date = cached[0].get("date", "")
+        if latest_cached_date == today_str:
+            return cached[:days]
+
+    # Incremental backfill: fetch from latest cached date up to today.
+    if cached:
+        latest = cached[0].get("date", "")
+        if latest:
+            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            start = _date_str(latest_dt - timedelta(days=3))
+        else:
+            start = _date_str(datetime.now() - timedelta(days=days + 30))
+    else:
+        latest = _cache.get_latest_market_index_date(index_code) or ""
+        if latest:
+            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            start = _date_str(latest_dt - timedelta(days=3))
+        else:
+            start = _date_str(datetime.now() - timedelta(days=days + 30))
+
+    # Always fetch up to today to get the latest trading day data.
+    end = today_str
     try:
-        rows = _fetch_market_index(index_code, days)
-        if rows:
-            _cache.upsert_market_index(rows)
-            return _cache.get_market_index(index_code, days)
-    except Exception:
-        pass
-    return []
+        new_data = _fetch_market_index(index_code, start, end)
+        if new_data:
+            _cache.upsert_market_index(new_data)
+            cached = _cache.get_market_index(index_code, days)
+        else:
+            cached = cached or _cache.get_market_index(index_code, days)
+    except Exception as exc:
+        logger.warning("get_market_index fetch failed for %s: %s", index_code, exc)
+
+    return cached[:days] if cached else []
 
 
 @_api_call("market_index")
-def _fetch_market_index(index_code: str, days: int) -> List[Dict[str, Any]]:
-    """Fetch market index via Sina."""
+def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str, Any]]:
+    """Fetch market index via Sina with date-range filtering."""
     ak = _try_akshare()
     if ak is None:
         return []
@@ -2154,10 +2202,10 @@ def _fetch_market_index(index_code: str, days: int) -> List[Dict[str, Any]]:
             return []
 
         df["date"] = df["date"].astype(str)
-        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        cutoff_clean = cutoff.replace("-", "")
+        clean_start = start.replace("-", "")
+        clean_end = end.replace("-", "")
         dates_clean = df["date"].str.replace("-", "")
-        df = df[dates_clean >= cutoff_clean]
+        df = df[(dates_clean >= clean_start) & (dates_clean <= clean_end)]
 
         rows = []
         for _, r in df.iterrows():
