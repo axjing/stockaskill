@@ -32,7 +32,6 @@ class QualityFactor(Factor):
         scores = []
         roe_min, roe_max = self._range("roe", market)
         _, gm_max = self._range("gross_margin", market)
-        _, _ = self._range("debt", market)  # debt is always [0, 1]
         nm_min, nm_max = self._range("net_margin", market)
 
         # ROE score (40%)

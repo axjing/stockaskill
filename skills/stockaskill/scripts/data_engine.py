@@ -298,23 +298,17 @@ def _report_no_data(code: str, market: str, data_kind: str) -> None:
 
 
 def _api_call(api_name: str):
-    """Decorator: rate-limit + exponential backoff + usage tracking.
+    """Decorator: retry with exponential backoff + rate-limit detection.
 
     Retries up to retry_max times with exponential backoff.
-    Raises the last exception if all attempts fail — never returns None.
+    If all attempts fail with a rate-limit signal, sets _api_limit_exhausted
+    and prints a warning before re-raising. Callers should catch the exception
+    and fall back to cached data.
     """
 
     def decorator(func):
         def wrapper(*args, **kwargs):
             global _api_limit_exhausted
-            if not _cache.record_api_call(api_name):
-                _api_limit_exhausted = True
-                print(
-                    "[WARN] API calls exhausted for today (limit 500),"
-                    " using cached data.",
-                    flush=True,
-                )
-                raise RuntimeError(f"Daily API limit reached for {api_name}")
             retry_max = cfg_get("retry_max", 3)
             retry_base = cfg_get("retry_base", 2)
             interval = cfg_get("request_interval", [0.5, 2.0])
@@ -328,6 +322,34 @@ def _api_call(api_name: str):
                     return result
                 except Exception as exc:
                     last_exc = exc
+                    err_str = str(exc).lower()
+                    # Detect upstream rate-limit signals
+                    is_rate_limited = any(
+                        token in err_str
+                        for token in ("429", "too many", "rate limit", "throttl")
+                    )
+                    if is_rate_limited and attempt == retry_max - 1:
+                        _api_limit_exhausted = True
+                        source_name = {
+                            "kline": "AKShare/EastMoney",
+                            "kline_ef": "efinance",
+                            "kline_bs": "Baostock",
+                            "kline_openbb": "OpenBB",
+                            "kline_yf": "yfinance",
+                            "fundamentals": "AKShare/Sina",
+                            "fundamentals_openbb": "OpenBB",
+                            "fundamentals_yf": "yfinance",
+                            "market_index": "AKShare/Sina",
+                            "stock_pool_a": "AKShare/EastMoney",
+                            "stock_pool_hk": "AKShare/Sina",
+                            "stock_pool_us": "AKShare/Sina",
+                            "fund_pool": "AKShare/EastMoney",
+                        }.get(api_name, api_name)
+                        print(
+                            f"[WARN] {source_name} rate-limited. "
+                            f"Falling back to alternative data source.",
+                            flush=True,
+                        )
                     if attempt == retry_max - 1:
                         raise
                     delay = min(retry_base**attempt * mul, cap)
@@ -343,16 +365,6 @@ def _api_call(api_name: str):
 def is_api_limit_exhausted() -> bool:
     """Return True if any API limit was hit during this session."""
     return _api_limit_exhausted
-
-
-def _is_cache_empty(market: str) -> bool:
-    """Return True when the cache has no K-line data for the given market."""
-    with _cache._conn() as conn:
-        cur = conn.execute(
-            "SELECT COUNT(*) FROM daily_price_v2 WHERE market=?",
-            (market,),
-        )
-        return cur.fetchone()[0] == 0
 
 
 # -- Data source: AKShare (primary) -----------------------------------------
@@ -735,7 +747,8 @@ def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch A-share pool: EastMoney -> Sina -> Baostock."""
     # Attempt 1: EastMoney with full fields
     try:
-        df = ak.stock_zh_a_spot_em()
+        with _akshare_lock:
+            df = ak.stock_zh_a_spot_em()
         col_map = {
             "代码": "code",
             "名称": "name",
@@ -758,7 +771,8 @@ def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
 
     # Attempt 2: Sina (code+name only)
     try:
-        df = ak.stock_info_a_code_name()
+        with _akshare_lock:
+            df = ak.stock_info_a_code_name()
         df["industry"] = ""
         df["sector"] = ""
         df["list_date"] = ""
@@ -777,11 +791,6 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
     bs = _try_baostock()
     if bs is None:
         print("Baostock not available for pool fetch.")
-        return None
-    global _api_limit_exhausted
-    if not _cache.record_api_call("stock_pool_baostock"):
-        _api_limit_exhausted = True
-        print("Baostock pool API limit reached.")
         return None
     try:
         rs = bs.query_stock_basic()
@@ -804,29 +813,25 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
                     "list_date": str(row[2]).strip(),
                     "total_market_cap": 0.0,
                 })
-        bs.logout()
         if rows:
             print(f"Fetch A-share pool via Baostock ({len(rows)} stocks)")
             return pd.DataFrame(rows)
         return None
     except Exception as exc:
         print(f"Baostock pool fetch failed: {exc}")
+        return None
+    finally:
         try:
             with _suppress_output():
                 bs.logout()
         except Exception:
             pass
-        return None
 
 
 def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
     """Enrich pool DataFrame with industry/list_date from Baostock."""
     bs = _try_baostock()
     if bs is None or df is None or df.empty:
-        return df
-    global _api_limit_exhausted
-    if not _cache.record_api_call("stock_pool_baostock"):
-        _api_limit_exhausted = True
         return df
     try:
         rs = bs.query_stock_basic()
@@ -844,7 +849,6 @@ def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
                 "industry": "",
                 "list_date": str(row[2]).strip(),
             }
-        bs.logout()
 
         has_changes = False
         for idx, row in df.iterrows():
@@ -863,12 +867,13 @@ def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
         return df
     except Exception as exc:
         print(f"Baostock pool metadata backfill failed: {exc}")
+        return df
+    finally:
         try:
             with _suppress_output():
                 bs.logout()
         except Exception:
             pass
-        return df
 
 
 def _fetch_a_stock_profile_metadata(code: str) -> Dict[str, str]:
@@ -876,12 +881,9 @@ def _fetch_a_stock_profile_metadata(code: str) -> Dict[str, str]:
     ak = _try_akshare()
     if ak is None:
         return {}
-    if not _cache.record_api_call("stock_profile"):
-        global _api_limit_exhausted
-        _api_limit_exhausted = True
-        return {}
     try:
-        df = ak.stock_profile_cninfo(symbol=code)
+        with _akshare_lock:
+            df = ak.stock_profile_cninfo(symbol=code)
     except Exception:
         return {}
     if df is None or df.empty:
@@ -925,7 +927,8 @@ def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
 def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch HK pool via Sina and extract minimal metadata when available."""
     with _suppress_output(capture_exceptions=True):
-        df = ak.stock_hk_spot()
+        with _akshare_lock:
+            df = ak.stock_hk_spot()
     if df is None or df.empty:
         return df
     rows = [
@@ -939,7 +942,8 @@ def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
 def _fetch_us_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch US pool via Sina and extract minimal metadata when available."""
     with _suppress_output(capture_exceptions=True):
-        df = ak.stock_us_spot()
+        with _akshare_lock:
+            df = ak.stock_us_spot()
     if df is None or df.empty:
         return df
     rows = [
@@ -952,7 +956,8 @@ def _fetch_us_stock_pool(ak) -> Optional[pd.DataFrame]:
 @_api_call("fund_pool")
 def _fetch_fund_pool_df(ak) -> Optional[pd.DataFrame]:
     """Fetch ETF/fund pool via EastMoney."""
-    df = ak.fund_etf_spot_em()
+    with _akshare_lock:
+        df = ak.fund_etf_spot_em()
     col_map = {
         "\u4ee3\u7801": "code",
         "\u540d\u79f0": "name",
@@ -1017,14 +1022,14 @@ def get_kline(
         if latest:
             # Overlap past the latest cached date so the fetch window
             # actually includes any new trading days since the last sync.
-            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            latest_dt = _safe_parse_date(latest)
             start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
     else:
         latest = _cache.get_latest_date(code, market=market) or ""
         if latest:
-            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            latest_dt = _safe_parse_date(latest)
             start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
@@ -1159,17 +1164,18 @@ def _fetch_kline_sina(
         clean_start = start.replace("-", "")
         clean_end = end.replace("-", "")
         try:
-            df = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=clean_start,
-                end_date=clean_end,
-                adjust="qfq",
-            )
+            with _akshare_lock:
+                df = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    start_date=clean_start,
+                    end_date=clean_end,
+                    adjust="qfq",
+                )
             if df is not None and not df.empty:
                 return _normalize_kline_df(df, code, market)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("EastMoney date-range kline failed for %s: %s", code, exc)
         # Fallback: Sina daily returns all history, filter after download.
         # Only pull when cache is empty to avoid full download on every retry.
         sina_sym = _sina_code(code, market)
@@ -1178,7 +1184,8 @@ def _fetch_kline_sina(
             # Cache exists but had a fetch error — use what we have.
             return []
         try:
-            df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
+            with _akshare_lock:
+                df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
         except Exception:
             df = None
         if df is not None and not df.empty and "date" in df.columns:
@@ -1191,7 +1198,8 @@ def _fetch_kline_sina(
         return []
     elif market == "HK":
         with _suppress_output(capture_exceptions=True):
-            df = ak.stock_hk_daily(symbol=code, adjust="qfq")
+            with _akshare_lock:
+                df = ak.stock_hk_daily(symbol=code, adjust="qfq")
         if df is not None and not df.empty and "date" in df.columns:
             df["date"] = df["date"].astype(str)
             clean_start = start.replace("-", "")
@@ -1204,7 +1212,8 @@ def _fetch_kline_sina(
         return []
     elif market == "US":
         with _suppress_output(capture_exceptions=True):
-            df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
+            with _akshare_lock:
+                df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
         if df is not None and not df.empty and "date" in df.columns:
             df["date"] = df["date"].astype(str)
             clean_start = start.replace("-", "")
@@ -1279,25 +1288,32 @@ def _fetch_kline_bs(
         frequency="d",
         adjustflag="2",
     )
-    if rs.error_code != "0":
-        return []
-    rows = []
-    while rs.error_code == "0" and rs.next():
-        r = rs.get_row_data()
-        rows.append(
-            {
-                "code": code,
-                "date": r[0],
-                "open": safe_float(r[1]),
-                "high": safe_float(r[2]),
-                "low": safe_float(r[3]),
-                "close": safe_float(r[4]),
-                "volume": safe_float(r[5]),
-                "amount": safe_float(r[6]),
-                "market": market,
-            }
-        )
-    return rows
+    try:
+        if rs.error_code != "0":
+            return []
+        rows = []
+        while rs.error_code == "0" and rs.next():
+            r = rs.get_row_data()
+            rows.append(
+                {
+                    "code": code,
+                    "date": r[0],
+                    "open": safe_float(r[1]),
+                    "high": safe_float(r[2]),
+                    "low": safe_float(r[3]),
+                    "close": safe_float(r[4]),
+                    "volume": safe_float(r[5]),
+                    "amount": safe_float(r[6]),
+                    "market": market,
+                }
+            )
+        return rows
+    finally:
+        try:
+            with _suppress_output():
+                bs.logout()
+        except Exception:
+            pass
 
 
 # -- Fundamentals -----------------------------------------------------------
@@ -1573,16 +1589,15 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
 def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals via Sina financial abstract."""
     try:
-        if market == "A":
-            df = ak.stock_financial_report_sina(symbol=code, name="主要指标")
-        elif market == "HK":
-            with _suppress_output(capture_exceptions=True):
+        with _akshare_lock:
+            if market == "A":
+                df = ak.stock_financial_report_sina(symbol=code, name="主要指标")
+            elif market == "HK":
                 df = ak.stock_financial_hk_report_em(symbol=code)
-        elif market == "US":
-            with _suppress_output(capture_exceptions=True):
+            elif market == "US":
                 df = ak.stock_financial_us_report_em(symbol=code)
-        else:
-            return None
+            else:
+                return None
         if df is None or df.empty or len(df.columns) < 3:
             return None
         today = datetime.now().strftime("%Y-%m-%d")
@@ -2080,17 +2095,29 @@ def _refresh_fund_pool() -> None:
         pass
 
 
-def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
-    """Get ETF-style NAV/history with incremental cache update."""
+def get_fund_nav(code: str, days: int = 365, cached_only: bool = False, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Get ETF-style NAV/history with incremental cache update.
+
+    Cache-first: checks row count AND date freshness.
+    - If cache has enough rows AND latest date is today, return immediately.
+    - Otherwise incrementally fetch from latest cached date up to today.
+    - Falls back to cached data on fetch failure.
+    """
     cached = _cache.get_fund_nav(code, days)
-    if len(cached) >= days:
+    if cached_only:
         return cached
+
+    # Check both row count and date freshness (skip if forced refresh).
+    if not force_refresh and len(cached) >= days:
+        latest_cached_date = cached[0].get("date", "")
+        if latest_cached_date and latest_cached_date == _date_str(datetime.now()):
+            return cached
 
     # Compute incremental fetch range.
     if cached:
         latest = cached[0].get("date", "")
         if latest:
-            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            latest_dt = _safe_parse_date(latest)
             start = _date_str(latest_dt - timedelta(days=3))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
@@ -2122,8 +2149,11 @@ def get_fund_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
                 if rows:
                     _cache.upsert_fund_nav(rows)
                     return _cache.get_fund_nav(code, days)
-    except Exception:
-        pass
+    except RuntimeError as exc:
+        if "Daily API limit reached" not in str(exc):
+            logger.warning("get_fund_nav fetch failed for %s: %s", code, exc)
+    except Exception as exc:
+        logger.warning("get_fund_nav fetch failed for %s: %s", code, exc)
     return cached
 
 
@@ -2139,11 +2169,12 @@ def get_market_index(
     index_code: str = "000001",
     days: int = 250,
     cached_only: bool = False,
+    force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
     """Get market index K-line with incremental cache update.
 
     Cache-first: always attempt to fetch up to today's date.
-    - If cached data is already up to today, skip the API call.
+    - If cached data is already up to today (and not forced), skip the API call.
     - Otherwise, incrementally fetch from the day after the latest cached date
       up to today. Falls back to cached data on fetch failure.
     """
@@ -2153,8 +2184,8 @@ def get_market_index(
 
     today_str = _date_str(datetime.now())
 
-    # If cache is already up to today, skip API call.
-    if cached:
+    # If cache is already up to today and not forced, skip API call.
+    if cached and not force_refresh:
         latest_cached_date = cached[0].get("date", "")
         if latest_cached_date == today_str:
             return cached[:days]
@@ -2163,14 +2194,14 @@ def get_market_index(
     if cached:
         latest = cached[0].get("date", "")
         if latest:
-            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            latest_dt = _safe_parse_date(latest)
             start = _date_str(latest_dt - timedelta(days=3))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
     else:
         latest = _cache.get_latest_market_index_date(index_code) or ""
         if latest:
-            latest_dt = datetime.strptime(latest.replace('-', ''), '%Y%m%d')
+            latest_dt = _safe_parse_date(latest)
             start = _date_str(latest_dt - timedelta(days=3))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
@@ -2227,6 +2258,22 @@ def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str,
 
 
 # -- Utility ----------------------------------------------------------------
+
+
+def _safe_parse_date(value: str, fallback: Optional[datetime] = None) -> datetime:
+    """Parse a date string that may be 'YYYY-MM-DD' or 'YYYYMMDD'.
+
+    Returns *fallback* (default: now - 365 days) on any parse error so that
+    malformed cached dates do not crash the entire data engine.
+    """
+    if fallback is None:
+        fallback = datetime.now() - timedelta(days=365)
+    if not value:
+        return fallback
+    try:
+        return datetime.strptime(value.replace("-", ""), "%Y%m%d")
+    except (ValueError, TypeError):
+        return fallback
 
 
 def _date_str(dt: datetime) -> str:

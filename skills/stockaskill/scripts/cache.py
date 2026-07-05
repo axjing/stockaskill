@@ -162,8 +162,10 @@ class CacheManager:
 
     def _migrate_from_v1(self) -> None:
         """One-time migration: copy v1 data to v2 tables if v2 is empty.
-        Runs only once; the v1 tables are kept but no longer written to.
+        Uses a kv_store flag to skip COUNT(*) on every startup after first run.
         """
+        if self.kv_get("_v1_migrated") == "done":
+            return
         with self._conn() as conn:
             for v2_table, v1_table, cols in [
                 (
@@ -197,6 +199,7 @@ class CacheManager:
                         )
                 except Exception:
                     pass
+        self.kv_set("_v1_migrated", "done", ttl=0)
 
     @contextmanager
     def _conn(self):
@@ -576,6 +579,15 @@ class CacheManager:
             row = cur.fetchone()
             return row[0] if row and row[0] else None
 
+    def is_market_data_empty(self, market: str) -> bool:
+        """Return True when the cache has no K-line data for the given market."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM daily_price_v2 WHERE market=?",
+                (market,),
+            )
+            return cur.fetchone()[0] == 0
+
     # -- market index -------------------------------------------------------
 
     def upsert_market_index(self, rows: List[Dict[str, Any]]) -> None:
@@ -784,7 +796,7 @@ class CacheManager:
     # -- KV store (generic cache) -------------------------------------------
 
     def kv_get(self, key: str) -> Any | None:
-        """Get a cached value by key."""
+        """Get a cached value by key, deleting expired entries."""
         with self._conn() as conn:
             cur = conn.execute(
                 "SELECT value, expires FROM kv_store WHERE key=?",
@@ -793,6 +805,7 @@ class CacheManager:
             row = cur.fetchone()
             if row:
                 if row[1] and time.time() > row[1]:
+                    conn.execute("DELETE FROM kv_store WHERE key=?", (key,))
                     return None
                 import json
 

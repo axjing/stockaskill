@@ -94,6 +94,7 @@ class Factor(ABC):
 
         Returns:
             Dict mapping stock code to normalized score in [0, 1].
+            If all values are NaN, returns 0.5 (neutral) for all codes.
         """
         if not scores:
             return scores
@@ -103,7 +104,8 @@ class Factor(ABC):
         # Handle NaN: replace with median for ranking
         valid = ~np.isnan(vals)
         if not valid.any():
-            return scores
+            # All values are NaN — return neutral score instead of raw NaN
+            return {code: 0.5 for code in scores.keys()}
         vals[~valid] = np.median(vals[valid])
 
         # Use rankdata for O(n log n) percentile ranking

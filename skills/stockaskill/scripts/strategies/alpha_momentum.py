@@ -43,7 +43,7 @@ class AlphaMomentumStrategy(Strategy):
             detail = result.get("detail", result)
             return {
                 "strategy_name": self.name,
-                "signal": "SELL",
+                "signal": "SKIP",
                 "score": 0.0,
                 "confidence": 0.0,
                 "detail": dict(

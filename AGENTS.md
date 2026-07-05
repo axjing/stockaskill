@@ -62,52 +62,10 @@ Read full file contents before performing wide-ranging changes, code investigati
 
 ### Code Design Principles
 
-#### Principle 1: Usability over Performance
-
-* The project鈥檚 primary goal is usability
-* A secondary goal is to have _reasonable_ performance
-
-We believe the ability to maintain our flexibility to support researchers who are building on top of our abstractions remains critical. We can鈥檛 see what the future of workloads will be, but we know we want them to be built first on this platform, and that requires flexibility.
-
-In more concrete terms, we operate in a _usability-first_ manner and try to avoid jumping to _restriction-first_ regimes (for example, static shapes, graph-mode only) without a clear-eyed view of the tradeoffs. Often there is a temptation to impose strict user restrictions upfront because it can simplify implementation, but this comes with risks:
-
-* The performance may not be worth the user friction, either because the performance benefit is not compelling enough or it only applies to a relatively narrow set of subproblems.
-* Even if the performance benefit is compelling, the restrictions can fragment the ecosystem into different sets of limitations that can quickly become incomprehensible to users.
-
-We want users to be able to seamlessly move their code built with this framework to different hardware and software platforms, to interoperate with different libraries and frameworks, and to experience the full richness of the framework鈥檚 user experience, not a least common denominator subset.
-
-#### Principle 2: Simple Over Easy
-
-Here, we borrow from The Zen of Python:
-
-* _Explicit is better than implicit_
-* _Simple is better than complex_
-
-A more concise way of describing these two goals is **Simple Over Easy**. Let鈥檚 start with an example because _simple_ and _easy_ are often used interchangeably in everyday English. Consider how one may model computational devices in such a framework:
-
-* **Simple / Explicit (to understand, debug)**
-* **Easy / Implicit (to use)**
-
-As a general design philosophy, the project favors exposing simple and explicit building blocks rather than APIs that are easy-to-use by practitioners. The simple version is immediately understandable and debuggable by a new user. The easy solution may let a new user move faster initially, but debugging such a system can be complex: How did the system make its determination? What is the API for plugging into such a system and how are objects represented in its intermediate representation?
-
-Some classic arguments in favor of this sort of design come from foundational literature on distributed computation (**TLDR:** Do not model resources with very different performance characteristics uniformly, the details will leak) and the End-to-End Principle (TLDR: building smarts into the lower layers of the stack can prevent building performant features at higher layers, and often doesn鈥檛 work anyway). For example, we could build operator-level or global device movement rules, but the precise choices aren鈥檛 obvious and building an extensible mechanism has unavoidable complexity and latency costs.
-
-A caveat here is that this does not mean that higher-level 鈥渆asy鈥?APIs are not valuable; certainly there is value in, for example, higher layers in the stack to support efficient tensor computations across heterogeneous compute in a large cluster. Instead, what we mean is that focusing on simple lower-level building blocks helps inform the easy API while still maintaining a good experience when users need to leave the beaten path. It also allows space for innovation and the growth of more opinionated tools at a rate we cannot support in the core library, but ultimately benefit from, as evidenced by our rich ecosystem. In other words, not automating at the start allows us to potentially reach levels of good automation faster.
-
-#### Principle 3: Primary Language First with Best-in-Class Language Interoperability
-
-This principle began as **Primary Language First**:
-
-> The framework is not a binding of its primary language into a monolithic C++ core. It is built to be deeply integrated into that language. You can use it naturally like you would use well-established libraries in that ecosystem. You can write your new neural network layers in the language itself, using your favorite libraries and packages such as performance-oriented extensions. Our goal is to not reinvent the wheel where appropriate.
-
-One thing the project has needed to deal with over the years is language runtime overhead: we first rewrote key components in C++, then the majority of operator definitions, then developed an ahead-of-time compilation flow and a C++ frontend.
-
-Still, working in the primary language provides easily the best experience for our users: it is flexible, familiar, and perhaps most importantly, has a huge ecosystem of scientific computing libraries and extensions available for use. This fact motivates some of our most recent contributions, which attempt to hit a Pareto optimal point close to the language usability end of the curve:
-
-* A dynamic bytecode transformation engine capable of speeding up existing eager-mode programs with minimal user intervention.
-* Extension points (such as tensor-level function overrides and operator dispatch customization) that have enabled primary-language-first functionality to be built on top of C++ internals, enabling tools like symbolic tracers and composable function transforms respectively.
-
-These design principles are not hard-and-fast rules, but hard-won choices and anchor how we built this project to be the debuggable, hackable, and flexible framework it is today. As we have more contributors and maintainers, we look forward to applying these core principles with you across our libraries and ecosystem. We are also open to evolving them as we learn new things and the technology space evolves, as we know it will.
+- **Local-first, fetch on miss** — Always check cache before API calls. Incrementally backfill only missing date ranges.
+- **Task-scoped warmup** — Sync only the data needed for the current operation scope.
+- **Graceful degradation** — Fall back to cached data on API failure. Partial results over crashes.
+- **Bounded operations** — No blind full-market syncs. Every sync has a defined scope (symbol, watchlist, portfolio, etc.).
 
 ## Git Workflow
 
@@ -134,7 +92,7 @@ These commands may destroy uncommitted work or bypass validation checks:
 
 ## Issues & PRs Workflow
 
-- Follow quality gates and workflow rules defined in CONTRIBUTING.md
+- Follow quality gates and workflow rules defined in README.md
 - Label new issues with all applicable pkg:* tags (e.g., pkg:agent , pkg:ai , pkg:tui )
 - Inspect PRs via `gh pr view` , `gh pr diff` , or `git show` ; do not switch local branches for PR reviews unless explicitly instructed
 - Submit multi-line issue/PR comments via temp files and --body-file flag; avoid multiline Markdown via inline --body
@@ -143,7 +101,7 @@ These commands may destroy uncommitted work or bypass validation checks:
 
 ## Changelog Standards
 
-- Location: Independent CHANGELOG.md per package under packages/*/
+- Location: Independent CHANGELOG.md per package under the project root
 - Fixed [Unreleased] subsection structure: Breaking Changes , Added , Changed , Fixed , Removed
 - Append new changes to existing subsections; do not duplicate sections
 - Released version sections are immutable and cannot be modified
@@ -231,7 +189,7 @@ Exclusive syntax, style, state management and code quality rules for all TypeScr
 
 ### Syntax Restrictions
 
-Only erasable Node strip-only syntax is allowed for code under packages/*/src , packages/*/test , packages/coding-agent/examples :
+Only erasable Node strip-only syntax is allowed for code under the project rootsrc , packages/*/test , packages/coding-agent/examples :
 
 - Forbidden syntax: parameter properties, enum , namespace , module , import = , export =
 - Use explicit class fields + constructor assignment instead of forbidden syntax
@@ -292,8 +250,6 @@ Violation of this strategy (e.g., downloading all history per symbol per request
 - Large-scale refactoring: read full file/module first.
 - When CLI surface, capability scope, or user-facing workflows change, check whether `README.md`, `stockaskill/SKILL.md`, and `AGENTS.md` need synchronized updates.
 
-### 3rdparty Directory
-- `3rdparty/` is read-only. Never modify files inside it.
 
 ---
 
@@ -346,7 +302,6 @@ Examples:
 - Hardcoding configurable values
 - Dangerous Git operations and force push
 - Python: Sphinx docstrings, bare except, overuse `Any`, tab indent
-- Modifying files under `3rdparty/`
 
 ### User Confirmation Required
 - Delete/disable existing features

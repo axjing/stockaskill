@@ -128,18 +128,22 @@ class CompositeAnalyzer:
     def _compute_fscore(
         fundamentals: Dict[str, Any], kline: List[Dict[str, Any]]
     ) -> int:
-        """Piotroski F-Score (0-9).
+        """Custom quality score (0-9).
+
+        This is a simplified fundamental quality assessment inspired by
+        Piotroski-style scoring but adapted for the limited data available
+        from AKShare. It is NOT a true Piotroski F-Score.
 
         Criteria:
         1. ROA > 0
-        2. Operating cash flow > 0 (proxied by EPS > 0)
-        3. ROA increase YoY (proxied by profit_growth > 0)
-        4. Accrual: CFO > ROA (proxied by EPS growth)
-        5. Leverage decrease (debt_ratio < 0.5)
-        6. Liquidity increase (current_ratio > 1)
-        7. No dilution (simplified)
-        8. Gross margin increase
-        9. Asset turnover increase (simplified)
+        2. Positive EPS (cash flow proxy)
+        3. Profit growth > 0
+        4. EPS positive and growing (accrual proxy)
+        5. Low leverage (debt_ratio < 0.5)
+        6. Good liquidity (current_ratio > 1)
+        7. Revenue growth > 0 (economic health proxy)
+        8. Gross margin > 20% (quality proxy)
+        9. Net margin > 0 (efficiency proxy)
         """
         score = 0
         roa = fundamentals.get("roa", 0) or 0

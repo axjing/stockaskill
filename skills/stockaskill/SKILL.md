@@ -172,10 +172,6 @@ If scan returns all zeros, fall back to alpha mode:
 
     uv run python "$SKILL/scripts/run.py" alpha A --top 20 --candidates 200
 
-For sector-filtered scanning:
-
-    python -c "from advisor.scanner import MarketScanner; print(MarketScanner().scan_by_sector('A', top_n=5))"
-
 **Note**: When running ad-hoc Python one-liners or importing skill modules, ensure
 you are using the skill-local Python environment (`$SKILL/.venv/bin/python` or
 `$SKILL\.venv\Scripts\python.exe`) so that dependencies resolve correctly.
@@ -273,6 +269,16 @@ Bounded sync and diagnostics:
     uv run python "$SKILL/scripts/run.py" status data etf --codes 510300,159915
     uv run python "$SKILL/scripts/run.py" status data pool --market A
     uv run python "$SKILL/scripts/run.py" market-regime --market A
+
+Full-market snapshot scan (builds a fresh local snapshot of all stocks):
+
+    uv run python "$SKILL/scripts/run.py" refresh-scan A --top 20
+
+Operational commands:
+
+    uv run python "$SKILL/scripts/run.py" scheduler --run-now  # analyze all watchlist
+    uv run python "$SKILL/scripts/run.py" cache stats          # cache stats
+    uv run python "$SKILL/scripts/run.py" cache cleanup --days 30  # purge old entries
 
 ## Output guidelines
 

@@ -353,12 +353,12 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def load_config() -> Dict[str, Any]:
-    """Return cached defaults. Supports env override via STOCKSKILL_CONFIG."""
+    """Return cached defaults. Supports env override via STOCKASKILL_CONFIG."""
     global _cache
     if _cache is not None:
         return _cache
     _cache = dict(_DEFAULTS)
-    config_path = os.environ.get("STOCKSKILL_CONFIG")
+    config_path = os.environ.get("STOCKASKILL_CONFIG")
     if config_path and Path(config_path).is_file():
         with open(config_path) as f:
             user_config = json.load(f)

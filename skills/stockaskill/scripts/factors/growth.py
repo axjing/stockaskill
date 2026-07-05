@@ -59,7 +59,14 @@ class GrowthFactor(Factor):
         accel_min: float = -0.3,
         accel_max: float = 0.3,
     ) -> float:
-        """Proxy growth acceleration from price trend."""
+        """Proxy growth acceleration from price momentum trend.
+
+        NOTE: This uses price returns (3-month vs 6-month) as a proxy
+        for fundamental growth acceleration since quarterly fundamental
+        data is too sparse for reliable YoY acceleration. Correlation
+        between price momentum and fundamental acceleration is moderate;
+        treat this as a secondary signal.
+        """
         if len(kline) < 60:
             return 0.5
         closes = [row.get("close", 0) for row in kline[:120]]

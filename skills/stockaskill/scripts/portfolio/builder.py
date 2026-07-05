@@ -81,17 +81,19 @@ class PortfolioBuilder:
 
         positions: List[Position] = []
         for i, cand in enumerate(self._candidates):
+            w = weights[i] * capital_fraction
             pos = compute_position(
                 code=cand["code"],
                 name=cand["name"],
                 market=cand["market"],
-                capital=self.capital * capital_fraction * weights[i],
+                capital=self.capital * w,
                 score=cand["score"],
                 current_price=cand["current_price"],
                 method=position_method,
+                max_weight=1.0,  # weight already applied to capital
             )
             if pos.shares > 0:
-                pos.weight = weights[i] * capital_fraction
+                pos.weight = w
                 positions.append(pos)
 
         portfolio = Portfolio(

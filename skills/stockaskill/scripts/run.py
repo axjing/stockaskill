@@ -17,7 +17,6 @@ Usage:
 #     "pandas>=2.0.0",
 #     "numpy>=1.24.0",
 #     "scipy>=1.10.0",
-#     "yfinance>=0.2.0",
 # ]
 # ///
 
@@ -69,23 +68,13 @@ _SCORE_BADGES = [(65, "##"), (35, "==")]
 
 
 def _print_api_usage() -> None:
-    """Print today's API usage breakdown by API name."""
-    cache = get_cache()
-    total = cache.get_api_usage_today()
-    limit = cfg_get("daily_api_limit", 500)
+    """Print which upstream APIs are currently rate-limited."""
     if is_api_limit_exhausted():
         print(
-            f"[WARN] 今日 API 调用已耗尽（限额 {limit}），"
-            f"部分数据可能不完整。",
+            "[INFO] One or more upstream APIs are rate-limited today. "
+            "Data shown is from cache. Retry after the rate limit window passes.",
             flush=True,
         )
-    breakdown = cache.get_api_usage_breakdown()
-    if not breakdown:
-        return
-    print(f"API usage today: {total}/{limit}", flush=True)
-    for name, count in sorted(breakdown.items(), key=lambda x: -x[1]):
-        bar = "#" * min(count, 50)
-        print(f"  {name:25s} {count:4d} {bar}", flush=True)
 
 
 def _badge(score: float) -> str:
@@ -99,7 +88,6 @@ def _badge(score: float) -> str:
 from cache import get_cache  # noqa: E402
 from config import get as cfg_get  # noqa: E402
 from data_engine import (  # noqa: E402
-    _is_cache_empty,
     get_etf_pool,
     get_fundamentals,
     get_kline,
@@ -279,28 +267,31 @@ def cmd_route(args: argparse.Namespace) -> None:
     output_dir = getattr(args, "output_dir", "reports")
     fmt = getattr(args, "format", "both")
 
-    recommendation = build_workflow_recommendation(
-        goal=goal,
-        market=market,
-        code=code,
-        codes=codes,
-        top_n=top_n,
-        capital=capital,
-    ).to_dict()
-    _print_workflow_recommendation(recommendation)
-    _save_report(
-        f"route_{market}",
-        fmt,
-        output_dir,
-        data=recommendation,
-        metadata={
-            "command": "route",
-            "market": market,
-            "goal": goal,
-            "code": code,
-            "codes": codes,
-        },
-    )
+    try:
+        recommendation = build_workflow_recommendation(
+            goal=goal,
+            market=market,
+            code=code,
+            codes=codes,
+            top_n=top_n,
+            capital=capital,
+        ).to_dict()
+        _print_workflow_recommendation(recommendation)
+        _save_report(
+            f"route_{market}",
+            fmt,
+            output_dir,
+            data=recommendation,
+            metadata={
+                "command": "route",
+                "market": market,
+                "goal": goal,
+                "code": code,
+                "codes": codes,
+            },
+        )
+    except Exception as exc:
+        print(f"Route failed: {exc}", file=sys.stderr)
 
 
 def cmd_workflow(args: argparse.Namespace) -> None:
@@ -722,7 +713,8 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
 
         diag = StockDiagnosis(code, market)
         report = diag.full_report()
-        print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+        if fmt in ("json", "both"):
+            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
 
         md = format_diagnosis_summary(report)
         _save_report(
@@ -819,7 +811,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
     print(f"Scanning {market} market for top {top_n}...", flush=True)
 
     # Cold start: run bounded warmup before regime analysis needs data
-    if _is_cache_empty(market):
+    if cache.is_market_data_empty(market):
         warmup_n = min(top_n * 3, 30)
         print(
             f"  缓存为空，预热点 {warmup_n} 只股票数据...",
@@ -1053,7 +1045,7 @@ def cmd_refresh_scan(args: argparse.Namespace) -> None:
 
 def cmd_portfolio(args: argparse.Namespace) -> None:
     """Build an investment portfolio."""
-    codes = [c.strip() for c in args.codes.split(",")]
+    codes = [c.strip() for c in args.codes.split(",") if c.strip()]
     capital = args.capital or 1000000
     market = getattr(args, "market", "A") or "A"
     output_dir = getattr(args, "output_dir", "reports")
@@ -1732,7 +1724,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             },
         )
     except Exception as exc:
-        print(f"Backtest failed: {exc}")
+        print(f"Backtest failed: {exc}", file=sys.stderr)
         import traceback
 
         traceback.print_exc()
@@ -1767,7 +1759,7 @@ def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
             },
         )
     except Exception as exc:
-        print(f"Enhanced backtest failed: {exc}")
+        print(f"Enhanced backtest failed: {exc}", file=sys.stderr)
         import traceback
 
         traceback.print_exc()
@@ -1867,6 +1859,9 @@ def cmd_scheduler(args: argparse.Namespace) -> None:
     if args.run_now:
         print(f"Running scheduled analysis for {len(watchlist)} stocks...")
         for code in watchlist:
+            if is_api_limit_exhausted():
+                print(f"  [INFO] API limit reached, skipping remaining stocks.", flush=True)
+                break
             print(f"\n--- {code} ---")
             fake_args = argparse.Namespace(code=code, market="A", output_dir="reports")
             cmd_analyze(fake_args)
@@ -1884,17 +1879,13 @@ def cmd_cache(args: argparse.Namespace) -> None:
     if action == "stats":
         s = cache.stats()
         print(f"DB size: {s['db_size_mb']:.1f} MB")
-        print(f"API calls today: {s['api_calls_today']}")
+        if is_api_limit_exhausted():
+            print("[WARN] Some upstream APIs are currently rate-limited.")
         print("Table row counts:")
         for tbl, cnt in sorted(s.items()):
             if tbl in ("db_size_mb", "api_calls_today"):
                 continue
             print(f"  {tbl}: {cnt}")
-        breakdown = cache.get_api_usage_breakdown()
-        if breakdown:
-            print("API usage breakdown:")
-            for name, count in sorted(breakdown.items(), key=lambda x: -x[1]):
-                print(f"  {name:25s} {count:4d}", flush=True)
     elif action == "cleanup":
         days = getattr(args, "days", 30)
         removed = cache.cleanup(max_age_days=days)

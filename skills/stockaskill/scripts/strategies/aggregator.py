@@ -40,8 +40,6 @@ class StrategyAggregator:
             Dict with final_signal, final_score, confidence, signals list.
         """
         signals: List[Dict[str, Any]] = []
-        weighted_buy = 0.0
-        weighted_sell = 0.0
         total_weight = 0.0
         final_score = 0.0
 
@@ -55,11 +53,6 @@ class StrategyAggregator:
             score = result.get("score", 50)
             final_score += score * w
 
-            if result.get("signal") == "BUY":
-                weighted_buy += w * (score / 100)
-            elif result.get("signal") == "SELL":
-                weighted_sell += w * (score / 100)
-
         if total_weight > 0:
             final_score = final_score / total_weight
 
@@ -67,7 +60,7 @@ class StrategyAggregator:
         confidences = [s.get("confidence", 0.5) for s in signals]
         avg_confidence = sum(confidences) / max(len(confidences), 1)
 
-        # Final signal
+        # Final signal — SKIP signals are excluded from consensus counting
         buy_threshold = cfg_get("signal_thresholds.buy", 65)
         sell_threshold = cfg_get("signal_thresholds.sell", 35)
         if final_score >= buy_threshold:
@@ -78,6 +71,7 @@ class StrategyAggregator:
             final_signal = "HOLD"
 
         # Adjust confidence based on strategy agreement
+        # (SKIP signals are not counted toward consensus)
         buy_count = sum(1 for s in signals if s.get("signal") == "BUY")
         sell_count = sum(1 for s in signals if s.get("signal") == "SELL")
         buy_consensus = cfg_get("signal_thresholds.buy_consensus_count", 4)
