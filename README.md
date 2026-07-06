@@ -275,7 +275,7 @@ openclaw skills install @axjing/stockaskill --global
 - **SQLite 是唯一数据源**：所有读取操作先查本地 quant_cache.db，远端 API 仅作为同步手段，不作为查询层。
 - **增量补全，不全量重拉**：检查缓存最新日期，只拉取缺失区间（带 3 天重叠以修正节假日/延迟数据）。首次运行全量种子，之后永远只补缺失。
 - **日期范围 API 优先**：使用 `ak.stock_zh_a_hist`(symbol, start_date, end_date) 等支持区间的接口。禁止使用 `ak.stock_zh_a_daily`() 等无视日期、全量下载历史数据的 API 作为主路径。
-- **多源容错 + 熔断**：AKShare (主) -> baostock -> efinance (备)。连续失败的源自动进入退避状态，避免浪费 API 配额。
+- **多源容错 + 熔断**：K 线: AKShare (主) → baostock → efinance → OpenBB → yfinance。基本面: THS (A 股) / Analysis indicator (HK/US) → Sina → OpenBB → yfinance。连续失败的源自动进入退避状态，避免浪费 API 配额。
 - **UPSERT 写入**：最新数据覆盖旧数据，ON CONFLICT DO UPDATE 保证一致性。
 
 违反此策略（如对每只股票每次请求都全量下载历史）是致命 bug，会导致 API 限额耗尽和 RemoteDisconnected 错误。
@@ -284,17 +284,14 @@ openclaw skills install @axjing/stockaskill --global
 
 | 表 | 内容 | 更新策略 |
 |:---|:-----|:---------|
-| `stock_pool` | 全市场股票池 (A / HK / US / FUND) | 按市场独立 TTL 更新 |
-| `stock_pool_v2` | 市场感知股票池 + 元数据质量字段 | 当前主读取路径 |
-| `daily_price` | 个股日 K 线 (前复权) | 按需增量, 只有缺失区间才拉取 |
-| `daily_price_v2` | 市场感知 K 线缓存 | 当前主读取路径 |
-| `f`factor_snapshot`` | 基本面快照 (PE/PB/ROE/增速) | 按 TTL 过期更新 |
-| `f`factor_snapshot`_v2` | 市场感知基本面快照 | 当前主读取路径 |
+| `stock_pool` | 全市场股票池 (A / HK / US / FUND) + 元数据质量字段 | 按市场独立 TTL 更新 |
+| `daily_price` | 个股日 K 线 (前复权), 含 quality_flags | 按需增量, 只有缺失区间才拉取 |
+| `factor_snapshot` | 基本面快照 (PE/PB/ROE/增速) | 按 TTL 过期更新 |
 | `computed_factors` | 计算因子值 | 本地计算, 无需 API |
 | `sentiment` | 情绪分析结果 | 按需增量 |
 | `sync_state` | scope 级同步状态 / 覆盖日期 / 错误信息 | `sync` / `status data` 使用 |
 | `cache_meta` | 缓存元信息 (防重复) | 自动维护 |
-| `a`api_usage`` | API 调用计数 (限速) | 自动记录 |
+| `api_usage` | API 调用计数 (限速) | 自动记录 |
 
 ### API 调用策略
 
@@ -313,7 +310,7 @@ openclaw skills install @axjing/stockaskill --global
 - 广义公募基金: 暂不作为核心路线, 不建议按“全市场基金平台”理解当前项目
 
 对 Python API 而言, 新代码应优先使用 `get_etf_pool()` / `get_etf_nav()`。
-`get_fund_pool()` / `get_f`fund_nav`()` 目前只是 ETF-oriented FUND 路径的兼容名字。
+`get_fund_pool()` / `get_fund_nav()` 目前只是 ETF-oriented FUND 路径的兼容名字。
 
 ## 元数据质量说明
 
@@ -500,7 +497,8 @@ python skills/stockaskill/scripts/run.py analyze 600519 --market A        # 个�
 python skills/stockaskill/scripts/run.py market-regime --market A         # 市场状态 / 风险姿态
 python skills/stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
 python skills/stockaskill/scripts/run.py backtest                         # 回测验证
-python skills/stockaskill/scripts/run.py f`fetch pool`                       # 刷新数据池
+python skills/stockaskill/scripts/run.py fetch pool                       # 刷新数据池
+python skills/stockaskill/scripts/run.py sync scan-universe --market A --full-history --limit 3000  # 全量有界同步
 python skills/stockaskill/scripts/run.py sync symbol 600519 --market A    # 单标的有界同步
 python skills/stockaskill/scripts/run.py sync etf --codes 510300,159915   # ETF有界同步
 python skills/stockaskill/scripts/run.py status data watchlist --market US # 数据状态诊断
@@ -510,6 +508,8 @@ python skills/stockaskill/scripts/run.py thesis capture 600519 --market A # 保�
 python skills/stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome win
 python skills/stockaskill/scripts/run.py theme-scan AI 算力 --market A    # 主题研究
 python skills/stockaskill/scripts/run.py scorecard diagnose 600519 --market A
+python skills/stockaskill/scripts/run.py cache stats                      # 缓存统计
+python skills/stockaskill/scripts/run.py cache cleanup --days 30          # 清理旧缓存
 ```
 
 ### 高阶研究工作流
