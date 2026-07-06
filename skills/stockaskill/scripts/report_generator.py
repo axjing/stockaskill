@@ -41,20 +41,30 @@ class ReportMetadata:
     extra: Optional[Dict[str, Any]] = None
 
 
+_REPORT_DIR = "reports"
+
+
 def _ensure_dir(output_dir: str) -> str:
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    return output_dir
+    abs_dir = output_dir if os.path.isabs(output_dir) else os.path.abspath(output_dir)
+    Path(abs_dir).mkdir(parents=True, exist_ok=True)
+    return abs_dir
 
 
 def _timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d-%H%M")
 
 
-def report_filename(title: str, ext: str, output_dir: str = "reports") -> str:
-    """Generate a timestamped report filename."""
-    _ensure_dir(output_dir)
+def report_filename(title: str, ext: str, output_dir: str = "") -> str:
+    """Generate a timestamped report filename.
+
+    Uses an absolute path derived from the output_dir parameter or the
+    default ``reports/`` directory resolved relative to the caller's CWD.
+    """
+    if not output_dir:
+        output_dir = _REPORT_DIR
+    abs_dir = _ensure_dir(output_dir)
     ts = _timestamp()
-    return os.path.join(output_dir, f"{ts}_{title}.{ext}")
+    return os.path.join(abs_dir, f"{ts}_{title}.{ext}")
 
 
 def save_json(data: Any, title: str, output_dir: str = "reports") -> str:
@@ -257,11 +267,16 @@ def format_diagnosis_summary(report: Dict[str, Any]) -> str:
     factors = report.get("factors", {})
     if factors:
         lines.append("## Factors")
-        lines.append("| Factor | Score |")
-        lines.append("|--------|------:|")
-        for k, v in factors.get("factors", {}).items():
-            if isinstance(v, (int, float)):
-                lines.append(f"| {k} | {v:.1f} |")
+        raw = factors.get("factors", {})
+        f_score = factors.get("f_score", 0)
+        if raw:
+            lines.append("| Factor | Score (0-1) |")
+            lines.append("|--------|-----------:|")
+            for k, v in raw.items():
+                if isinstance(v, (int, float)):
+                    lines.append(f"| {k} | {v:.2f} |")
+        if f_score is not None:
+            lines.append(f"| **F-Score** | **{f_score}/9** |")
     lines.append("")
 
     tech = report.get("technical", {})

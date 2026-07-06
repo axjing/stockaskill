@@ -1620,23 +1620,38 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     print("  " + summarize_market_regime(regime))
     try:
         pool = get_stock_pool(market)
-        max_candidates = getattr(args, "candidates", 0)
-        if not max_candidates:
-            max_candidates = cfg_get("scan_max_candidates", 200)
+        max_candidates = getattr(args, "candidates", 0) or cfg_get("scan_max_candidates", 200)
         candidates = pool[:max_candidates]
-        candidate_rows = [
-            {"code": stock["code"], "market": market} for stock in candidates
-        ]
 
-        # Pre-sync only the actual candidate count. The pre-sync fetches
-        # kline + fundamentals (2 API calls per stock), so syncing 200 stocks
-        # (the global default) would burn 400 calls, leaving only 100 for
-        # the 50 stocks in the scoring loop — causing immediate exhaustion.
-        actual_n = len(candidate_rows)
-        print(f"  Pre-syncing {actual_n} candidates (cached_only for scoring)...", flush=True)
-        ensure_market_scan_ready(market, candidate_rows, limit=actual_n)
+        # Concurrent pre-sync: fetch missing kline + fundamentals in parallel
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from data_engine import sync_symbol_data
+
+        actual_n = len(candidates)
+        print(f"  Pre-syncing {actual_n} candidates (8 workers)...", flush=True)
+        sync_done = 0
+        sync_errors = 0
+
+        def sync_one(stock):
+            try:
+                sync_symbol_data(stock["code"], market, history_days=365)
+                return True
+            except Exception:
+                return False
+
+        with ThreadPoolExecutor(max_workers=8) as pool_exec:
+            sync_futures = {pool_exec.submit(sync_one, s): s for s in candidates}
+            for f in as_completed(sync_futures):
+                sync_done += 1
+                if f.result():
+                    sync_errors += 0
+                else:
+                    sync_errors += 1
+                if sync_done % 50 == 0 or sync_done == actual_n:
+                    print(f"    Sync progress: {sync_done}/{actual_n}", flush=True)
+        if sync_errors:
+            print(f"    Sync errors: {sync_errors}/{actual_n} (will skip in scoring)", flush=True)
 
         from strategies.alpha_momentum import AlphaMomentumStrategy
 
@@ -1646,8 +1661,6 @@ def cmd_alpha(args: argparse.Namespace) -> None:
         def score_one(stock):
             code = stock["code"]
             try:
-                # Use cached_only: pre-sync already ensured data availability.
-                # This avoids double-counting API calls (pre-sync + scoring).
                 r = strat.analyze(code, market, cached_only=True)
                 return (
                     code,
@@ -1660,9 +1673,14 @@ def cmd_alpha(args: argparse.Namespace) -> None:
             except Exception:
                 return None
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {executor.submit(score_one, s): s for s in candidates}
+        print(f"  Scoring {actual_n} candidates (8 workers)...", flush=True)
+        score_done = 0
+        with ThreadPoolExecutor(max_workers=8) as exec:
+            futures = {exec.submit(score_one, s): s for s in candidates}
             for f in as_completed(futures):
+                score_done += 1
+                if score_done % 50 == 0 or score_done == actual_n:
+                    print(f"    Score progress: {score_done}/{actual_n}", flush=True)
                 result = f.result()
                 if result:
                     results.append(result)

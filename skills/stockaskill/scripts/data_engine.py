@@ -1771,11 +1771,52 @@ def get_fundamentals(
     return cached
 
 
+def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: str) -> None:
+    """Compute PE / PB from cached close price and fundamental EPS / BVPS."""
+    eps = result.get("eps", 0.0) or 0.0
+    bvps = result.get("bvps", 0.0) or 0.0
+    price = None
+    with _cache._conn() as conn:
+        cur = conn.execute(
+            "SELECT close FROM daily_price_v2 "
+            "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
+            (market, code),
+        )
+        row = cur.fetchone()
+        if row:
+            price = row[0]
+    if price and eps > 0 and not result.get("pe_ttm"):
+        result["pe_ttm"] = round(price / eps, 2)
+    if price and bvps > 0 and not result.get("pb"):
+        result["pb"] = round(price / bvps, 2)
+
+
 def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
-    """Fetch fundamentals from available source."""
+    """Fetch fundamentals from available source (THS -> Sina -> OpenBB -> yfinance).
+
+    For A-shares: THS provides detailed financials (ROE, margins, growth).
+    PE/PB are computed from cached price + EPS/BVPS when available.
+    """
     ak = _try_akshare()
+    result: Optional[Dict[str, Any]] = None
     if ak is not None:
-        return _fetch_fundamentals_ak(code, market, ak)
+        if market == "A":
+            ths_result = _fetch_fundamentals_ths(code, ak)
+            sina_result = _fetch_fundamentals_ak(code, market, ak)
+            if ths_result is not None:
+                result = ths_result
+                if sina_result is not None:
+                    for vk in ("market_cap", "pe_ttm", "pe_static", "pb",
+                               "ps_ttm", "pcf_ttm", "dividend_yield"):
+                        if sina_result.get(vk) and not result.get(vk):
+                            result[vk] = sina_result[vk]
+            else:
+                result = sina_result
+        else:
+            result = _fetch_fundamentals_ak(code, market, ak)
+    if result:
+        _backfill_valuation_from_price(result, code, market)
+        return result
     obb = _try_openbb()
     if obb is not None and market in ("HK", "US"):
         result = _fetch_fundamentals_openbb(code, market, obb)
@@ -1788,6 +1829,103 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
             return result
     _report_no_data(code, market, "fundamentals")
     return None
+
+
+def _fetch_fundamentals_ths(code: str, ak) -> Optional[Dict[str, Any]]:
+    """Fetch A-share fundamentals via THS financial abstract (primary source).
+
+    Provides richer data than the Sina fallback, including recent-period
+    revenue, profit, margins, ROE, leverage, and liquidity ratios.
+    """
+    try:
+        with _akshare_lock:
+            df = ak.stock_financial_abstract_ths(symbol=code, indicator="按报告期")
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+
+    latest = df.iloc[-1]
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = {
+        "code": code,
+        "date": today,
+        "market_cap": 0.0,
+        "pe_ttm": 0.0,
+        "pe_static": 0.0,
+        "pb": 0.0,
+        "ps_ttm": 0.0,
+        "pcf_ttm": 0.0,
+        "dividend_yield": 0.0,
+        "roe": 0.0,
+        "roa": 0.0,
+        "gross_margin": 0.0,
+        "net_margin": 0.0,
+        "revenue_growth": 0.0,
+        "profit_growth": 0.0,
+        "debt_ratio": 0.0,
+        "current_ratio": 0.0,
+        "eps": 0.0,
+        "bvps": 0.0,
+    }
+    _map_ths_field(latest, "基本每股收益", result, "eps")
+    _map_ths_field(latest, "每股净资产", result, "bvps")
+    _map_ths_field(latest, "净资产收益率", result, "roe")
+    _map_ths_field(latest, "销售毛利率", result, "gross_margin")
+    _map_ths_field(latest, "销售净利率", result, "net_margin")
+    _map_ths_field(latest, "资产负债率", result, "debt_ratio")
+    _map_ths_field(latest, "营业总收入同比增长率", result, "revenue_growth")
+    _map_ths_field(latest, "净利润同比增长率", result, "profit_growth")
+    _map_ths_field(latest, "流动比率", result, "current_ratio")
+    return result
+
+
+def _parse_chinese_number(text: Any) -> float:
+    """Convert a Chinese-formatted number string to float.
+
+    Handles formats like:
+      "8827.11万" -> 88271100.0
+      "29.57亿"   -> 2957000000.0
+      "31.00%"    -> 0.31
+      "0.1040"    -> 0.104
+      "--"        -> 0.0
+    """
+    if text is None:
+        return 0.0
+    if isinstance(text, (int, float)):
+        return float(text) if not (isinstance(text, float) and text != text) else 0.0
+    s = str(text).strip().replace(",", "").replace(" ", "")
+    if not s or s in ("--", "-", ""):
+        return 0.0
+    if s.endswith("%"):
+        try:
+            return float(s[:-1]) / 100.0
+        except (ValueError, TypeError):
+            return 0.0
+    multiplier = 1.0
+    if s.endswith("亿"):
+        multiplier = 1e8
+        s = s[:-1]
+    elif s.endswith("万"):
+        multiplier = 1e4
+        s = s[:-1]
+    elif s.endswith("元"):
+        s = s[:-1]
+    try:
+        return float(s) * multiplier
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _map_ths_field(row, col_name: str, target: dict, key: str) -> None:
+    """Extract a field from a THS financial abstract row into a target dict.
+
+    ``_parse_chinese_number`` already handles percentage (``%``) and
+            Chinese-unit (``万``/``亿``) suffixes.
+    """
+    if col_name not in row.index:
+        return
+    target[key] = _parse_chinese_number(row[col_name])
 
 
 @_api_call("fundamentals")
