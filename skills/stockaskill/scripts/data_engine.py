@@ -43,6 +43,15 @@ def _market_supports_fundamentals(market: str) -> bool:
     return not _is_etf_market(market)
 
 
+def _cold_start_date(market: str) -> str:
+    """Return market-specific cold start baseline date.
+
+    Matches SKILL.md: A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01.
+    """
+    defaults = {"A": "20000101", "HK": "19950101", "US": "19900101"}
+    return cfg_get("full_history_start_date", defaults.get(market, "20000101"))
+
+
 def _has_fresh_snapshot(
     snapshot: Optional[Dict[str, Any]],
     max_age_days: int,
@@ -1045,7 +1054,7 @@ def get_kline(
                 local_earliest = _dates[0]
                 local_latest = _dates[-1]
 
-        target_start = cfg_get("full_history_start_date", "20000101")
+        target_start = _cold_start_date(market)
 
         # 如果本地数据已经覆盖全量（最早 <= 目标起点 且 最晚 = 今天），跳过
         if (
@@ -1778,7 +1787,7 @@ def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: st
     price = None
     with _cache._conn() as conn:
         cur = conn.execute(
-            "SELECT close FROM daily_price_v2 "
+            "SELECT close FROM daily_price "
             "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
             (market, code),
         )
@@ -1928,6 +1937,51 @@ def _map_ths_field(row, col_name: str, target: dict, key: str) -> None:
     target[key] = _parse_chinese_number(row[col_name])
 
 
+@_api_call("fundamentals_hk")
+def _fetch_fundamentals_hk_analysis(
+    code: str, ak
+) -> Optional[Dict[str, Any]]:
+    """Fetch HK fundamentals via stock_financial_hk_analysis_indicator_em.
+
+    The older stock_financial_hk_report_em endpoint currently returns an HTML
+    error page for most HK stocks; this function uses the working alternative.
+    """
+    try:
+        with _akshare_lock:
+            df = ak.stock_financial_hk_analysis_indicator_em(symbol=code)
+        if df is None or df.empty:
+            return None
+        row = df.iloc[0]
+        # Use REPORT_DATE if available, else today
+        date_str = str(row.get("REPORT_DATE", ""))[:10]
+        if not date_str:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+        return {
+            "code": code,
+            "date": date_str,
+            "market": "HK",
+            "market_cap": 0.0,  # backfilled from price later
+            "pe_ttm": 0.0,
+            "pe_static": 0.0,
+            "pb": 0.0,
+            "ps_ttm": 0.0,
+            "pcf_ttm": 0.0,
+            "dividend_yield": 0.0,
+            "roe": safe_float(row.get("ROE_AVG", 0)) / 100.0,
+            "roa": safe_float(row.get("ROA", 0)) / 100.0,
+            "gross_margin": safe_float(row.get("GROSS_PROFIT_RATIO", 0)) / 100.0,
+            "net_margin": safe_float(row.get("NET_PROFIT_RATIO", 0)) / 100.0,
+            "revenue_growth": safe_float(row.get("OPERATE_INCOME_YOY", 0)) / 100.0,
+            "profit_growth": safe_float(row.get("HOLDER_PROFIT_YOY", 0)) / 100.0,
+            "debt_ratio": safe_float(row.get("DEBT_ASSET_RATIO", 0)) / 100.0,
+            "current_ratio": safe_float(row.get("CURRENT_RATIO", 0)),
+            "eps": safe_float(row.get("EPS_TTM", 0)),
+            "bvps": safe_float(row.get("BPS", 0)),
+        }
+    except Exception:
+        return None
+
+
 @_api_call("fundamentals")
 def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals via Sina financial abstract.
@@ -1940,6 +1994,10 @@ def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any
             if market == "A":
                 df = ak.stock_financial_report_sina(symbol=code, name="主要指标")
             elif market == "HK":
+                result = _fetch_fundamentals_hk_analysis(code, ak)
+                if result:
+                    return result
+                # Fallback: try the old endpoint (may work for some stocks)
                 df = ak.stock_financial_hk_report_em(symbol=code)
             elif market == "US":
                 df = ak.stock_financial_us_report_em(symbol=code)
@@ -2063,7 +2121,7 @@ def sync_symbol_data(
             if str(r.get("date", "")).strip()
         )
         if _dates:
-            target_start = cfg_get("full_history_start_date", "20000101")
+            target_start = _cold_start_date(market)
             local_earliest = _dates[0]
             local_latest = _dates[-1]
             today_str = _date_str(datetime.now())
@@ -2834,7 +2892,7 @@ def get_fund_nav(
             if _dates:
                 local_earliest = _dates[0]
                 local_latest = _dates[-1]
-                target_start = cfg_get("full_history_start_date", "20000101")
+                target_start = _cold_start_date(market)
                 if local_earliest <= target_start and local_latest == today_str:
                     return cached
 
@@ -2859,7 +2917,7 @@ def get_fund_nav(
             local_latest = ""
 
         if full_history:
-            target_start = cfg_get("full_history_start_date", "20000101")
+            target_start = _cold_start_date(market)
             if local_earliest and local_earliest > target_start:
                 # Need to fetch earlier data
                 start = target_start
@@ -2877,7 +2935,7 @@ def get_fund_nav(
                 end = today_str
     else:
         if full_history:
-            start = cfg_get("full_history_start_date", "20000101")
+            start = _cold_start_date(market)
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
         end = today_str

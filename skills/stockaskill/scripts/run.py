@@ -1209,10 +1209,14 @@ def cmd_sync(args: argparse.Namespace) -> None:
             "code": result["code"],
         }
     elif sync_type == "watchlist":
-        print(
-            f"Synchronizing watchlist (market={market}, days={history_days}, "
-            f"full_history={'yes' if full_history else 'no'})..."
-        )
+        if full_history:
+            print(
+                f"Synchronizing watchlist (market={market}, target=全量历史)..."
+            )
+        else:
+            print(
+                f"Synchronizing watchlist (market={market}, days={history_days})..."
+            )
         result = sync_watchlist_data(
             market=market,
             history_days=history_days,
@@ -1224,10 +1228,16 @@ def cmd_sync(args: argparse.Namespace) -> None:
         metadata = {"command": "sync", "type": sync_type, "market": market}
     elif sync_type == "portfolio":
         codes = [c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()]
-        print(
-            f"Synchronizing portfolio ({len(codes)} symbols, market={market}, "
-            f"days={history_days}, full_history={'yes' if full_history else 'no'})..."
-        )
+        if full_history:
+            print(
+                f"Synchronizing portfolio ({len(codes)} symbols, market={market}, "
+                f"target=全量历史)..."
+            )
+        else:
+            print(
+                f"Synchronizing portfolio ({len(codes)} symbols, market={market}, "
+                f"days={history_days})..."
+            )
         result = sync_portfolio_data(
             codes,
             market=market,
@@ -1264,10 +1274,16 @@ def cmd_sync(args: argparse.Namespace) -> None:
         }
     elif sync_type == "scan-universe":
         limit = getattr(args, "limit", 200) or 200
-        print(
-            f"Synchronizing scan universe (market={market}, limit={limit}, "
-            f"days={history_days}, full_history={'yes' if full_history else 'no'})..."
-        )
+        if full_history:
+            print(
+                f"Synchronizing scan universe (market={market}, limit={limit}, "
+                f"target=全量历史)..."
+            )
+        else:
+            print(
+                f"Synchronizing scan universe (market={market}, limit={limit}, "
+                f"days={history_days})..."
+            )
         result = sync_scan_universe_data(
             market=market,
             limit=limit,

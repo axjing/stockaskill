@@ -44,7 +44,7 @@ class TestCacheManager:
         assert pool[0]["code"] == "601318"
         assert pool[0]["name"] == "PingAn"
 
-    def test_stock_pool_v2_persists_metadata_fields(self, cache):
+    def test_stock_pool_persists_metadata_fields(self, cache):
         rows = [
             {
                 "code": "AAPL",
@@ -67,7 +67,7 @@ class TestCacheManager:
         assert pool[0]["metadata_status"] == "active"
         assert pool[0]["metadata_completeness"] == 0.75
 
-    def test_stock_pool_is_market_aware_in_v2_table(self, cache):
+    def test_stock_pool_is_market_aware(self, cache):
         rows = [
             {"code": "00001", "name": "CKH", "market": "HK",
              "sector": "", "industry": "",
@@ -392,4 +392,4 @@ class TestCacheManager:
         ]
         cache.upsert_daily_price(rows)
         removed = cache.cleanup(max_age_days=30, max_size_mb=0)
-        assert "daily_price_v2" in removed
+        assert "daily_price" in removed

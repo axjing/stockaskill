@@ -79,7 +79,7 @@ def main() -> None:
 
     conn = sqlite3.connect(str(_cache.db_path))
     existing = set(
-        r[0] for r in conn.execute("SELECT DISTINCT code FROM daily_price").fetchall()
+        r[0] for r in conn.execute("SELECT DISTINCT code FROM daily_price WHERE market = 'A'").fetchall()
     )
     conn.close()
     print(f"  Pool: {len(pool)} stocks, existing w/ data: {len(existing)}")
@@ -127,11 +127,11 @@ def main() -> None:
 
     conn2 = sqlite3.connect(str(_cache.db_path))
     total_with_data = conn2.execute(
-        "SELECT COUNT(DISTINCT code) FROM daily_price"
+        "SELECT COUNT(DISTINCT code) FROM daily_price WHERE market = 'A'"
     ).fetchone()[0]
     total_full = conn2.execute(
         "SELECT COUNT(*) FROM ("
-        "SELECT code FROM daily_price GROUP BY code HAVING COUNT(*) >= 1500)"
+        "SELECT code FROM daily_price WHERE market = 'A' GROUP BY code HAVING COUNT(*) >= 1500)"
     ).fetchone()[0]
     conn2.close()
     print(f"  Stocks with any daily_price data: {total_with_data}")

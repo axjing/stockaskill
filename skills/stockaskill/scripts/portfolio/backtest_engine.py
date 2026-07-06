@@ -31,7 +31,7 @@ class AlphaMomentumBacktest:
     Memory: processes data in 2-year windows (~3 years of kline per window)
     instead of loading entire history at once, reducing peak memory by ~3-5x.
 
-    Uses v2 cache tables (daily_price_v2, stock_pool_v2) exclusively.
+    Uses cache tables (daily_price, stock_pool) exclusively.
     Delegates metrics computation to portfolio.risk.RiskMetrics.
 
     Args:
@@ -111,7 +111,7 @@ class AlphaMomentumBacktest:
             total = cash
             for code, shares in positions.items():
                 cur = conn.execute(
-                    "SELECT close FROM daily_price_v2 "
+                    "SELECT close FROM daily_price "
                     "WHERE market=? AND code=? AND date=?",
                     (self.market, code, all_d[-1]),
                 )
@@ -135,7 +135,7 @@ class AlphaMomentumBacktest:
         """
         min_bars = cfg_get("alpha_momentum.min_history_bars", 1500)
         cur = conn.execute(
-            "SELECT code FROM daily_price_v2 "
+            "SELECT code FROM daily_price "
             "WHERE market=? "
             "GROUP BY code HAVING COUNT(*) >= ?",
             (self.market, min_bars),
@@ -145,7 +145,7 @@ class AlphaMomentumBacktest:
         st_codes: set[str] = set()
         for code in all_codes:
             cur = conn.execute(
-                "SELECT COALESCE(s.name, '') FROM stock_pool_v2 s "
+                "SELECT COALESCE(s.name, '') FROM stock_pool s "
                 "WHERE s.market=? AND s.code=?",
                 (self.market, code),
             )
@@ -172,7 +172,7 @@ class AlphaMomentumBacktest:
         """Get all unique trading dates from config start_date onwards."""
         start = cfg_get("alpha_momentum.start_date", "2018-01-01")
         cur = conn.execute(
-            "SELECT DISTINCT date FROM daily_price_v2 "
+            "SELECT DISTINCT date FROM daily_price "
             "WHERE market=? AND date >= ? ORDER BY date",
             (self.market, start),
         )
@@ -237,7 +237,7 @@ class AlphaMomentumBacktest:
         """
         cur = conn.execute(
             "SELECT d.code, d.date, d.close "
-            "FROM daily_price_v2 d "
+            "FROM daily_price d "
             "WHERE d.market=? AND d.date >= ? AND d.date <= ? "
             "ORDER BY d.code, d.date ASC",
             (self.market, start, end),

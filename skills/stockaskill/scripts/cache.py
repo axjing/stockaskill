@@ -20,30 +20,34 @@ def _ensure_cache_dir() -> None:
 
 _SCHEMA = [
     """CREATE TABLE IF NOT EXISTS stock_pool (
-        code TEXT PRIMARY KEY, name TEXT, market TEXT,
+        market TEXT, code TEXT, name TEXT,
         sector TEXT, industry TEXT, list_date TEXT,
         total_market_cap REAL, is_active INTEGER DEFAULT 1,
-        updated_at TIMESTAMP
+        metadata_source TEXT DEFAULT '', metadata_status TEXT DEFAULT '',
+        metadata_completeness REAL DEFAULT 0,
+        updated_at TIMESTAMP,
+        PRIMARY KEY (market, code)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_stock_pool_market
         ON stock_pool(market)""",
     """CREATE TABLE IF NOT EXISTS daily_price (
-        code TEXT, date TEXT, open REAL, high REAL, low REAL,
-        close REAL, volume REAL, amount REAL, market TEXT,
-        PRIMARY KEY (code, date)
+        market TEXT, code TEXT, date TEXT, open REAL, high REAL, low REAL,
+        close REAL, volume REAL, amount REAL,
+        quality_flags TEXT DEFAULT '',
+        PRIMARY KEY (market, code, date)
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_daily_price_code
-        ON daily_price(code)""",
+    """CREATE INDEX IF NOT EXISTS idx_daily_price_lookup
+        ON daily_price(market, code, date)""",
     """CREATE TABLE IF NOT EXISTS factor_snapshot (
-        code TEXT, date TEXT, market_cap REAL, pe_ttm REAL,
+        market TEXT, code TEXT, date TEXT, market_cap REAL, pe_ttm REAL,
         pe_static REAL, pb REAL, ps_ttm REAL, pcf_ttm REAL,
         dividend_yield REAL, roe REAL, roa REAL, gross_margin REAL,
         net_margin REAL, revenue_growth REAL, profit_growth REAL,
         debt_ratio REAL, current_ratio REAL, eps REAL, bvps REAL,
-        PRIMARY KEY (code, date)
+        PRIMARY KEY (market, code, date)
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_factor_snapshot_code
-        ON factor_snapshot(code)""",
+    """CREATE INDEX IF NOT EXISTS idx_factor_snapshot_lookup
+        ON factor_snapshot(market, code, date)""",
     """CREATE TABLE IF NOT EXISTS computed_factors (
         code TEXT, date TEXT, factor_name TEXT, factor_value REAL,
         PRIMARY KEY (code, date, factor_name)
@@ -61,7 +65,6 @@ _SCHEMA = [
         date TEXT, api_name TEXT, call_count INTEGER DEFAULT 1,
         PRIMARY KEY (date, api_name)
     )""",
-    # New tables for fund and cross-market support
     """CREATE TABLE IF NOT EXISTS fund_info (
         code TEXT PRIMARY KEY, name TEXT, fund_type TEXT,
         nav REAL, acc_nav REAL, scale REAL, track_index TEXT,
@@ -104,35 +107,6 @@ _SCHEMA = [
     )""",
     """CREATE INDEX IF NOT EXISTS idx_market_scan_snapshot_lookup
         ON market_scan_snapshot(market, trade_date, eligible, rank_score)""",
-    """CREATE TABLE IF NOT EXISTS stock_pool_v2 (
-        market TEXT, code TEXT, name TEXT,
-        sector TEXT, industry TEXT, list_date TEXT,
-        total_market_cap REAL, is_active INTEGER DEFAULT 1,
-        metadata_source TEXT DEFAULT '', metadata_status TEXT DEFAULT '',
-        metadata_completeness REAL DEFAULT 0,
-        updated_at TIMESTAMP,
-        PRIMARY KEY (market, code)
-    )""",
-    """CREATE INDEX IF NOT EXISTS idx_stock_pool_v2_market
-        ON stock_pool_v2(market)""",
-    """CREATE TABLE IF NOT EXISTS daily_price_v2 (
-        market TEXT, code TEXT, date TEXT, open REAL, high REAL, low REAL,
-        close REAL, volume REAL, amount REAL,
-        quality_flags TEXT DEFAULT '',
-        PRIMARY KEY (market, code, date)
-    )""",
-    """CREATE INDEX IF NOT EXISTS idx_daily_price_v2_lookup
-        ON daily_price_v2(market, code, date)""",
-    """CREATE TABLE IF NOT EXISTS factor_snapshot_v2 (
-        market TEXT, code TEXT, date TEXT, market_cap REAL, pe_ttm REAL,
-        pe_static REAL, pb REAL, ps_ttm REAL, pcf_ttm REAL,
-        dividend_yield REAL, roe REAL, roa REAL, gross_margin REAL,
-        net_margin REAL, revenue_growth REAL, profit_growth REAL,
-        debt_ratio REAL, current_ratio REAL, eps REAL, bvps REAL,
-        PRIMARY KEY (market, code, date)
-    )""",
-    """CREATE INDEX IF NOT EXISTS idx_factor_snapshot_v2_lookup
-        ON factor_snapshot_v2(market, code, date)""",
     """CREATE TABLE IF NOT EXISTS sync_state (
         scope_type TEXT, scope_key TEXT, market TEXT, code TEXT, data_kind TEXT,
         last_success_at TIMESTAMP, last_covered_date TEXT,
@@ -159,48 +133,6 @@ class CacheManager:
             for sql in _SCHEMA:
                 conn.execute(sql)
             self._ensure_stock_pool_metadata_columns(conn)
-        self._migrate_from_v1()
-
-    def _migrate_from_v1(self) -> None:
-        """One-time migration: copy v1 data to v2 tables if v2 is empty.
-        Uses a kv_store flag to skip COUNT(*) on every startup after first run.
-        """
-        if self.kv_get("_v1_migrated") == "done":
-            return
-        with self._conn() as conn:
-            for v2_table, v1_table, cols in [
-                (
-                    "stock_pool_v2",
-                    "stock_pool",
-                    "market, code, name, sector, industry, list_date, "
-                    "total_market_cap, is_active, '' as metadata_source, "
-                    "'' as metadata_status, 0.0 as metadata_completeness, "
-                    "coalesce(updated_at, datetime('now')) as updated_at",
-                ),
-                (
-                    "daily_price_v2",
-                    "daily_price",
-                    "market, code, date, open, high, low, close, volume, amount",
-                ),
-                (
-                    "factor_snapshot_v2",
-                    "factor_snapshot",
-                    "'' as market, code, date, market_cap, pe_ttm, pe_static, pb, "
-                    "ps_ttm, pcf_ttm, dividend_yield, roe, roa, gross_margin, "
-                    "net_margin, revenue_growth, profit_growth, debt_ratio, "
-                    "current_ratio, eps, bvps",
-                ),
-            ]:
-                try:
-                    row = conn.execute(f"SELECT COUNT(*) FROM {v2_table}").fetchone()
-                    if row and row[0] == 0:
-                        conn.execute(
-                            f"INSERT OR IGNORE INTO {v2_table} SELECT {cols} "
-                            f"FROM {v1_table}"
-                        )
-                except Exception:
-                    pass
-        self.kv_set("_v1_migrated", "done", ttl=0)
 
     @contextmanager
     def _conn(self):
@@ -224,7 +156,7 @@ class CacheManager:
             normalized_rows.append(normalized)
         with self._conn() as conn:
             conn.executemany(
-                "INSERT INTO stock_pool_v2 ("
+                "INSERT INTO stock_pool ("
                 "market, code, name, sector, industry, list_date, "
                 "total_market_cap, is_active, metadata_source, metadata_status, "
                 "metadata_completeness, updated_at"
@@ -255,7 +187,7 @@ class CacheManager:
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                "SELECT * FROM stock_pool_v2 WHERE market=? AND is_active=1",
+                "SELECT * FROM stock_pool WHERE market=? AND is_active=1",
                 (market,),
             )
             return [dict(r) for r in cur.fetchall()]
@@ -276,7 +208,7 @@ class CacheManager:
             row.setdefault("quality_flags", "")
         with self._conn() as conn:
             conn.executemany(
-                "INSERT INTO daily_price_v2 "
+                "INSERT INTO daily_price "
                 "(market, code, date, open, high, low, close, volume, amount, "
                 "quality_flags) "
                 "VALUES (:market, :code, :date, :open, :high, :low, :close, "
@@ -299,7 +231,7 @@ class CacheManager:
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             params: List[Any] = [market, code]
-            query = "SELECT * FROM daily_price_v2 WHERE market=? AND code=?"
+            query = "SELECT * FROM daily_price WHERE market=? AND code=?"
             if start_date:
                 query += " AND date>=?"
                 params.append(start_date)
@@ -314,7 +246,7 @@ class CacheManager:
         """Get the latest cached date for a stock (v2 table)."""
         with self._conn() as conn:
             cur = conn.execute(
-                "SELECT MAX(date) FROM daily_price_v2 WHERE market=? AND code=?",
+                "SELECT MAX(date) FROM daily_price WHERE market=? AND code=?",
                 (market, code),
             )
             row = cur.fetchone()
@@ -331,7 +263,7 @@ class CacheManager:
             v2_rows.append(r)
         with self._conn() as conn:
             conn.executemany(
-                "INSERT INTO factor_snapshot_v2 ("
+                "INSERT INTO factor_snapshot ("
                 "market, code, date, market_cap, pe_ttm, pe_static, pb, ps_ttm, "
                 "pcf_ttm, dividend_yield, roe, roa, gross_margin, net_margin, "
                 "revenue_growth, profit_growth, debt_ratio, current_ratio, eps, "
@@ -365,7 +297,7 @@ class CacheManager:
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                "SELECT * FROM factor_snapshot_v2 "
+                "SELECT * FROM factor_snapshot "
                 "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
                 (market, code),
             )
@@ -587,7 +519,7 @@ class CacheManager:
         """Return True when the cache has no K-line data for the given market."""
         with self._conn() as conn:
             cur = conn.execute(
-                "SELECT COUNT(*) FROM daily_price_v2 WHERE market=?",
+                "SELECT COUNT(*) FROM daily_price WHERE market=?",
                 (market,),
             )
             return cur.fetchone()[0] == 0
@@ -965,19 +897,19 @@ class CacheManager:
     @staticmethod
     def _ensure_stock_pool_metadata_columns(conn: sqlite3.Connection) -> None:
         """Add additive stock-pool metadata columns for older cache files."""
-        cur = conn.execute("PRAGMA table_info(stock_pool_v2)")
+        cur = conn.execute("PRAGMA table_info(stock_pool)")
         existing = {row[1] for row in cur.fetchall()}
         if "metadata_source" not in existing:
             conn.execute(
-                "ALTER TABLE stock_pool_v2 ADD COLUMN metadata_source TEXT DEFAULT ''"
+                "ALTER TABLE stock_pool ADD COLUMN metadata_source TEXT DEFAULT ''"
             )
         if "metadata_status" not in existing:
             conn.execute(
-                "ALTER TABLE stock_pool_v2 ADD COLUMN metadata_status TEXT DEFAULT ''"
+                "ALTER TABLE stock_pool ADD COLUMN metadata_status TEXT DEFAULT ''"
             )
         if "metadata_completeness" not in existing:
             conn.execute(
-                "ALTER TABLE stock_pool_v2 "
+                "ALTER TABLE stock_pool "
                 "ADD COLUMN metadata_completeness REAL DEFAULT 0"
             )
 
@@ -990,9 +922,9 @@ class CacheManager:
         """Get cache statistics: table row counts, size, API usage."""
         stats_dict: Dict[str, Any] = {}
         tables = [
-            "stock_pool_v2",
-            "daily_price_v2",
-            "factor_snapshot_v2",
+            "stock_pool",
+            "daily_price",
+            "factor_snapshot",
             "computed_factors",
             "market_scan_snapshot",
             "sentiment",
@@ -1031,10 +963,10 @@ class CacheManager:
                 "%Y-%m-%d"
             )
             cur = conn.execute(
-                "DELETE FROM daily_price_v2 WHERE date < ?",
+                "DELETE FROM daily_price WHERE date < ?",
                 (cutoff,),
             )
-            removed["daily_price_v2"] = cur.rowcount
+            removed["daily_price"] = cur.rowcount
 
             cur = conn.execute(
                 "DELETE FROM sentiment WHERE date < ?",
@@ -1044,10 +976,10 @@ class CacheManager:
 
             if db_size > max_size_mb:
                 cur = conn.execute(
-                    "DELETE FROM factor_snapshot_v2 WHERE date < ?",
+                    "DELETE FROM factor_snapshot WHERE date < ?",
                     (cutoff,),
                 )
-                removed["factor_snapshot_v2"] = cur.rowcount
+                removed["factor_snapshot"] = cur.rowcount
 
             # Clean up expired KV store entries
             cur = conn.execute(
