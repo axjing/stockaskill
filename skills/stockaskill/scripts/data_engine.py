@@ -2340,6 +2340,7 @@ def sync_symbols_data(
     history_label = "全量历史" if full_history else f"{history_days}天"
     scope_type = "symbol_batch"
     scope_key = f"{market}:{history_days}:{'full' if full_history else 'partial'}"
+    start_time = time.time()
 
     # Load checkpoint: skip already-synced codes
     done_codes = _load_checkpoint(scope_type, scope_key)
@@ -2438,8 +2439,12 @@ def sync_symbols_data(
                     date_range = (
                         f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
                     )
+                elapsed = time.time() - start_time
+                m, s = divmod(int(elapsed), 60)
+                time_str = f"{m}分{s}秒" if m else f"{s}秒"
                 print(
                     f"  [{skipped + processed_count}/{total}] {pct}% | "
+                    f"已用时={time_str} | "
                     f"缓存命中={cache_hit}, K线拉取={hist_fetch}, "
                     f"基本面拉取={fund_fetch}, "
                     f"累计行数={total_rows:,}{date_range}",
@@ -2463,6 +2468,8 @@ def sync_symbols_data(
     if len(done_codes) >= total:
         _clear_checkpoint(scope_type, scope_key)
 
+    elapsed = time.time() - start_time
+
     return {
         "scope_type": scope_type,
         "market": market,
@@ -2483,6 +2490,7 @@ def sync_symbols_data(
         "missing_codes": [
             item["code"] for item in per_symbol if not item.get("ready", False)
         ],
+        "elapsed_seconds": round(elapsed, 1),
         "symbols": per_symbol,
     }
 

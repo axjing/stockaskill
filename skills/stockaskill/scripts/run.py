@@ -1336,14 +1336,22 @@ def _print_scope_sync_summary(result: dict, label: str) -> None:
     latest = result.get("latest_date", "") or ""
     total_rows = result.get("total_history_rows", 0)
     covered_through = result.get("covered_through", "") or ""
+    requested = result.get("requested", 0)
+    ready = result.get("ready", 0)
+    elapsed = result.get("elapsed_seconds", 0)
+    failed = max(0, requested - ready)
 
     print(
-        f"  同步汇总 [{label}]:"
-        f" 总数={result.get('requested', 0)},"
-        f" 就绪={result.get('ready', 0)},"
-        f" 缓存命中={result.get('cache_hits', 0)},"
-        f" K线拉取={result.get('history_fetched_count', 0)},"
-        f" 基本面拉取={result.get('fundamentals_fetched_count', 0)}"
+        f"  同步汇总 [{label}]: "
+        f"总数={requested}, "
+        f"就绪={ready}, "
+        f"失败={failed}, "
+        f"耗时={_format_elapsed(elapsed)}"
+    )
+    print(
+        f"    缓存命中={result.get('cache_hits', 0)}, "
+        f"K线拉取={result.get('history_fetched_count', 0)}, "
+        f"基本面拉取={result.get('fundamentals_fetched_count', 0)}"
     )
     if total_rows:
         print(f"    累计K线行数: {total_rows:,}")
@@ -1352,7 +1360,16 @@ def _print_scope_sync_summary(result: dict, label: str) -> None:
     if covered_through:
         print(f"    更新至: {covered_through}")
     if result.get("missing_codes"):
+        print(f"    未就绪: {len(result['missing_codes'])} 只")
         print("    未就绪代码: " + ", ".join(result["missing_codes"][:10]))
+
+
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as Xm Ys."""
+    m, s = divmod(int(seconds), 60)
+    if m:
+        return f"{m}分{s}秒"
+    return f"{s}秒"
 
 
 def cmd_status(args: argparse.Namespace) -> None:
