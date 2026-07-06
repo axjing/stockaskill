@@ -44,3 +44,7 @@ warn_unused_configs = true
 
 [tool.setuptools]
 packages = []
+
+[tool.uv.index]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true

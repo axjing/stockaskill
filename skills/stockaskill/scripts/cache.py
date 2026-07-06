@@ -118,6 +118,7 @@ _SCHEMA = [
     """CREATE TABLE IF NOT EXISTS daily_price_v2 (
         market TEXT, code TEXT, date TEXT, open REAL, high REAL, low REAL,
         close REAL, volume REAL, amount REAL,
+        quality_flags TEXT DEFAULT '',
         PRIMARY KEY (market, code, date)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_daily_price_v2_lookup
@@ -271,16 +272,19 @@ class CacheManager:
 
     def upsert_daily_price(self, rows: List[Dict[str, Any]]) -> None:
         """Bulk upsert daily K-line data (v2 table only)."""
+        for row in rows:
+            row.setdefault("quality_flags", "")
         with self._conn() as conn:
             conn.executemany(
                 "INSERT INTO daily_price_v2 "
-                "(market, code, date, open, high, low, close, volume, amount) "
+                "(market, code, date, open, high, low, close, volume, amount, "
+                "quality_flags) "
                 "VALUES (:market, :code, :date, :open, :high, :low, :close, "
-                ":volume, :amount) "
+                ":volume, :amount, :quality_flags) "
                 "ON CONFLICT(market, code, date) DO UPDATE SET "
                 "open=excluded.open, high=excluded.high, low=excluded.low, "
                 "close=excluded.close, volume=excluded.volume, "
-                "amount=excluded.amount",
+                "amount=excluded.amount, quality_flags=excluded.quality_flags",
                 rows,
             )
 

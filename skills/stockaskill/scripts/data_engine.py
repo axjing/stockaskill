@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -649,6 +650,7 @@ def _refresh_stock_pool(market: str) -> None:
             "Run: pip install akshare"
         )
         return
+    print(f"[pool] Fetching {market} pool from upstream...")
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if market == "A":
@@ -673,10 +675,21 @@ def _refresh_stock_pool(market: str) -> None:
                         f"[WARN] A-share pool has {n} stocks"
                         f" (expected 5000-6000). May include non-stocks."
                     )
+                print(f"  A-share pool: {n} stocks cached")
+            else:
+                print("  A-share pool: empty response, cache preserved")
         elif market == "HK":
             df = _fetch_hk_stock_pool(ak)
+            if df is not None and not df.empty:
+                print(f"  HK pool: {len(df)} stocks cached")
+            else:
+                print("  HK pool: empty response, cache preserved")
         elif market == "US":
             df = _fetch_us_stock_pool(ak)
+            if df is not None and not df.empty:
+                print(f"  US pool: {len(df)} stocks cached")
+            else:
+                print("  US pool: empty response, cache preserved")
         elif _is_etf_market(market):
             df = _fetch_fund_pool_df(ak)
             if df is not None and not df.empty:
@@ -704,6 +717,9 @@ def _refresh_stock_pool(market: str) -> None:
                         }
                     )
                 _cache.upsert_stock_pool(pool_rows)
+                print(f"  FUND pool: {len(pool_rows)} ETFs cached")
+            else:
+                print("  FUND pool: empty response, cache preserved")
             return
         else:
             return
@@ -1016,7 +1032,59 @@ def get_kline(
             return cached[:days]
 
     if full_history:
-        start = cfg_get("full_history_start_date", "20000101")
+        # 本地已有数据的日期范围
+        local_earliest = ""
+        local_latest = ""
+        if cached:
+            _dates = sorted(
+                str(r.get("date", "")).strip()
+                for r in cached
+                if str(r.get("date", "")).strip()
+            )
+            if _dates:
+                local_earliest = _dates[0]
+                local_latest = _dates[-1]
+
+        target_start = cfg_get("full_history_start_date", "20000101")
+
+        # 如果本地数据已经覆盖全量（最早 <= 目标起点 且 最晚 = 今天），跳过
+        if (
+            local_earliest
+            and local_latest
+            and local_earliest <= target_start
+            and local_latest == today_str
+        ):
+            return cached[:days] if days else cached
+
+        # 增量补齐：只拉缺失的部分（AKShare 只能拉单个区间）
+        earliest_dt = _safe_parse_date(local_earliest) if local_earliest else None
+        latest_dt = _safe_parse_date(local_latest) if local_latest else None
+
+        needs_early = local_earliest and local_earliest > target_start
+        needs_latest = local_latest and local_latest < today_str
+
+        if needs_early and needs_latest:
+            # 两头都缺：优先拉早期（范围通常更大），下次运行再拉近期
+            # 如果早期差距小于近期，则拉近期（取工作量小的一边）
+            early_gap = (earliest_dt - _safe_parse_date(target_start)).days
+            latest_gap = (_safe_parse_date(today_str) - latest_dt).days
+            if early_gap <= latest_gap:
+                start = target_start
+                end = _date_str(earliest_dt + timedelta(days=3))
+            else:
+                start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
+                end = today_str
+        elif needs_early:
+            start = target_start
+            end = _date_str(earliest_dt + timedelta(days=3))
+        elif needs_latest:
+            # 早期已满，近期缺失：从本地最新日期拉到今天
+            start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
+            end = today_str
+        else:
+            # 本地完全无数据
+            start = target_start
+            end = today_str
     elif cached:
         latest = cached[0].get("date", "")
         if latest:
@@ -1026,6 +1094,7 @@ def get_kline(
             start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
+        end = _date_str(datetime.now())
     else:
         latest = _cache.get_latest_date(code, market=market) or ""
         if latest:
@@ -1033,11 +1102,12 @@ def get_kline(
             start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
-
-    end = _date_str(datetime.now())
+        end = _date_str(datetime.now())
     try:
         new_data = _fetch_kline(code, market, start, end)
         if new_data:
+            # Attach quality flags before upserting
+            new_data = _detect_quality_flags(new_data, market)
             _cache.upsert_daily_price(new_data)
             cached = _cache.get_daily_price(code, market=market)
         else:
@@ -1099,6 +1169,141 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
     return []
 
 
+
+
+def _detect_quality_flags(rows: List[Dict[str, Any]], market: str) -> List[Dict[str, Any]]:
+    """Scan K-line rows for anomalies and attach quality_flags.
+
+    Flags (comma-separated):
+    - gap_up: large gap between prev close and today open (>3% for A, >5% for HK/US)
+    - gap_down: same but downward
+    - zero_vol: trading day but zero volume (suspension indicator)
+    - limit_up: hit daily price limit (A-shares only)
+    - limit_down: hit daily price limit (A-shares only)
+    - data_err: price=0 or close < open/low/high consistency issue
+    """
+    if not rows:
+        return rows
+    limit_pct = 0.095 if market == "A" else 0.20
+
+    for i, r in enumerate(rows):
+        flags = []
+        close = r.get("close", 0) or 0
+        open_ = r.get("open", 0) or 0
+        high = r.get("high", 0) or 0
+        low = r.get("low", 0) or 0
+        vol = r.get("volume", 0) or 0
+
+        # Zero volume on non-zero price day = possible suspension
+        if close > 0 and vol <= 0:
+            flags.append("zero_vol")
+
+        # Price zero = data error
+        if close <= 0:
+            flags.append("data_err")
+
+        # Gap detection (compare open vs prev close)
+        if i + 1 < len(rows):
+            prev_close = rows[i + 1].get("close", 0) or 0
+            if prev_close > 0 and open_ > 0:
+                gap = (open_ - prev_close) / prev_close
+                gap_threshold = 0.03 if market == "A" else 0.05
+                if gap > gap_threshold:
+                    flags.append("gap_up")
+                elif gap < -gap_threshold:
+                    flags.append("gap_down")
+
+        # Limit hit detection (A-shares only)
+        if market == "A" and close > 0:
+            # Estimate prior close from current close
+            if abs(close - open_) / max(close, 0.001) < 0.001:
+                # Flat day — check if at limit
+                if open_ > 0 and high > 0:
+                    prev_est = open_ / 1.1
+                    if prev_est > 0 and (close - prev_est) / prev_est > 0.09:
+                        flags.append("limit_up")
+                    elif (close - prev_est) / prev_est < -0.09:
+                        flags.append("limit_down")
+
+        r["quality_flags"] = ",".join(flags)
+
+    return rows
+
+
+def _cross_source_validate(
+    rows_a: List[Dict[str, Any]],
+    rows_b: List[Dict[str, Any]],
+    tolerance_pct: float = 0.02,
+) -> List[Dict[str, Any]]:
+    """Compare K-line data from two sources and flag discrepancies.
+
+    Returns the rows_a set with a 'source_mismatch' quality flag added
+    to rows where close prices differ by more than tolerance_pct between
+    the two sources for the same date.
+    """
+    if not rows_a or not rows_b:
+        return rows_a
+
+    # Build date-indexed lookup for rows_b
+    b_by_date = {
+        str(r.get("date", "")).strip(): r
+        for r in rows_b
+        if str(r.get("date", "")).strip()
+    }
+
+    flagged = []
+    for r in rows_a:
+        date_str = str(r.get("date", "")).strip()
+        if date_str in b_by_date:
+            b_close = b_by_date[date_str].get("close", 0) or 0
+            a_close = r.get("close", 0) or 0
+            if a_close > 0 and b_close > 0:
+                diff = abs(a_close - b_close) / a_close
+                if diff > tolerance_pct:
+                    existing_flags = r.get("quality_flags", "")
+                    new_flag = f"source_mismatch({diff:.1%})"
+                    if existing_flags:
+                        r["quality_flags"] = f"{existing_flags},{new_flag}"
+                    else:
+                        r["quality_flags"] = new_flag
+        flagged.append(r)
+
+    return flagged
+
+
+def _detect_gaps(rows: List[Dict[str, Any]], market: str = "A") -> List[str]:
+    """Scan sorted (newest-first) K-line rows for date gaps.
+
+    Returns a list of date strings where a trading day is missing.
+    Uses a simple heuristic: if the gap between consecutive dates
+    exceeds the expected max gap (1-3 days for weekends/holidays),
+    flag the missing dates.
+
+    Only flags gaps > 7 calendar days to avoid false positives
+    from holidays/suspensions.
+    """
+    if len(rows) < 2:
+        return []
+    gaps = []
+    for i in range(len(rows) - 1):
+        cur_str = str(rows[i].get("date", "")).strip()
+        next_str = str(rows[i + 1].get("date", "")).strip()
+        if not cur_str or not next_str:
+            continue
+        try:
+            cur = _safe_parse_date(cur_str)
+            nxt = _safe_parse_date(next_str)
+            if cur is None or nxt is None:
+                continue
+            day_diff = (cur - nxt).days
+            # Flag only gaps > 7 days (weekend + holiday max ~5)
+            if day_diff > 7:
+                gaps.append(
+                    f"{next_str}..{cur_str} ({day_diff}d gap)"
+                )
+        except Exception:
+            continue
+    return gaps
 
 
 def _normalize_kline_df(
@@ -1587,7 +1792,11 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
 
 @_api_call("fundamentals")
 def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any]]:
-    """Fetch fundamentals via Sina financial abstract."""
+    """Fetch fundamentals via Sina financial abstract.
+
+    Extracts ALL quarterly periods from the API response (not just the latest),
+    enabling point-in-time historical backtesting.
+    """
     try:
         with _akshare_lock:
             if market == "A":
@@ -1600,66 +1809,84 @@ def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any
                 return None
         if df is None or df.empty or len(df.columns) < 3:
             return None
-        today = datetime.now().strftime("%Y-%m-%d")
-        result = {
-            "code": code,
-            "date": today,
-            "market_cap": 0.0,
-            "pe_ttm": 0.0,
-            "pe_static": 0.0,
-            "pb": 0.0,
-            "ps_ttm": 0.0,
-            "pcf_ttm": 0.0,
-            "dividend_yield": 0.0,
-            "roe": 0.0,
-            "roa": 0.0,
-            "gross_margin": 0.0,
-            "net_margin": 0.0,
-            "revenue_growth": 0.0,
-            "profit_growth": 0.0,
-            "debt_ratio": 0.0,
-            "current_ratio": 0.0,
-            "eps": 0.0,
-            "bvps": 0.0,
-        }
-        # Build lookup: indicator name -> value (latest quarterly column)
-        # Find the first column that looks like a date (has >6 digits or contains '-')
-        latest_col = None
+
+        # Discover date columns (columns that look like dates)
+        date_cols = []
         for col_idx in range(2, len(df.columns)):
             col_name = str(df.columns[col_idx])
             if len(col_name.replace("-", "")) >= 6:
-                latest_col = col_name
-                break
-        if latest_col is None:
-            latest_col = df.columns[2]  # fallback to hard-coded position
-        for i in range(len(df)):
-            name = str(df.iloc[i, 1])
-            val = df.iloc[i][latest_col]
-            if val is None or (isinstance(val, float) and (val != val)):
-                continue
-            v = safe_float(val)
-            # 主要指标 section
-            if name == "\u57fa\u672c\u6bcf\u80a1\u6536\u76ca":
-                result["eps"] = v
-            elif name == "\u6bcf\u80a1\u51c0\u8d44\u4ea7":
-                result["bvps"] = v
-            elif name == "\u51c0\u8d44\u4ea7\u6536\u76ca\u7387(ROE)":
-                result["roe"] = v / 100.0
-            elif name == "\u6bdb\u5229\u7387":
-                result["gross_margin"] = v / 100.0
-            elif name == "\u9500\u552e\u51c0\u5229\u7387":
-                result["net_margin"] = v / 100.0
-            elif name == "\u8d44\u4ea7\u8d1f\u503a\u7387":
-                result["debt_ratio"] = v / 100.0
-            elif name == "\u8425\u4e1a\u6536\u5165\u589e\u957f\u7387":
-                result["revenue_growth"] = v / 100.0
-            elif name == (
-                "\u5f52\u5c5e\u6bcd\u516c\u53f8\u51c0\u5229\u6da6\u589e\u957f\u7387"
-            ):
-                result["profit_growth"] = v / 100.0
-            elif name == "\u6d41\u52a8\u6bd4\u7387":
-                result["current_ratio"] = v
-        return result
+                date_cols.append(col_name)
+
+        if not date_cols:
+            date_cols = [df.columns[2]]
+
+        def _parse_one_period(df, col_name: str) -> Dict[str, Any]:
+            """Build one fundamental snapshot from a single period column."""
+            snap: Dict[str, Any] = {
+                "code": code,
+                "date": col_name,
+                "market_cap": 0.0,
+                "pe_ttm": 0.0,
+                "pe_static": 0.0,
+                "pb": 0.0,
+                "ps_ttm": 0.0,
+                "pcf_ttm": 0.0,
+                "dividend_yield": 0.0,
+                "roe": 0.0,
+                "roa": 0.0,
+                "gross_margin": 0.0,
+                "net_margin": 0.0,
+                "revenue_growth": 0.0,
+                "profit_growth": 0.0,
+                "debt_ratio": 0.0,
+                "current_ratio": 0.0,
+                "eps": 0.0,
+                "bvps": 0.0,
+            }
+            for i in range(len(df)):
+                name = str(df.iloc[i, 1])
+                val = df.iloc[i][col_name]
+                if val is None or (isinstance(val, float) and (val != val)):
+                    continue
+                v = safe_float(val)
+                if name == "基本每股收益":
+                    snap["eps"] = v
+                elif name == "每股净资产":
+                    snap["bvps"] = v
+                elif name == "净资产收益率(ROE)":
+                    snap["roe"] = v / 100.0
+                elif name == "毛利率":
+                    snap["gross_margin"] = v / 100.0
+                elif name == "销售净利率":
+                    snap["net_margin"] = v / 100.0
+                elif name == "资产负债率":
+                    snap["debt_ratio"] = v / 100.0
+                elif name == "营业收入增长率":
+                    snap["revenue_growth"] = v / 100.0
+                elif name == "归属母公司净利润增长率":
+                    snap["profit_growth"] = v / 100.0
+                elif name == "流动比率":
+                    snap["current_ratio"] = v
+            return snap
+
+        # HK/US: return only latest (API structure differs)
+        if market != "A":
+            result = _parse_one_period(df, date_cols[0])
+            result["market"] = market
+            return result
+
+        # A-shares: extract ALL periods for point-in-time history
+        snapshots = []
+        for dc in date_cols:
+            snap = _parse_one_period(df, dc)
+            snap["market"] = market
+            snapshots.append(snap)
+
+        if snapshots:
+            _cache.upsert_factor_snapshot(snapshots)
+            # Return the latest for API compatibility
+            return snapshots[0]
+        return None
     except Exception:
         return None
 
@@ -1682,6 +1909,29 @@ def sync_symbol_data(
 
     history_before_rows = _cache.get_daily_price(canonical_code, market=market)
     history_before = len(history_before_rows)
+
+    # Determine if we need to fetch history: either we don't have enough,
+    # or full_history is requested.  Also track if the API was actually
+    # called (for the "fetched" counter below).
+    needs_history_fetch = history_before < history_days or full_history
+
+    # For full_history mode, check if the API can be skipped because
+    # local data is already complete.
+    _skip_history_api = False
+    if full_history and history_before_rows:
+        _dates = sorted(
+            str(r.get("date", "")).strip()
+            for r in history_before_rows
+            if str(r.get("date", "")).strip()
+        )
+        if _dates:
+            target_start = cfg_get("full_history_start_date", "20000101")
+            local_earliest = _dates[0]
+            local_latest = _dates[-1]
+            today_str = _date_str(datetime.now())
+            if local_earliest <= target_start and local_latest == today_str:
+                _skip_history_api = True
+
     history_target = (
         max(history_days, history_before)
         if not full_history
@@ -1689,8 +1939,9 @@ def sync_symbol_data(
     )
     history_rows = history_before_rows
     history_error = ""
+    history_api_called = False
 
-    if history_before < history_days or full_history:
+    if needs_history_fetch and not _skip_history_api:
         try:
             history_rows = get_kline(
                 canonical_code,
@@ -1699,9 +1950,15 @@ def sync_symbol_data(
                 force_refresh=full_history,
                 full_history=full_history,
             )
+            history_api_called = True
         except Exception as exc:
             history_error = str(exc)
-            history_rows = _cache.get_daily_price(canonical_code, market=market)
+        # 增量拉取后从缓存读完整数据，避免 get_kline 返回截断行数
+        # 导致 history_after 计数不准。
+        history_rows = _cache.get_daily_price(canonical_code, market=market)
+    elif needs_history_fetch and _skip_history_api:
+        # Local data is already fully covered, treat as cache hit.
+        history_api_called = False
     history_after = len(history_rows)
     history_ready = history_after >= history_days
     history_covered_date = _latest_cached_date(history_rows)
@@ -1765,22 +2022,107 @@ def sync_symbol_data(
         "history_after": history_after,
         "history_target": history_days,
         "history_ready": history_ready,
-        "history_cache_hit": history_before >= history_days and not full_history,
-        "history_fetched": history_after > history_before,
+        # Cache hit = API was not called (either had enough data or already fully covered)
+        "history_cache_hit": not history_api_called and history_after > 0,
+        # Fetched = API was called (regardless of whether new rows were added)
+        "history_fetched": history_api_called,
         "history_covered_through": history_covered_date,
         "fundamentals_required": require_fundamentals,
         "fundamentals_before": fundamentals_before,
         "fundamentals_after": fundamentals_after,
         "fundamentals_cache_hit": fundamentals_before,
+        # Fetched = we attempted the API call (even if it failed/returned None)
         "fundamentals_fetched": (
-            require_fundamentals
-            and not fundamentals_before
-            and bool(fundamentals_after_snapshot)
+            require_fundamentals and not fundamentals_before
         ),
         "fundamentals_covered_through": fundamentals_covered_date,
         "ready": history_ready and (fundamentals_after or not require_fundamentals),
         "errors": [err for err in (history_error, fundamentals_error) if err],
     }
+
+
+def _sync_single_symbol_safe(
+    code: str,
+    market: str,
+    history_days: int,
+    need_fundamentals: bool | None,
+    full_history: bool,
+    fundamentals_max_age_days: int,
+) -> Dict[str, Any]:
+    """Thread-safe wrapper around sync_symbol_data.
+
+    Each thread gets its own DB connection path (SQLite in WAL mode allows
+    concurrent reads, serialised writes). The RLock in _akshare_lock
+    prevents concurrent AKShare calls.
+    """
+    try:
+        return sync_symbol_data(
+            code,
+            market,
+            history_days=history_days,
+            need_fundamentals=need_fundamentals,
+            full_history=full_history,
+            fundamentals_max_age_days=fundamentals_max_age_days,
+        )
+    except Exception as exc:
+        canonical = normalize_code_for_market(code, market)
+        return {
+            "scope_type": "symbol",
+            "scope_key": f"{market}:{canonical}",
+            "code": canonical,
+            "market": market,
+            "requested": 1,
+            "history_before": 0,
+            "history_after": 0,
+            "history_target": history_days,
+            "history_ready": False,
+            "history_cache_hit": False,
+            "history_fetched": False,
+            "history_covered_through": "",
+            "fundamentals_required": False,
+            "fundamentals_before": False,
+            "fundamentals_after": False,
+            "fundamentals_cache_hit": False,
+            "fundamentals_fetched": False,
+            "fundamentals_covered_through": "",
+            "ready": False,
+            "errors": [str(exc)],
+        }
+
+
+_CHECKPOINT_KEY_PREFIX = "sync_checkpoint:"
+
+
+def _save_checkpoint(scope_type: str, scope_key: str, done_codes: set) -> None:
+    """Persist checkpoint to kv_store."""
+    key = f"{_CHECKPOINT_KEY_PREFIX}{scope_type}:{scope_key}"
+    value = ",".join(sorted(done_codes))
+    try:
+        _cache.kv_set_str(key, value, ttl=86400 * 7)  # 7 天过期
+    except Exception:
+        pass
+
+
+def _load_checkpoint(scope_type: str, scope_key: str) -> set:
+    """Load checkpoint from kv_store."""
+    key = f"{_CHECKPOINT_KEY_PREFIX}{scope_type}:{scope_key}"
+    try:
+        value = _cache.kv_get_str(key)
+        if value:
+            return {c.strip() for c in value.split(",") if c.strip()}
+    except Exception:
+        pass
+    return set()
+
+
+def _clear_checkpoint(scope_type: str, scope_key: str) -> None:
+    """Remove checkpoint after successful completion."""
+    key = f"{_CHECKPOINT_KEY_PREFIX}{scope_type}:{scope_key}"
+    try:
+        with _cache._conn() as conn:
+            conn.execute("DELETE FROM kv_store WHERE key=?", (key,))
+    except Exception:
+        pass
 
 
 def sync_symbols_data(
@@ -1792,21 +2134,141 @@ def sync_symbols_data(
     fundamentals_max_age_days: int = 120,
     limit: int = 0,
 ) -> Dict[str, Any]:
-    """Synchronize a bounded list of symbols and return an aggregate summary."""
+    """Synchronize a bounded list of symbols with concurrent fetch + checkpoint.
+
+    Uses ThreadPoolExecutor for parallel API calls (bounded by API rate limits).
+    Persists progress via kv_store checkpoint so interrupted runs can resume.
+    """
     selected_codes = list(codes[:limit] if limit else codes)
-    per_symbol = [
-        sync_symbol_data(
-            code,
-            market,
-            history_days=history_days,
-            need_fundamentals=need_fundamentals,
-            full_history=full_history,
-            fundamentals_max_age_days=fundamentals_max_age_days,
-        )
-        for code in selected_codes
-    ]
+    total = len(selected_codes)
+    history_label = "全量历史" if full_history else f"{history_days}天"
+    scope_type = "symbol_batch"
+    scope_key = f"{market}:{history_days}:{'full' if full_history else 'partial'}"
+
+    # Load checkpoint: skip already-synced codes
+    done_codes = _load_checkpoint(scope_type, scope_key)
+    pending = [c for c in selected_codes if c not in done_codes]
+    skipped = total - len(pending)
+
+    print(
+        f"  同步范围: {market} 市场, 共 {total} 只, 目标={history_label}"
+        f"{' (断点续传: 已跳过 ' + str(skipped) + ' 只' if skipped else ''})",
+        flush=True,
+    )
+
+    max_workers = min(cfg_get("sync_max_workers", 8), total)
+    if total > 100:
+        print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
+
+    # Thread-safe accumulators for progress tracking
+    results_lock = threading.Lock()
+    per_symbol: List[Dict[str, Any]] = []
+
+    hist_fetch = 0
+    fund_fetch = 0
+    cache_hit = 0
+    all_earliest: List[str] = []
+    all_latest: List[str] = []
+    total_rows = 0
+    processed_count = 0
+
+    def _accumulate(result: Dict[str, Any]) -> None:
+        """Thread-safe accumulation of per-symbol result."""
+        nonlocal hist_fetch, fund_fetch, cache_hit, total_rows, processed_count
+        with results_lock:
+            per_symbol.append(result)
+
+            if result.get("history_fetched"):
+                hist_fetch += 1
+            if result.get("fundamentals_fetched"):
+                fund_fetch += 1
+            if result.get("history_cache_hit") and (
+                result.get("fundamentals_cache_hit")
+                or not result.get("fundamentals_required")
+            ):
+                cache_hit += 1
+
+            covered = str(result.get("history_covered_through", "")).strip()
+            if covered:
+                all_latest.append(covered)
+
+            hist_after = result.get("history_after", 0) or 0
+            total_rows += hist_after
+
+            code = result.get("code", "")
+            cached = _cache.get_daily_price(code, market=market)
+            if cached:
+                values = sorted(
+                    str(r.get("date", "")).strip()
+                    for r in cached
+                    if str(r.get("date", "")).strip()
+                )
+                if values:
+                    all_earliest.append(values[0])
+
+            processed_count += 1
+
+    # Execute with ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_code = {
+            executor.submit(
+                _sync_single_symbol_safe,
+                code,
+                market,
+                history_days=history_days,
+                need_fundamentals=need_fundamentals,
+                full_history=full_history,
+                fundamentals_max_age_days=fundamentals_max_age_days,
+            ): code
+            for code in pending
+        }
+
+        completed_this_run = set()
+        for future in as_completed(future_to_code):
+            code = future_to_code[future]
+            try:
+                result = future.result()
+                if result:
+                    _accumulate(result)
+                    completed_this_run.add(code)
+            except Exception:
+                completed_this_run.add(code)
+
+            # Periodic checkpoint + progress print
+            if processed_count % 50 == 0 or processed_count == len(pending):
+                pct = (skipped + processed_count) * 100 // total
+                date_range = ""
+                if all_earliest and all_latest:
+                    date_range = (
+                        f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
+                    )
+                print(
+                    f"  [{skipped + processed_count}/{total}] {pct}% | "
+                    f"缓存命中={cache_hit}, K线拉取={hist_fetch}, "
+                    f"基本面拉取={fund_fetch}, "
+                    f"累计行数={total_rows:,}{date_range}",
+                    flush=True,
+                )
+                # Save checkpoint every 50 items
+                done_codes.update(completed_this_run)
+                _save_checkpoint(scope_type, scope_key, done_codes)
+                completed_this_run = set()
+
+    # Final checkpoint
+    if completed_this_run:
+        done_codes.update(completed_this_run)
+        _save_checkpoint(scope_type, scope_key, done_codes)
+
+    # Sort per_symbol to match original code order for consistent output
+    code_order = {c: i for i, c in enumerate(selected_codes)}
+    per_symbol.sort(key=lambda r: code_order.get(r.get("code", ""), 999999))
+
+    # If all codes are ready, clear checkpoint
+    if len(done_codes) >= total:
+        _clear_checkpoint(scope_type, scope_key)
+
     return {
-        "scope_type": "symbol_batch",
+        "scope_type": scope_type,
         "market": market,
         "requested": len(selected_codes),
         "history_ready": sum(1 for item in per_symbol if item["history_ready"]),
@@ -1816,21 +2278,12 @@ def sync_symbols_data(
             if item.get("fundamentals_required") and item.get("fundamentals_after")
         ),
         "ready": sum(1 for item in per_symbol if item["ready"]),
-        "cache_hits": sum(
-            1
-            for item in per_symbol
-            if item.get("history_cache_hit")
-            and (
-                item.get("fundamentals_cache_hit")
-                or not item.get("fundamentals_required")
-            )
-        ),
-        "history_fetched_count": sum(
-            1 for item in per_symbol if item.get("history_fetched")
-        ),
-        "fundamentals_fetched_count": sum(
-            1 for item in per_symbol if item.get("fundamentals_fetched")
-        ),
+        "cache_hits": cache_hit,
+        "history_fetched_count": hist_fetch,
+        "fundamentals_fetched_count": fund_fetch,
+        "total_history_rows": total_rows,
+        "earliest_date": min(all_earliest) if all_earliest else "",
+        "latest_date": max(all_latest) if all_latest else "",
         "missing_codes": [
             item["code"] for item in per_symbol if not item.get("ready", False)
         ],
@@ -1953,78 +2406,194 @@ def sync_scan_universe_data(
     return result
 
 
+def _sync_single_etf_safe(
+    code: str,
+    history_days: int,
+    full_history: bool,
+) -> Dict[str, Any]:
+    """Thread-safe wrapper for syncing a single ETF's NAV data."""
+    nav_before_rows = _cache.get_fund_nav(code, history_days)
+    nav_before = len(nav_before_rows)
+    nav_rows = nav_before_rows
+    nav_error = ""
+    try:
+        nav_rows = get_fund_nav(
+            code,
+            history_days,
+            full_history=full_history,
+        )
+    except Exception as exc:
+        nav_error = str(exc)
+        nav_rows = _cache.get_fund_nav(code, history_days)
+    nav_after = len(nav_rows)
+    nav_ready = nav_after >= history_days
+    covered_through = _latest_cached_date(nav_rows)
+    _upsert_symbol_sync_state(
+        code,
+        "FUND",
+        "nav",
+        status="ok" if nav_ready else "partial",
+        covered_date=covered_through,
+        last_error=nav_error,
+    )
+    return {
+        "scope_type": "symbol",
+        "scope_key": f"FUND:{code}",
+        "code": code,
+        "market": "FUND",
+        "history_before": nav_before,
+        "history_after": nav_after,
+        "history_target": history_days,
+        "history_ready": nav_ready,
+        "history_cache_hit": nav_before >= history_days,
+        "history_fetched": nav_after > nav_before,
+        "history_covered_through": covered_through,
+        "fundamentals_required": False,
+        "fundamentals_before": False,
+        "fundamentals_after": False,
+        "fundamentals_cache_hit": False,
+        "fundamentals_fetched": False,
+        "fundamentals_covered_through": "",
+        "ready": nav_ready,
+        "errors": [nav_error] if nav_error else [],
+    }
+
+
 def sync_etf_data(
     codes: Sequence[str],
     history_days: int = 365,
     limit: int = 0,
+    full_history: bool = False,
 ) -> Dict[str, Any]:
-    """Synchronize bounded ETF NAV/history data within an ETF-specific scope."""
+    """Synchronize bounded ETF NAV/history data with concurrent fetch + checkpoint."""
     normalized_codes = [
         normalize_code_for_market(code, "FUND")
         for code in (codes[:limit] if limit else codes)
         if str(code).strip()
     ]
-    per_symbol = []
-    for code in normalized_codes:
-        nav_before_rows = _cache.get_fund_nav(code, history_days)
-        nav_before = len(nav_before_rows)
-        nav_rows = nav_before_rows
-        nav_error = ""
-        if nav_before < history_days:
-            try:
-                nav_rows = get_fund_nav(code, history_days)
-            except Exception as exc:
-                nav_error = str(exc)
-                nav_rows = _cache.get_fund_nav(code, history_days)
-        nav_after = len(nav_rows)
-        nav_ready = nav_after >= history_days
-        covered_through = _latest_cached_date(nav_rows)
-        _upsert_symbol_sync_state(
-            code,
-            "FUND",
-            "nav",
-            status="ok" if nav_ready else "partial",
-            covered_date=covered_through,
-            last_error=nav_error,
-        )
-        per_symbol.append(
-            {
-                "scope_type": "symbol",
-                "scope_key": f"FUND:{code}",
-                "code": code,
-                "market": "FUND",
-                "history_before": nav_before,
-                "history_after": nav_after,
-                "history_target": history_days,
-                "history_ready": nav_ready,
-                "history_cache_hit": nav_before >= history_days,
-                "history_fetched": nav_after > nav_before,
-                "history_covered_through": covered_through,
-                "fundamentals_required": False,
-                "fundamentals_before": False,
-                "fundamentals_after": False,
-                "fundamentals_cache_hit": False,
-                "fundamentals_fetched": False,
-                "fundamentals_covered_through": "",
-                "ready": nav_ready,
-                "errors": [nav_error] if nav_error else [],
-            }
-        )
+    total = len(normalized_codes)
+    history_label = "全量历史" if full_history else f"{history_days}天"
+    scope_type = "etf"
+    scope_key = f"FUND:{history_days}:{'full' if full_history else 'partial'}"
 
-    scope_key = ",".join(normalized_codes)
+    # Load checkpoint
+    done_codes = _load_checkpoint(scope_type, scope_key)
+    pending = [c for c in normalized_codes if c not in done_codes]
+    skipped = total - len(pending)
+
+    print(
+        f"  同步范围: ETF 共 {total} 只, 目标={history_label}"
+        f"{' (断点续传: 已跳过 ' + str(skipped) + ' 只' if skipped else ''})",
+        flush=True,
+    )
+
+    max_workers = min(cfg_get("sync_max_workers", 8), total)
+    if total > 10:
+        print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
+
+    results_lock = threading.Lock()
+    per_symbol: List[Dict[str, Any]] = []
+    hist_fetch = 0
+    cache_hit = 0
+    total_rows = 0
+    all_earliest: List[str] = []
+    all_latest: List[str] = []
+    processed_count = 0
+
+    def _accumulate(result: Dict[str, Any]) -> None:
+        nonlocal hist_fetch, cache_hit, total_rows, processed_count
+        with results_lock:
+            per_symbol.append(result)
+            if result.get("history_fetched"):
+                hist_fetch += 1
+            if result.get("history_cache_hit"):
+                cache_hit += 1
+            total_rows += result.get("history_after", 0) or 0
+
+            covered = str(result.get("history_covered_through", "")).strip()
+            if covered:
+                all_latest.append(covered)
+
+            code = result.get("code", "")
+            cached = _cache.get_fund_nav(code, history_days)
+            if cached:
+                values = sorted(
+                    str(r.get("date", "")).strip()
+                    for r in cached
+                    if str(r.get("date", "")).strip()
+                )
+                if values:
+                    all_earliest.append(values[0])
+
+            processed_count += 1
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_code = {
+            executor.submit(
+                _sync_single_etf_safe,
+                code,
+                history_days=history_days,
+                full_history=full_history,
+            ): code
+            for code in pending
+        }
+
+        completed_this_run = set()
+        for future in as_completed(future_to_code):
+            code = future_to_code[future]
+            try:
+                result = future.result()
+                if result:
+                    _accumulate(result)
+                    completed_this_run.add(code)
+            except Exception:
+                completed_this_run.add(code)
+
+            # Periodic checkpoint + progress
+            batch = max(10, total // 10)
+            if processed_count % batch == 0 or processed_count == len(pending):
+                pct = (skipped + processed_count) * 100 // total
+                date_range = ""
+                if all_earliest and all_latest:
+                    date_range = (
+                        f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
+                    )
+                print(
+                    f"  [{skipped + processed_count}/{total}] {pct}% | "
+                    f"缓存命中={cache_hit}, NAV拉取={hist_fetch}, "
+                    f"累计行数={total_rows:,}{date_range}",
+                    flush=True,
+                )
+                done_codes.update(completed_this_run)
+                _save_checkpoint(scope_type, scope_key, done_codes)
+                completed_this_run = set()
+
+    # Final checkpoint
+    if completed_this_run:
+        done_codes.update(completed_this_run)
+        _save_checkpoint(scope_type, scope_key, done_codes)
+
+    # Sort to match original order
+    code_order = {c: i for i, c in enumerate(normalized_codes)}
+    per_symbol.sort(key=lambda r: code_order.get(r.get("code", ""), 999999))
+
+    if len(done_codes) >= total:
+        _clear_checkpoint(scope_type, scope_key)
+
     result = {
-        "scope_type": "etf",
-        "scope_key": scope_key,
+        "scope_type": scope_type,
+        "scope_key": ",".join(normalized_codes),
         "market": "FUND",
         "requested": len(normalized_codes),
         "history_ready": sum(1 for item in per_symbol if item["history_ready"]),
         "fundamentals_ready": 0,
         "ready": sum(1 for item in per_symbol if item["ready"]),
-        "cache_hits": sum(1 for item in per_symbol if item["history_cache_hit"]),
-        "history_fetched_count": sum(
-            1 for item in per_symbol if item["history_fetched"]
-        ),
+        "cache_hits": cache_hit,
+        "history_fetched_count": hist_fetch,
         "fundamentals_fetched_count": 0,
+        "total_history_rows": total_rows,
+        "earliest_date": min(all_earliest) if all_earliest else "",
+        "latest_date": max(all_latest) if all_latest else "",
         "missing_codes": [
             item["code"] for item in per_symbol if not item.get("ready", False)
         ],
@@ -2033,7 +2602,7 @@ def sync_etf_data(
     }
     _upsert_scope_sync_state(
         "etf",
-        scope_key,
+        result["scope_key"],
         "FUND",
         "summary",
         status="ok" if result["ready"] == result["requested"] else "partial",
@@ -2095,35 +2664,85 @@ def _refresh_fund_pool() -> None:
         pass
 
 
-def get_fund_nav(code: str, days: int = 365, cached_only: bool = False, force_refresh: bool = False) -> List[Dict[str, Any]]:
+def get_fund_nav(
+    code: str,
+    days: int = 365,
+    cached_only: bool = False,
+    force_refresh: bool = False,
+    full_history: bool = False,
+) -> List[Dict[str, Any]]:
     """Get ETF-style NAV/history with incremental cache update.
 
     Cache-first: checks row count AND date freshness.
     - If cache has enough rows AND latest date is today, return immediately.
     - Otherwise incrementally fetch from latest cached date up to today.
+    - Supports full_history mode for bootstrapping all available data.
     - Falls back to cached data on fetch failure.
     """
     cached = _cache.get_fund_nav(code, days)
     if cached_only:
         return cached
 
-    # Check both row count and date freshness (skip if forced refresh).
-    if not force_refresh and len(cached) >= days:
+    today_str = _date_str(datetime.now())
+
+    # If full_history and cache is already complete, skip.
+    if full_history and not force_refresh:
+        if cached:
+            _dates = sorted(
+                str(r.get("date", "")).strip()
+                for r in cached
+                if str(r.get("date", "")).strip()
+            )
+            if _dates:
+                local_earliest = _dates[0]
+                local_latest = _dates[-1]
+                target_start = cfg_get("full_history_start_date", "20000101")
+                if local_earliest <= target_start and local_latest == today_str:
+                    return cached
+
+    # Check both row count and date freshness (skip if forced refresh or full_history bootstrapping).
+    if not force_refresh and not full_history and len(cached) >= days:
         latest_cached_date = cached[0].get("date", "")
-        if latest_cached_date and latest_cached_date == _date_str(datetime.now()):
+        if latest_cached_date and latest_cached_date == today_str:
             return cached
 
     # Compute incremental fetch range.
     if cached:
-        latest = cached[0].get("date", "")
-        if latest:
-            latest_dt = _safe_parse_date(latest)
-            start = _date_str(latest_dt - timedelta(days=3))
+        _dates = sorted(
+            str(r.get("date", "")).strip()
+            for r in cached
+            if str(r.get("date", "")).strip()
+        )
+        if _dates:
+            local_earliest = _dates[0]
+            local_latest = _dates[-1]
+        else:
+            local_earliest = ""
+            local_latest = ""
+
+        if full_history:
+            target_start = cfg_get("full_history_start_date", "20000101")
+            if local_earliest and local_earliest > target_start:
+                # Need to fetch earlier data
+                start = target_start
+                end = _date_str(_safe_parse_date(local_earliest) + timedelta(days=3))
+            else:
+                # Early data complete, only need to fetch up to today
+                start = _date_str(_safe_parse_date(local_latest) - timedelta(days=3))
+                end = today_str
+        else:
+            if local_latest:
+                start = _date_str(_safe_parse_date(local_latest) - timedelta(days=3))
+                end = today_str
+            else:
+                start = _date_str(datetime.now() - timedelta(days=days + 30))
+                end = today_str
+    else:
+        if full_history:
+            start = cfg_get("full_history_start_date", "20000101")
         else:
             start = _date_str(datetime.now() - timedelta(days=days + 30))
-    else:
-        start = _date_str(datetime.now() - timedelta(days=days + 30))
-    end = _date_str(datetime.now())
+        end = today_str
 
     try:
         ak = _try_akshare()

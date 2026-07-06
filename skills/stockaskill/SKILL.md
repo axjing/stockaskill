@@ -74,10 +74,10 @@ to `run.py`:
 
     # Use the skill-local Python environment for all commands:
     # Linux/macOS:
-    "$SKILL/.venv/bin/python" "$SKILL/scripts/run.py" f`fetch pool`
+    "$SKILL/.venv/bin/python" "$SKILL/scripts/run.py" fetch pool
 
     # Windows:
-    "$SKILL\.venv\Scripts\python.exe" "$SKILL\scripts\run.py" f`fetch pool`
+    "$SKILL\.venv\Scripts\python.exe" "$SKILL\scripts\run.py" fetch pool
 
 For brevity, commands below use `$SKILL` to mean the skill installation directory.
 
@@ -316,12 +316,12 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 | Symptom | Cause | Fix |
 |---|---|---|
 | ModuleNotFoundError: No module named config | Wrong working directory | Run from project root and call `uv run python "$SKILL/scripts/run.py" ...` |
-| Scan returns 0 results | Cache empty or candidate history missing | run `uv run python "$SKILL/scripts/run.py" f`fetch pool`` once, then retry |
+| Scan returns 0 results | Cache empty or candidate history missing | run `uv run python "$SKILL/scripts/run.py" fetch pool` once, then retry |
 | Daily API limit reached | Local API budget or upstream throttling reached | Wait; use cached data |
 | No BUY signals | Market weakness or cold cache | Run diagnose on individual stocks |
 | import akshare fails | Not installed | uv pip install akshare efinance baostock |
-| Code not found | Pool not fetched for that market | `uv run python "$SKILL/scripts/run.py" f`fetch pool`` |
-| Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or pref`fetch pool`s first |
+| Code not found | Pool not fetched for that market | `uv run python "$SKILL/scripts/run.py" fetch pool` |
+| Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or prefetch pools first |
 | HK/US candidates look noisy | Cross-market metadata incomplete | check `status data` metadata summary before trusting rankings |
 
 ## Key principles

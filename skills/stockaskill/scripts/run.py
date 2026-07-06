@@ -89,6 +89,7 @@ from cache import get_cache  # noqa: E402
 from config import get as cfg_get  # noqa: E402
 from data_engine import (  # noqa: E402
     get_etf_pool,
+    get_fund_pool,
     get_fundamentals,
     get_kline,
     get_stock_pool,
@@ -188,6 +189,36 @@ def _print_snapshot_summary(summary: dict, refreshed: bool) -> None:
             f" partial={metadata_quality.get('partial', 0)},"
             f" low={metadata_quality.get('low', 0)}"
         )
+
+
+def _print_pool_summary(market: str) -> None:
+    """Print a concise summary of a refreshed pool."""
+    if market == "FUND":
+        pool = get_etf_pool()
+    else:
+        pool = get_stock_pool(market)
+    if not pool:
+        print(f"  {market}: 0 entries (no data)")
+        return
+    total = len(pool)
+    labels = sorted(r.get("updated_at", "") for r in pool if r.get("updated_at"))
+    updated_at = labels[-1] if labels else "?"
+    name = {
+        "A": "A 股",
+        "HK": "港股",
+        "US": "美股",
+        "FUND": "ETF",
+    }.get(market, market)
+    parts = [f"{total} 只"]
+    if market != "FUND":
+        dates = sorted(
+            str(r.get("list_date", "")).strip()
+            for r in pool
+            if str(r.get("list_date", "")).strip()
+        )
+        if dates:
+            parts.append(f"最早={dates[0]}, 最晚={dates[-1]}")
+    print(f"  {name}: {', '.join(parts)} (updated={updated_at})")
 
 
 def _print_refresh_summary(summary: dict) -> None:
@@ -1121,13 +1152,13 @@ def cmd_fetch(args: argparse.Namespace) -> None:
     market = getattr(args, "market", "A") or "A"
 
     if fetch_type == "pool":
-        print("Refreshing stock pool...")
+        print("Refreshing stock pool (local-first)...")
         for mkt in ["A", "HK", "US", "FUND"]:
             if mkt == "FUND":
-                get_fund_pool(force_refresh=True)
+                get_fund_pool(force_refresh=False)
             else:
-                get_stock_pool(mkt, force_refresh=True)
-            print(f"  {mkt}: done")
+                get_stock_pool(mkt, force_refresh=False)
+            _print_pool_summary(mkt)
     elif fetch_type == "kline":
         print(f"Fetching K-line for {code}...")
         from data_engine import get_kline
@@ -1214,10 +1245,14 @@ def cmd_sync(args: argparse.Namespace) -> None:
         }
     elif sync_type == "etf":
         codes = [c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()]
-        print(f"Synchronizing ETFs ({len(codes)} symbols, days={history_days})...")
+        print(
+            f"Synchronizing ETFs ({len(codes)} symbols, days={history_days}, "
+            f"full_history={'yes' if full_history else 'no'})..."
+        )
         result = sync_etf_data(
             codes,
             history_days=history_days,
+            full_history=full_history,
         )
         _print_scope_sync_summary(result, label="etf")
         report_name = "sync_etf"
@@ -1281,21 +1316,27 @@ def _print_symbol_sync_summary(result: dict) -> None:
 
 def _print_scope_sync_summary(result: dict, label: str) -> None:
     """Print a concise summary for a bounded multi-symbol sync scope."""
+    earliest = result.get("earliest_date", "") or ""
+    latest = result.get("latest_date", "") or ""
+    total_rows = result.get("total_history_rows", 0)
+    covered_through = result.get("covered_through", "") or ""
+
     print(
-        f"  Scope {label}:"
-        f" requested={result.get('requested', 0)},"
-        f" ready={result.get('ready', 0)},"
-        f" cache_hits={result.get('cache_hits', 0)},"
-        f" history_fetched={result.get('history_fetched_count', 0)},"
-        f" fundamentals_fetched={result.get('fundamentals_fetched_count', 0)}"
+        f"  同步汇总 [{label}]:"
+        f" 总数={result.get('requested', 0)},"
+        f" 就绪={result.get('ready', 0)},"
+        f" 缓存命中={result.get('cache_hits', 0)},"
+        f" K线拉取={result.get('history_fetched_count', 0)},"
+        f" 基本面拉取={result.get('fundamentals_fetched_count', 0)}"
     )
-    print(
-        "  Coverage:"
-        f" covered_through={result.get('covered_through', '?') or '?'},"
-        f" missing={len(result.get('missing_codes', []))}"
-    )
+    if total_rows:
+        print(f"    累计K线行数: {total_rows:,}")
+    if earliest or latest:
+        print(f"    数据日期范围: {earliest or '?'} ~ {latest or '?'}")
+    if covered_through:
+        print(f"    更新至: {covered_through}")
     if result.get("missing_codes"):
-        print("  Missing codes: " + ", ".join(result["missing_codes"][:10]))
+        print("    未就绪代码: " + ", ".join(result["missing_codes"][:10]))
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -2524,6 +2565,12 @@ def main() -> None:
         default=365,
         help="Target history days",
     )
+    p_sync_etf.add_argument(
+        "--skip-fundamentals",
+        action="store_true",
+        help="Skip fundamentals sync (ETF only has NAV).",
+    )
+    p_sync_etf.add_argument("--full-history", action="store_true")
     p_sync_etf.add_argument(
         "--output-dir",
         default="reports",
