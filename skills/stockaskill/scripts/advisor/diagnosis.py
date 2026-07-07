@@ -3,7 +3,7 @@
 from typing import Any, Dict, List
 
 import numpy as np
-from config import get as cfg_get
+from config import get as cfg_get, signal_from_score
 from data_engine import get_fundamentals, get_kline
 from data_readiness import build_symbol_quality_summary, ensure_symbol_analysis_ready
 from factors.composite import CompositeAnalyzer
@@ -243,14 +243,7 @@ class StockDiagnosis:
 
         adjusted_score = max(0, min(100, adjusted_score))
 
-        buy_threshold = cfg_get("signal_thresholds.buy", 65)
-        sell_threshold = cfg_get("signal_thresholds.sell", 35)
-        if adjusted_score >= buy_threshold:
-            signal = "BUY"
-        elif adjusted_score <= sell_threshold:
-            signal = "SELL"
-        else:
-            signal = "HOLD"
+        signal = signal_from_score(adjusted_score)
 
         # Stop-loss / take-profit references (use pre-computed technical if available)
         tech = technical or self._technical_analysis(

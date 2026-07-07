@@ -393,27 +393,15 @@ class AlphaMomentumBacktest:
         return _board(code, market=market)
 
     def _select_diversified(self, scored: List[Tuple[str, float]]) -> List[str]:
-        """Select top stocks with board diversification.
+        """Select top stocks with board diversification."""
+        from utils import diversify_by_board
 
-        Args:
-            scored: List of (code, score) tuples, sorted by score descending.
-
-        Returns:
-            List of selected stock codes.
-        """
-        selected: List[str] = []
-        board_count: Dict[str, int] = {}
-        for code, s in scored:
-            if s <= 0:
-                continue
-            board = self._board(code, self.market)
-            if board_count.get(board, 0) >= self.max_per_board:
-                continue
-            selected.append(code)
-            board_count[board] = board_count.get(board, 0) + 1
-            if len(selected) >= self.top_k:
-                break
-        return selected
+        filtered = [(code, s) for code, s in scored if s > 0]
+        diversified = diversify_by_board(
+            [{"code": code} for code, _ in filtered],
+            max_per_board=self.max_per_board,
+        )
+        return [item["code"] for item in diversified[: self.top_k]]
 
     # -- Metrics -------------------------------------------------------------
 

@@ -1007,129 +1007,19 @@ def get_kline(
 ) -> List[Dict[str, Any]]:
     """Get K-line data with incremental cache update.
 
-    Cache-first: always attempt to fetch up to today's date.
-    - If cached data already has enough rows AND the latest date equals today,
-      skip the API call (nothing new to fetch).
-    - Otherwise, incrementally fetch from the day after the latest cached date
-      up to today (end_date is always today).
-    - Falls back to cached data on fetch failure.
-    - Supports full_history mode for first-time bootstrapping.
-
-    Args:
-        code: Stock code.
-        market: Market identifier.
-        days: Number of trading days to return.
-        force_refresh: Force re-fetch from upstream.
-        full_history: Fetch all available history from API (overrides days for fetch
-        range).
-        cached_only: If True, skip API calls and return cached data only.
-
-    Returns:
-        List of K-line dicts (newest first).
+    Delegates to IncrementalCacheFetcher to eliminate duplicated
+    cache-first + incremental-fetch logic.
     """
-    code = normalize_code_for_market(code, market)
-    cached = _cache.get_daily_price(code, market=market)
-    if cached_only:
-        return cached[:days] if cached else []
-
-    today_str = _date_str(datetime.now())
-
-    # If cache has enough rows and is already up to today, skip API call.
-    if cached and not force_refresh and not full_history and len(cached) >= days:
-        latest_cached_date = cached[0].get("date", "")
-        if latest_cached_date == today_str:
-            return cached[:days]
-
-    if full_history:
-        # 本地已有数据的日期范围
-        local_earliest = ""
-        local_latest = ""
-        if cached:
-            _dates = sorted(
-                str(r.get("date", "")).strip()
-                for r in cached
-                if str(r.get("date", "")).strip()
-            )
-            if _dates:
-                local_earliest = _dates[0]
-                local_latest = _dates[-1]
-
-        target_start = _cold_start_date(market)
-
-        # 如果本地数据已经覆盖全量（最早 <= 目标起点 且 最晚 = 今天），跳过
-        if (
-            local_earliest
-            and local_latest
-            and local_earliest <= target_start
-            and local_latest == today_str
-        ):
-            return cached[:days] if days else cached
-
-        # 增量补齐：只拉缺失的部分（AKShare 只能拉单个区间）
-        earliest_dt = _safe_parse_date(local_earliest) if local_earliest else None
-        latest_dt = _safe_parse_date(local_latest) if local_latest else None
-
-        needs_early = local_earliest and local_earliest > target_start
-        needs_latest = local_latest and local_latest < today_str
-
-        if needs_early and needs_latest:
-            # 两头都缺：优先拉早期（范围通常更大），下次运行再拉近期
-            # 如果早期差距小于近期，则拉近期（取工作量小的一边）
-            early_gap = (earliest_dt - _safe_parse_date(target_start)).days
-            latest_gap = (_safe_parse_date(today_str) - latest_dt).days
-            if early_gap <= latest_gap:
-                start = target_start
-                end = _date_str(earliest_dt + timedelta(days=3))
-            else:
-                start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
-                end = today_str
-        elif needs_early:
-            start = target_start
-            end = _date_str(earliest_dt + timedelta(days=3))
-        elif needs_latest:
-            # 早期已满，近期缺失：从本地最新日期拉到今天
-            start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
-            end = today_str
-        else:
-            # 本地完全无数据
-            start = target_start
-            end = today_str
-    elif cached:
-        latest = cached[0].get("date", "")
-        if latest:
-            # Overlap past the latest cached date so the fetch window
-            # actually includes any new trading days since the last sync.
-            latest_dt = _safe_parse_date(latest)
-            start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
-        else:
-            start = _date_str(datetime.now() - timedelta(days=days + 30))
-        end = _date_str(datetime.now())
-    else:
-        latest = _cache.get_latest_date(code, market=market) or ""
-        if latest:
-            latest_dt = _safe_parse_date(latest)
-            start = _date_str(latest_dt - timedelta(days=cfg_get('kline_incremental_padding_days', 3)))
-        else:
-            start = _date_str(datetime.now() - timedelta(days=days + 30))
-        end = _date_str(datetime.now())
-    try:
-        new_data = _fetch_kline(code, market, start, end)
-        if new_data:
-            # Attach quality flags before upserting
-            new_data = _detect_quality_flags(new_data, market)
-            _cache.upsert_daily_price(new_data)
-            cached = _cache.get_daily_price(code, market=market)
-        else:
-            # API returned zero rows for the requested window (e.g. non-trading
-            # days, or the stock was suspended).  Fall back to the full cached
-            # set so callers still get the last-known-good data instead of [].
-            cached = cached or _cache.get_daily_price(code, market=market)
-    except Exception as exc:
-        logger.warning("get_kline fetch failed for %s: %s", code, exc)
-
-    if not cached:
-        _report_no_data(code, market, "K-line")
-    return cached[:days] if cached else []
+    from incremental_fetcher import get_kline_incremental
+    return get_kline_incremental(
+        code=code,
+        market=market,
+        days=days,
+        force_refresh=force_refresh,
+        full_history=full_history,
+        cached_only=cached_only,
+        detect_quality=_detect_quality_flags,
+    )
 
 
 def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str, Any]]:
@@ -2877,107 +2767,11 @@ def get_fund_nav(
 ) -> List[Dict[str, Any]]:
     """Get ETF-style NAV/history with incremental cache update.
 
-    Cache-first: checks row count AND date freshness.
-    - If cache has enough rows AND latest date is today, return immediately.
-    - Otherwise incrementally fetch from latest cached date up to today.
-    - Supports full_history mode for bootstrapping all available data.
-    - Falls back to cached data on fetch failure.
+    Delegates to IncrementalCacheFetcher to eliminate duplicated
+    cache-first + incremental-fetch logic.
     """
-    cached = _cache.get_fund_nav(code, days)
-    if cached_only:
-        return cached
-
-    today_str = _date_str(datetime.now())
-
-    # If full_history and cache is already complete, skip.
-    if full_history and not force_refresh:
-        if cached:
-            _dates = sorted(
-                str(r.get("date", "")).strip()
-                for r in cached
-                if str(r.get("date", "")).strip()
-            )
-            if _dates:
-                local_earliest = _dates[0]
-                local_latest = _dates[-1]
-                target_start = _cold_start_date(market)
-                if local_earliest <= target_start and local_latest == today_str:
-                    return cached
-
-    # Check both row count and date freshness (skip if forced refresh or full_history bootstrapping).
-    if not force_refresh and not full_history and len(cached) >= days:
-        latest_cached_date = cached[0].get("date", "")
-        if latest_cached_date and latest_cached_date == today_str:
-            return cached
-
-    # Compute incremental fetch range.
-    if cached:
-        _dates = sorted(
-            str(r.get("date", "")).strip()
-            for r in cached
-            if str(r.get("date", "")).strip()
-        )
-        if _dates:
-            local_earliest = _dates[0]
-            local_latest = _dates[-1]
-        else:
-            local_earliest = ""
-            local_latest = ""
-
-        if full_history:
-            target_start = _cold_start_date(market)
-            if local_earliest and local_earliest > target_start:
-                # Need to fetch earlier data
-                start = target_start
-                end = _date_str(_safe_parse_date(local_earliest) + timedelta(days=3))
-            else:
-                # Early data complete, only need to fetch up to today
-                start = _date_str(_safe_parse_date(local_latest) - timedelta(days=3))
-                end = today_str
-        else:
-            if local_latest:
-                start = _date_str(_safe_parse_date(local_latest) - timedelta(days=3))
-                end = today_str
-            else:
-                start = _date_str(datetime.now() - timedelta(days=days + 30))
-                end = today_str
-    else:
-        if full_history:
-            start = _cold_start_date(market)
-        else:
-            start = _date_str(datetime.now() - timedelta(days=days + 30))
-        end = today_str
-
-    try:
-        ak = _try_akshare()
-        if ak:
-            with _akshare_lock:
-                df = ak.stock_zh_a_daily(symbol=_sina_code(code, "A"), adjust="qfq")
-            if df is not None and not df.empty:
-                df["date"] = df["date"].astype(str)
-                clean_start = start.replace("-", "")
-                clean_end = end.replace("-", "")
-                dates_clean = df["date"].str.replace("-", "")
-                df = df[(dates_clean >= clean_start) & (dates_clean <= clean_end)]
-                rows = []
-                for _, r in df.iterrows():
-                    rows.append(
-                        {
-                            "code": code,
-                            "date": str(r.get("date", "")),
-                            "nav": safe_float(r.get("close", 0)),
-                            "acc_nav": 0.0,
-                        }
-                    )
-                if rows:
-                    _cache.upsert_fund_nav(rows)
-                    return _cache.get_fund_nav(code, days)
-    except RuntimeError as exc:
-        if "Daily API limit reached" not in str(exc):
-            logger.warning("get_fund_nav fetch failed for %s: %s", code, exc)
-    except Exception as exc:
-        logger.warning("get_fund_nav fetch failed for %s: %s", code, exc)
-    return cached
+    from incremental_fetcher import get_fund_nav_incremental
+    return get_fund_nav_incremental(code, days, cached_only, force_refresh, full_history)
 
 
 def get_etf_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
@@ -2996,52 +2790,11 @@ def get_market_index(
 ) -> List[Dict[str, Any]]:
     """Get market index K-line with incremental cache update.
 
-    Cache-first: always attempt to fetch up to today's date.
-    - If cached data is already up to today (and not forced), skip the API call.
-    - Otherwise, incrementally fetch from the day after the latest cached date
-      up to today. Falls back to cached data on fetch failure.
+    Delegates to IncrementalCacheFetcher to eliminate duplicated
+    cache-first + incremental-fetch logic.
     """
-    cached = _cache.get_market_index(index_code, days)
-    if cached_only:
-        return cached
-
-    today_str = _date_str(datetime.now())
-
-    # If cache is already up to today and not forced, skip API call.
-    if cached and not force_refresh:
-        latest_cached_date = cached[0].get("date", "")
-        if latest_cached_date == today_str:
-            return cached[:days]
-
-    # Incremental backfill: fetch from latest cached date up to today.
-    if cached:
-        latest = cached[0].get("date", "")
-        if latest:
-            latest_dt = _safe_parse_date(latest)
-            start = _date_str(latest_dt - timedelta(days=3))
-        else:
-            start = _date_str(datetime.now() - timedelta(days=days + 30))
-    else:
-        latest = _cache.get_latest_market_index_date(index_code) or ""
-        if latest:
-            latest_dt = _safe_parse_date(latest)
-            start = _date_str(latest_dt - timedelta(days=3))
-        else:
-            start = _date_str(datetime.now() - timedelta(days=days + 30))
-
-    # Always fetch up to today to get the latest trading day data.
-    end = today_str
-    try:
-        new_data = _fetch_market_index(index_code, start, end)
-        if new_data:
-            _cache.upsert_market_index(new_data)
-            cached = _cache.get_market_index(index_code, days)
-        else:
-            cached = cached or _cache.get_market_index(index_code, days)
-    except Exception as exc:
-        logger.warning("get_market_index fetch failed for %s: %s", index_code, exc)
-
-    return cached[:days] if cached else []
+    from incremental_fetcher import get_market_index_incremental
+    return get_market_index_incremental(index_code, days, cached_only, force_refresh)
 
 
 @_api_call("market_index")

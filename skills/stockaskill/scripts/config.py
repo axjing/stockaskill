@@ -1,5 +1,6 @@
 """Pure-Python config with dot-path access. No YAML dependency."""
 
+import copy
 import os
 import json
 from pathlib import Path
@@ -357,7 +358,7 @@ def load_config() -> Dict[str, Any]:
     global _cache
     if _cache is not None:
         return _cache
-    _cache = dict(_DEFAULTS)
+    _cache = copy.deepcopy(_DEFAULTS)
     config_path = os.environ.get("STOCKASKILL_CONFIG")
     if config_path and Path(config_path).is_file():
         with open(config_path) as f:
@@ -376,3 +377,19 @@ def get(key: str, default: Any = None) -> Any:
         else:
             return default
     return val
+
+
+def signal_from_score(score: float) -> str:
+    """Return 'BUY'/'SELL'/'HOLD' based on configured thresholds."""
+    buy = get("signal_thresholds.buy", 65)
+    sell = get("signal_thresholds.sell", 35)
+    if score >= buy:
+        return "BUY"
+    if score <= sell:
+        return "SELL"
+    return "HOLD"
+
+
+def signal_thresholds() -> dict:
+    """Return the full signal threshold config."""
+    return get("signal_thresholds", {"buy": 65, "sell": 35, "buy_consensus_count": 4})

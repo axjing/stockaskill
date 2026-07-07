@@ -73,6 +73,39 @@ def _board(code: str, market: str = "A") -> str:
     return "SZ"
 
 
+def diversify_by_board(
+    candidates: list,
+    code_key: str = "code",
+    max_per_board: int = 3,
+) -> list:
+    """Select candidates ensuring board diversity.
+
+    No more than ``max_per_board`` stocks from the same A-share board
+    (SH/STAR/SZ/SME/GEM/BJ). HK/US stocks are always accepted.
+
+    Args:
+        candidates: List of dicts or objects with a code field.
+        code_key: Key/attribute name for the stock code.
+        max_per_board: Max picks per board.
+
+    Returns:
+        Filtered list preserving original order within board limits.
+    """
+    from collections import Counter
+
+    result = []
+    board_counts: Counter = Counter()
+    for item in candidates:
+        code = item.get(code_key, "") if isinstance(item, dict) else getattr(item, code_key, "")
+        board = _board(code, "A")
+        if board in ("HK", "US"):
+            result.append(item)
+        elif board_counts[board] < max_per_board:
+            board_counts[board] += 1
+            result.append(item)
+    return result
+
+
 def contains_any_keyword(text: str, keywords: list[str]) -> bool:
     """Return True when *text* contains any keyword in *keywords*."""
     normalized = text.strip().lower()

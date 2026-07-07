@@ -114,18 +114,13 @@ class MomentumEnhancedStrategy(Strategy):
 
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        selected = []
-        board_count: Dict[str, int] = {}
-        for code, score in scored:
-            board = _board(code)
-            if board_count.get(board, 0) >= max_per_board:
-                continue
-            selected.append(code)
-            board_count[board] = board_count.get(board, 0) + 1
-            if len(selected) >= max_picks:
-                break
+        from utils import diversify_by_board
 
-        return selected
+        diversified = diversify_by_board(
+            [{"code": code, "score": s} for code, s in scored],
+            max_per_board=max_per_board,
+        )
+        return [item["code"] for item in diversified[:max_picks]]
 
     @staticmethod
     def get_etf_allocation() -> List[Dict[str, Any]]:

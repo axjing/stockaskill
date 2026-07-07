@@ -85,8 +85,27 @@ def _badge(score: float) -> str:
     return _DEFAULT_BADGE
 
 
+def _cmd_output(args: argparse.Namespace) -> tuple:
+    """Extract common output args from any cmd_* handler.
+
+    Returns (output_dir, fmt).
+    """
+    return (
+        getattr(args, "output_dir", "reports"),
+        getattr(args, "format", "both"),
+    )
+
+
+def _cmd_error(msg: str, show_traceback: bool = False) -> None:
+    """Print error to stderr, optionally with traceback."""
+    print(msg, file=sys.stderr)
+    if show_traceback:
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+
+
 from cache import get_cache  # noqa: E402
-from config import get as cfg_get  # noqa: E402
+from config import get as cfg_get, signal_from_score, signal_thresholds  # noqa: E402
 from data_engine import (  # noqa: E402
     get_etf_pool,
     get_fund_pool,
@@ -295,8 +314,7 @@ def cmd_route(args: argparse.Namespace) -> None:
     ]
     top_n = int(getattr(args, "top", 10) or 10)
     capital = float(getattr(args, "capital", 1_000_000) or 1_000_000)
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     try:
         recommendation = build_workflow_recommendation(
@@ -328,8 +346,7 @@ def cmd_route(args: argparse.Namespace) -> None:
 def cmd_workflow(args: argparse.Namespace) -> None:
     """List or resolve manifest-based workflow routines."""
     action = getattr(args, "action", "")
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     if action == "list":
         names = list_workflow_manifests()
@@ -384,8 +401,7 @@ def cmd_scorecard(args: argparse.Namespace) -> None:
     """Build scorecards for thesis, theme, or diagnosis artifacts."""
     action = getattr(args, "action", "")
     market = getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     if action == "thesis":
         thesis_id = str(getattr(args, "thesis_id", "") or "").strip()
@@ -477,8 +493,7 @@ def cmd_thesis(args: argparse.Namespace) -> None:
     """Manage local thesis memory and postmortem records."""
     action = getattr(args, "action", "")
     market = getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     if action == "capture":
         code = normalize_code_for_market(args.code, market)
@@ -614,8 +629,7 @@ def cmd_theme_scan(args: argparse.Namespace) -> None:
     market = getattr(args, "market", "A") or "A"
     top_n = int(getattr(args, "top", 3) or 3)
     candidate_limit = int(getattr(args, "candidates", 0) or 0)
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     print(f"Theme research: {theme} (market={market})")
     report = build_theme_report(
@@ -667,8 +681,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     """Analyze a single stock: K-line + valuation + fundamentals."""
     code = args.code
     market = getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     print(f"Analyzing {code} (market={market})...")
 
     ensure_symbol_analysis_ready(code, market)
@@ -735,8 +748,7 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
     """Deep diagnosis: strategy + sentiment + risk."""
     code = args.code
     market = getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     print(f"Diagnosing {code} (market={market})...")
 
     try:
@@ -764,8 +776,7 @@ def cmd_deep_diagnose(args: argparse.Namespace) -> None:
     """Run a heavier long-form single-symbol diagnosis."""
     code = args.code
     market = getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     print(f"Deep diagnosing {code} (market={market})...")
 
     try:
@@ -811,8 +822,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
     """Scan market for top stocks."""
     market = args.market
     top_n = args.top or 20
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     if market == "FUND":
         print("Scanning ETFs...")
@@ -1016,8 +1026,7 @@ def cmd_refresh_scan(args: argparse.Namespace) -> None:
     """Build a full-market local scan snapshot and print the top results."""
     market = args.market
     top_n = args.top or 20
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     print(f"Refreshing full-market snapshot for {market}...", flush=True)
     regime = _safe_market_regime(market)
     print("  " + summarize_market_regime(regime), flush=True)
@@ -1080,8 +1089,7 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
     codes = [c.strip() for c in args.codes.split(",") if c.strip()]
     capital = args.capital or 1000000
     market = getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     print(f"Building portfolio with {len(codes)} stocks, capital={capital:,.0f}")
     regime = _safe_market_regime(market)
@@ -1181,8 +1189,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
 def cmd_sync(args: argparse.Namespace) -> None:
     """Synchronize bounded local data for a specific scope."""
     sync_type = args.type
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     market = getattr(args, "market", "A") or "A"
     history_days = getattr(args, "days", 365) or 365
     need_fundamentals = not bool(getattr(args, "skip_fundamentals", False))
@@ -1645,8 +1652,7 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     """Alpha momentum scan: rank stocks by optimized multi-factor strategy."""
     market = args.market
     top_n = args.top or 10
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     print(f"Alpha Momentum scan on {market}, top {top_n}...")
     regime = _safe_market_regime(market)
@@ -1766,8 +1772,7 @@ def cmd_alpha(args: argparse.Namespace) -> None:
 
 def cmd_backtest(args: argparse.Namespace) -> None:
     """Run Alpha Momentum backtest (2018-2026)."""
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     market = getattr(args, "market", "A") or "A"
     print(f"Running Alpha Momentum backtest ({market})...")
     try:
@@ -1825,8 +1830,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
 def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
     """Run Enhanced Core-Satellite backtest (2018-2026)."""
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     print("Running Enhanced Core-Satellite backtest...")
     try:
         import importlib
@@ -1861,8 +1865,7 @@ def cmd_backtest_enhanced(args: argparse.Namespace) -> None:
 def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
     """Build ETF(3) + Alpha Momentum Top3 = 6 positions portfolio."""
     capital = args.capital or 1000000
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
     print(f"Building Enhanced Core-Satellite portfolio, capital={capital:,.0f}")
     regime = _safe_market_regime("A")
     print("  " + summarize_market_regime(regime))
@@ -1939,7 +1942,7 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
             metadata={"command": "portfolio-enhanced"},
         )
     except Exception as exc:
-        print(f"Enhanced portfolio build failed: {exc}")
+        _cmd_error(f"Enhanced portfolio build failed: {exc}")
 
 
 def cmd_scheduler(args: argparse.Namespace) -> None:
@@ -1994,8 +1997,7 @@ def cmd_cache(args: argparse.Namespace) -> None:
 def cmd_market_regime(args: argparse.Namespace) -> None:
     """Analyze current market posture and risk budget."""
     market = getattr(args, "market_flag", None) or getattr(args, "market", "A") or "A"
-    output_dir = getattr(args, "output_dir", "reports")
-    fmt = getattr(args, "format", "both")
+    output_dir, fmt = _cmd_output(args)
 
     regime = analyze_market_regime(market)
     print(summarize_market_regime(regime))
@@ -2048,787 +2050,31 @@ def cmd_market_regime(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AKShare Stock Selection System")
-    sub = parser.add_subparsers(dest="command", required=True)
+    from cli import build_parser
 
-    for command_name in ("route", "recommend"):
-        p = sub.add_parser(
-            command_name,
-            help="Recommend a bounded workflow for a user goal",
-        )
-        p.add_argument(
-            "goal",
-            nargs="*",
-            help="Natural-language goal, e.g. find opportunities or review a symbol",
-        )
-        p.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
-        p.add_argument("--code", default="", help="Single symbol for analysis flows")
-        p.add_argument(
-            "--codes",
-            default="",
-            help="Comma-separated symbol codes for portfolio flows",
-        )
-        p.add_argument("--top", type=int, default=10, help="Top candidate count")
-        p.add_argument(
-            "--capital",
-            type=float,
-            default=1000000,
-            help="Portfolio capital used in examples",
-        )
-        p.add_argument(
-            "--output-dir",
-            default="reports",
-            help="Report output directory",
-        )
-        p.add_argument(
-            "--format",
-            choices=["json", "md", "both", "none"],
-            default="both",
-            help="Report output format",
-        )
-        p.set_defaults(func=cmd_route)
-
-    p = sub.add_parser("workflow", help="Manifest-based workflow routines")
-    workflow_sub = p.add_subparsers(dest="action", required=True)
-
-    p_workflow_list = workflow_sub.add_parser(
-        "list",
-        help="List available workflow manifests",
+    parser = build_parser(
+        cmd_route=cmd_route,
+        cmd_workflow=cmd_workflow,
+        cmd_scorecard=cmd_scorecard,
+        cmd_thesis=cmd_thesis,
+        cmd_theme_scan=cmd_theme_scan,
+        cmd_analyze=cmd_analyze,
+        cmd_diagnose=cmd_diagnose,
+        cmd_deep_diagnose=cmd_deep_diagnose,
+        cmd_scan=cmd_scan,
+        cmd_refresh_scan=cmd_refresh_scan,
+        cmd_portfolio=cmd_portfolio,
+        cmd_market_regime=cmd_market_regime,
+        cmd_fetch=cmd_fetch,
+        cmd_sync=cmd_sync,
+        cmd_status=cmd_status,
+        cmd_alpha=cmd_alpha,
+        cmd_backtest=cmd_backtest,
+        cmd_backtest_enhanced=cmd_backtest_enhanced,
+        cmd_portfolio_enhanced=cmd_portfolio_enhanced,
+        cmd_scheduler=cmd_scheduler,
+        cmd_cache=cmd_cache,
     )
-    p_workflow_list.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_workflow_list.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_workflow_list.set_defaults(func=cmd_workflow)
-
-    p_workflow_run = workflow_sub.add_parser(
-        "run",
-        help="Resolve one workflow manifest into a concrete routine",
-    )
-    p_workflow_run.add_argument("name", help="Workflow manifest name")
-    p_workflow_run.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p_workflow_run.add_argument("--code", default="", help="Single symbol code")
-    p_workflow_run.add_argument(
-        "--codes",
-        default="",
-        help="Comma-separated symbol codes",
-    )
-    p_workflow_run.add_argument(
-        "--theme",
-        nargs="*",
-        default=[],
-        help="Theme name for theme research routines",
-    )
-    p_workflow_run.add_argument("--top", type=int, default=10)
-    p_workflow_run.add_argument("--capital", type=float, default=1000000)
-    p_workflow_run.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_workflow_run.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_workflow_run.set_defaults(func=cmd_workflow)
-
-    p = sub.add_parser("scorecard", help="Build scorecards for research artifacts")
-    scorecard_sub = p.add_subparsers(dest="action", required=True)
-
-    p_scorecard_thesis = scorecard_sub.add_parser(
-        "thesis",
-        help="Build a scorecard for a saved thesis record",
-    )
-    p_scorecard_thesis.add_argument("--thesis-id", default="", help="Saved thesis id")
-    p_scorecard_thesis.add_argument("--code", default="", help="Code for latest thesis")
-    p_scorecard_thesis.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p_scorecard_thesis.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_scorecard_thesis.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_scorecard_thesis.set_defaults(func=cmd_scorecard)
-
-    p_scorecard_theme = scorecard_sub.add_parser(
-        "theme",
-        help="Build a scorecard for a theme research report",
-    )
-    p_scorecard_theme.add_argument("theme", nargs="+", help="Theme name")
-    p_scorecard_theme.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p_scorecard_theme.add_argument("--top", type=int, default=3)
-    p_scorecard_theme.add_argument("--candidates", type=int, default=0)
-    p_scorecard_theme.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_scorecard_theme.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_scorecard_theme.set_defaults(func=cmd_scorecard)
-
-    p_scorecard_diagnose = scorecard_sub.add_parser(
-        "diagnose",
-        help="Build a scorecard for a diagnosis report",
-    )
-    p_scorecard_diagnose.add_argument("code", help="Stock code")
-    p_scorecard_diagnose.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p_scorecard_diagnose.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_scorecard_diagnose.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_scorecard_diagnose.set_defaults(func=cmd_scorecard)
-
-    p = sub.add_parser("thesis", help="Manage local thesis memory")
-    thesis_sub = p.add_subparsers(dest="action", required=True)
-
-    p_thesis_capture = thesis_sub.add_parser(
-        "capture",
-        help="Run diagnosis and persist a thesis record",
-    )
-    p_thesis_capture.add_argument("code", help="Stock code")
-    p_thesis_capture.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p_thesis_capture.add_argument(
-        "--status",
-        default="active",
-        choices=["active", "watch", "closed"],
-        help="Initial thesis status",
-    )
-    p_thesis_capture.add_argument("--notes", default="", help="Optional thesis note")
-    p_thesis_capture.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_thesis_capture.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_thesis_capture.set_defaults(func=cmd_thesis)
-
-    p_thesis_list = thesis_sub.add_parser(
-        "list",
-        help="List saved thesis records",
-    )
-    p_thesis_list.add_argument("--market", default="", help="Filter by market")
-    p_thesis_list.add_argument("--code", default="", help="Filter by code")
-    p_thesis_list.add_argument(
-        "--status",
-        default="",
-        choices=["", "active", "watch", "closed"],
-        help="Filter by thesis status",
-    )
-    p_thesis_list.add_argument("--limit", type=int, default=10)
-    p_thesis_list.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_thesis_list.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_thesis_list.set_defaults(func=cmd_thesis)
-
-    p_thesis_review = thesis_sub.add_parser(
-        "review",
-        help="Review a saved thesis record",
-    )
-    p_thesis_review.add_argument("--thesis-id", default="", help="Saved thesis id")
-    p_thesis_review.add_argument("--code", default="", help="Code for latest thesis")
-    p_thesis_review.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p_thesis_review.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_thesis_review.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_thesis_review.set_defaults(func=cmd_thesis)
-
-    p_thesis_postmortem = thesis_sub.add_parser(
-        "postmortem",
-        help="Attach a postmortem to a saved thesis record",
-    )
-    p_thesis_postmortem.add_argument(
-        "--thesis-id",
-        default="",
-        help="Saved thesis id",
-    )
-    p_thesis_postmortem.add_argument(
-        "--code",
-        default="",
-        help="Code for latest thesis",
-    )
-    p_thesis_postmortem.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US)",
-    )
-    p_thesis_postmortem.add_argument(
-        "--outcome",
-        required=True,
-        choices=["win", "loss", "neutral"],
-        help="Outcome classification",
-    )
-    p_thesis_postmortem.add_argument("--notes", default="", help="Review notes")
-    p_thesis_postmortem.add_argument(
-        "--status",
-        default="closed",
-        choices=["watch", "closed"],
-        help="Final thesis status",
-    )
-    p_thesis_postmortem.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_thesis_postmortem.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_thesis_postmortem.set_defaults(func=cmd_thesis)
-
-    p = sub.add_parser("theme-scan", help="Run local-first theme research")
-    p.add_argument("theme", nargs="+", help="Theme name, e.g. AI基础设施 or 机器人")
-    p.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p.add_argument("--top", type=int, default=3, help="Top layers/candidates to print")
-    p.add_argument(
-        "--candidates",
-        type=int,
-        default=0,
-        help="Max pool candidates to inspect before theme mapping (0=auto)",
-    )
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_theme_scan)
-
-    # analyze
-    p = sub.add_parser("analyze", help="Analyze a single stock")
-    p.add_argument("code", help="Stock code")
-    p.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_analyze)
-
-    # diagnose
-    p = sub.add_parser("diagnose", help="Deep stock diagnosis")
-    p.add_argument("code", help="Stock code")
-    p.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_diagnose)
-
-    p = sub.add_parser("deep-diagnose", help="Long-form stock deep diagnosis")
-    p.add_argument("code", help="Stock code")
-    p.add_argument("--market", default="A", help="Market (A/HK/US)")
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_deep_diagnose)
-
-    # scan
-    p = sub.add_parser("scan", help="Scan market for top stocks")
-    p.add_argument("market", help="Market (A/HK/US/FUND)")
-    p.add_argument("--top", type=int, default=20, help="Number of results")
-    p.add_argument(
-        "--candidates",
-        type=int,
-        default=0,
-        help="Realtime mode only: max candidates to evaluate (0=auto)",
-    )
-    p.add_argument(
-        "--mode",
-        choices=["auto", "snapshot", "realtime"],
-        default="auto",
-        help=(
-            "Auto prefers a fresh full-market snapshot and falls back to bounded "
-            "realtime candidate scoring when needed."
-        ),
-    )
-    p.add_argument(
-        "--refresh",
-        action="store_true",
-        help="Refresh the full-market snapshot before reading results.",
-    )
-    p.add_argument(
-        "--include-incomplete",
-        action="store_true",
-        help="Include ineligible/incomplete rows in snapshot output for debugging.",
-    )
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_scan)
-
-    # refresh-scan
-    p = sub.add_parser(
-        "refresh-scan",
-        help="Build a full-market local scan snapshot and print the latest ranking",
-    )
-    p.add_argument("market", help="Market (A/HK/US)")
-    p.add_argument("--top", type=int, default=20, help="Number of results")
-    p.add_argument(
-        "--include-incomplete",
-        action="store_true",
-        help="Include ineligible/incomplete rows in snapshot output for debugging.",
-    )
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_refresh_scan)
-
-    # portfolio
-    p = sub.add_parser("portfolio", help="Build investment portfolio")
-    p.add_argument("--codes", required=True, help="Comma-separated stock codes")
-    p.add_argument("--capital", type=float, default=1000000)
-    p.add_argument("--market", default="A")
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_portfolio)
-
-    # market-regime
-    p = sub.add_parser("market-regime", help="Analyze current market posture")
-    p.add_argument(
-        "market",
-        nargs="?",
-        default="A",
-        choices=["A", "HK", "US"],
-        help="Market to analyze (positional or --market)",
-    )
-    p.add_argument(
-        "--market",
-        dest="market_flag",
-        default=None,
-        choices=["A", "HK", "US"],
-        help="Market to analyze (named alternative)",
-    )
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_market_regime)
-
-    # fetch
-    p = sub.add_parser("fetch", help="Refresh data")
-    p.add_argument("type", choices=["pool", "kline", "fundamentals"])
-    p.add_argument(
-        "code", nargs="?", default="", help="Stock code (for kline/fundamentals)"
-    )
-    p.add_argument("--market", default="A")
-    p.set_defaults(func=cmd_fetch)
-
-    # sync
-    p = sub.add_parser("sync", help="Synchronize bounded local data")
-    sync_sub = p.add_subparsers(dest="type", required=True)
-
-    p_sync_symbol = sync_sub.add_parser("symbol", help="Synchronize one symbol")
-    p_sync_symbol.add_argument("code", help="Symbol code")
-    p_sync_symbol.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_sync_symbol.add_argument(
-        "--days",
-        type=int,
-        default=365,
-        help="Target history days",
-    )
-    p_sync_symbol.add_argument(
-        "--skip-fundamentals",
-        action="store_true",
-        help="Skip fundamentals sync for this symbol.",
-    )
-    p_sync_symbol.add_argument(
-        "--full-history",
-        action="store_true",
-        help="Attempt to fetch the symbol's full available history.",
-    )
-    p_sync_symbol.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_sync_symbol.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_sync_symbol.set_defaults(func=cmd_sync)
-
-    p_sync_watchlist = sync_sub.add_parser(
-        "watchlist",
-        help="Synchronize configured watchlist",
-    )
-    p_sync_watchlist.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_sync_watchlist.add_argument(
-        "--days",
-        type=int,
-        default=365,
-        help="Target history days",
-    )
-    p_sync_watchlist.add_argument(
-        "--skip-fundamentals",
-        action="store_true",
-        help="Skip fundamentals sync for this scope.",
-    )
-    p_sync_watchlist.add_argument("--full-history", action="store_true")
-    p_sync_watchlist.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_sync_watchlist.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_sync_watchlist.set_defaults(func=cmd_sync)
-
-    p_sync_portfolio = sync_sub.add_parser(
-        "portfolio",
-        help="Synchronize a portfolio code list",
-    )
-    p_sync_portfolio.add_argument(
-        "--codes",
-        required=True,
-        help="Comma-separated symbol codes",
-    )
-    p_sync_portfolio.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_sync_portfolio.add_argument(
-        "--days",
-        type=int,
-        default=365,
-        help="Target history days",
-    )
-    p_sync_portfolio.add_argument(
-        "--skip-fundamentals",
-        action="store_true",
-        help="Skip fundamentals sync for this scope.",
-    )
-    p_sync_portfolio.add_argument("--full-history", action="store_true")
-    p_sync_portfolio.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_sync_portfolio.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_sync_portfolio.set_defaults(func=cmd_sync)
-
-    p_sync_etf = sync_sub.add_parser(
-        "etf",
-        help="Synchronize a bounded ETF code list",
-    )
-    p_sync_etf.add_argument(
-        "--codes",
-        required=True,
-        help="Comma-separated ETF codes",
-    )
-    p_sync_etf.add_argument(
-        "--days",
-        type=int,
-        default=365,
-        help="Target history days",
-    )
-    p_sync_etf.add_argument(
-        "--skip-fundamentals",
-        action="store_true",
-        help="Skip fundamentals sync (ETF only has NAV).",
-    )
-    p_sync_etf.add_argument("--full-history", action="store_true")
-    p_sync_etf.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_sync_etf.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_sync_etf.set_defaults(func=cmd_sync)
-
-    p_sync_scan = sync_sub.add_parser(
-        "scan-universe",
-        help="Synchronize a bounded candidate universe for scanning",
-    )
-    p_sync_scan.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_sync_scan.add_argument(
-        "--limit",
-        type=int,
-        default=200,
-        help="Max candidate symbols",
-    )
-    p_sync_scan.add_argument(
-        "--days",
-        type=int,
-        default=365,
-        help="Target history days",
-    )
-    p_sync_scan.add_argument(
-        "--skip-fundamentals",
-        action="store_true",
-        help="Skip fundamentals sync for this scope.",
-    )
-    p_sync_scan.add_argument("--full-history", action="store_true")
-    p_sync_scan.add_argument(
-        "--output-dir",
-        default="reports",
-        help="Report output directory",
-    )
-    p_sync_scan.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p_sync_scan.set_defaults(func=cmd_sync)
-
-    # status
-    p = sub.add_parser("status", help="Show data sync status")
-    status_sub = p.add_subparsers(dest="status_command", required=True)
-    p_status_data = status_sub.add_parser(
-        "data",
-        help="Show bounded sync-state diagnostics",
-    )
-    data_sub = p_status_data.add_subparsers(dest="type", required=True)
-
-    p_status_symbol = data_sub.add_parser("symbol", help="Show symbol sync state")
-    p_status_symbol.add_argument("code", help="Symbol code")
-    p_status_symbol.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
-    p_status_symbol.set_defaults(func=cmd_status)
-
-    p_status_watchlist = data_sub.add_parser(
-        "watchlist",
-        help="Show watchlist sync state",
-    )
-    p_status_watchlist.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_status_watchlist.set_defaults(func=cmd_status)
-
-    p_status_portfolio = data_sub.add_parser(
-        "portfolio",
-        help="Show portfolio sync state",
-    )
-    p_status_portfolio.add_argument(
-        "--codes",
-        required=True,
-        help="Comma-separated symbol codes",
-    )
-    p_status_portfolio.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_status_portfolio.set_defaults(func=cmd_status)
-
-    p_status_etf = data_sub.add_parser(
-        "etf",
-        help="Show ETF sync state",
-    )
-    p_status_etf.add_argument(
-        "--codes",
-        required=True,
-        help="Comma-separated ETF codes",
-    )
-    p_status_etf.set_defaults(func=cmd_status)
-
-    p_status_scan = data_sub.add_parser(
-        "scan-universe",
-        help="Show scan-universe sync state",
-    )
-    p_status_scan.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_status_scan.add_argument(
-        "--limit",
-        type=int,
-        default=200,
-        help="Candidate scope size used during sync.",
-    )
-    p_status_scan.set_defaults(func=cmd_status)
-
-    p_status_pool = data_sub.add_parser(
-        "pool",
-        help="Show pool metadata and refresh state",
-    )
-    p_status_pool.add_argument(
-        "--market",
-        default="A",
-        help="Market (A/HK/US/FUND)",
-    )
-    p_status_pool.set_defaults(func=cmd_status)
-
-    # alpha
-    p = sub.add_parser("alpha", help="Alpha momentum stock scan")
-    p.add_argument("market", default="A", nargs="?", help="Market (A/HK/US)")
-    p.add_argument("--top", type=int, default=10, help="Number of results")
-    p.add_argument(
-        "--candidates", type=int, default=0, help="Max candidates to evaluate (0=auto)"
-    )
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_alpha)
-
-    # backtest
-    p = sub.add_parser("backtest", help="Run Alpha Momentum backtest (2018-2026)")
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.add_argument(
-        "--market",
-        default="A",
-        choices=["A", "HK", "US"],
-        help="Market to backtest",
-    )
-    p.set_defaults(func=cmd_backtest)
-
-    # backtest-enhanced
-    p = sub.add_parser(
-        "backtest-enhanced", help="Run Enhanced Core-Satellite backtest (2018-2026)"
-    )
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_backtest_enhanced)
-
-    # portfolio-enhanced
-    p = sub.add_parser(
-        "portfolio-enhanced", help="ETF(3)+Alpha Momentum Top3 = 6 positions"
-    )
-    p.add_argument("--capital", type=float, default=1000000)
-    p.add_argument("--output-dir", default="reports", help="Report output directory")
-    p.add_argument(
-        "--format",
-        choices=["json", "md", "both", "none"],
-        default="both",
-        help="Report output format",
-    )
-    p.set_defaults(func=cmd_portfolio_enhanced)
-
-    # scheduler
-    p = sub.add_parser("scheduler", help="Run scheduled analysis")
-    p.add_argument("--run-now", action="store_true")
-    p.set_defaults(func=cmd_scheduler)
-
-    # cache
-    p = sub.add_parser("cache", help="Cache management")
-    cache_sub = p.add_subparsers(dest="action", required=True)
-    p_stats = cache_sub.add_parser("stats", help="Show cache statistics")
-    p_stats.set_defaults(func=cmd_cache)
-    p_clean = cache_sub.add_parser("cleanup", help="Clean old cache entries")
-    p_clean.add_argument("--days", type=int, default=30, help="Max age in days")
-    p_clean.set_defaults(func=cmd_cache)
-
     args = parser.parse_args()
     args.func(args)
 
