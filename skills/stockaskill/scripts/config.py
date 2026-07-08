@@ -49,7 +49,7 @@ _DEFAULTS: Dict[str, Any] = {
         "scan_snapshot": 86400,
     },
     "daily_api_limit": 500,
-    "scan_max_candidates": 200,
+    "scan_max_candidates": 0,  # 0 = full market scan, no limit
     "data_readiness": {
         "analysis_history_days": 365,
         "analysis_fundamentals_max_age_days": 120,

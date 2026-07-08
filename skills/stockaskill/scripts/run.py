@@ -1659,7 +1659,7 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     print("  " + summarize_market_regime(regime))
     try:
         pool = get_stock_pool(market)
-        max_candidates = getattr(args, "candidates", 0) or cfg_get("scan_max_candidates", 200)
+        max_candidates = getattr(args, "candidates", 0) or cfg_get("scan_max_candidates", 0)
         candidates = pool[:max_candidates]
 
         # Concurrent pre-sync: fetch missing kline + fundamentals in parallel

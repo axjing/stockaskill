@@ -55,7 +55,7 @@ class MarketScanner:
         if not pool:
             return []
 
-        limit = max_candidates or cfg_get("scan_max_candidates", 200)
+        limit = max_candidates or cfg_get("scan_max_candidates", 0)
         metadata_limit = cfg_get(
             "data_readiness.scan_pool_metadata_limit",
             limit,
@@ -83,7 +83,7 @@ class MarketScanner:
         if not pre_candidates:
             return []
 
-        metadata_candidates = pre_candidates[: max(metadata_limit, limit)]
+        metadata_candidates = pre_candidates[: max(metadata_limit, limit)] if limit else pre_candidates[:]
         metadata_status = ensure_stock_pool_candidates_ready(
             market,
             [str(stock.get("code", "")) for stock in metadata_candidates],
@@ -158,7 +158,7 @@ class MarketScanner:
                 flush=True,
             )
 
-        candidates = filtered[:limit]
+        candidates = filtered[:limit] if limit else filtered[:]
 
         n = len(candidates)
         if n == 0:
