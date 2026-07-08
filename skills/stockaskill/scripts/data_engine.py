@@ -1075,8 +1075,6 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                 return result
         except Exception as exc:
             logger.debug("OpenBB kline failed for %s: %s", code, exc)
-        except Exception as exc:
-            logger.debug("yfinance kline failed for %s: %s", code, exc)
     _report_no_data(code, market, "K-line")
     return []
 

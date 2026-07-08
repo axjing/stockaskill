@@ -5,8 +5,8 @@ from typing import Any, Dict, List
 import pytest
 
 _repo_root = Path(__file__).resolve().parent.parent
-_scripts = _repo_root / "stockaskill" / "scripts"
-_skill_root = _repo_root / "stockaskill"
+_scripts = _repo_root / "skills" / "stockaskill" / "scripts"
+_skill_root = _repo_root / "skills" / "stockaskill"
 
 if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))

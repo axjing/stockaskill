@@ -304,8 +304,7 @@ class FundNavFetcher(IncrementalCacheFetcher):
         """Inline fetch logic for fund NAV (uses AKShare stock_zh_a_daily)."""
         import logging
         logger = logging.getLogger(__name__)
-        from config import get as cfg_get
-        from data_engine import _try_akshare
+        from data_engine import _try_akshare, _akshare_lock
 
         ak = _try_akshare()
         if not ak:
@@ -313,8 +312,6 @@ class FundNavFetcher(IncrementalCacheFetcher):
 
         # Fund NAV uses A-share daily data with forward adjustment
         from data_engine import _sina_code
-        import threading
-        _akshare_lock = threading.RLock()
 
         try:
             with _akshare_lock:
