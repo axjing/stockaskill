@@ -2811,12 +2811,21 @@ def get_market_index(
 
 @_api_call("market_index")
 def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str, Any]]:
-    """Fetch market index via Sina with date-range filtering."""
+    """Fetch market index via Sina with date-range filtering.
+
+    Supports both Shanghai (6xxxxx, 00xxxx starting with 000) and
+    Shenzhen (39xxxx, 399xxx) indices.
+    """
     ak = _try_akshare()
     if ak is None:
         return []
+    # Auto-detect exchange prefix for Shenzhen vs Shanghai indices
+    if index_code.startswith(("39", "15")):
+        prefix = "sz"
+    else:
+        prefix = "sh"
     try:
-        df = ak.stock_zh_index_daily(symbol=f"sh{index_code}")
+        df = ak.stock_zh_index_daily(symbol=f"{prefix}{index_code}")
         if df is None or df.empty:
             return []
 

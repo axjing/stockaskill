@@ -301,42 +301,50 @@ class FundNavFetcher(IncrementalCacheFetcher):
         get_cache().upsert_fund_nav(rows)
 
     def fetch(self, start: str, end: str) -> List[Dict[str, Any]]:
-        """Inline fetch logic for fund NAV (uses AKShare stock_zh_a_daily)."""
+        """Fetch ETF/fund NAV history via AKShare fund_etf_fund_info_em."""
         import logging
         logger = logging.getLogger(__name__)
-        from data_engine import _try_akshare, _akshare_lock
+        from data_engine import _try_akshare, _akshare_lock, safe_float
 
         ak = _try_akshare()
         if not ak:
             return []
 
-        # Fund NAV uses A-share daily data with forward adjustment
-        from data_engine import _sina_code
-
         try:
             with _akshare_lock:
-                df = ak.stock_zh_a_daily(symbol=_sina_code(self.code, "A"), adjust="qfq")
+                df = ak.fund_etf_fund_info_em(fund=self.code)
             if df is None or df.empty:
                 return []
 
-            df["date"] = df["date"].astype(str)
+            # Column names: 净值日期, 单位净值, 累计净值, ...
+            col_map = {}
+            for col in df.columns:
+                if "净值日期" in col or "date" in col.lower():
+                    col_map[col] = "date"
+                elif "单位净值" in col or "unit" in col.lower():
+                    col_map[col] = "nav"
+                elif "累计净值" in col or "accum" in col.lower():
+                    col_map[col] = "acc_nav"
+            df = df.rename(columns=col_map)
+
+            if "date" not in df.columns:
+                return []
+
+            df["date"] = df["date"].astype(str).str.replace("-", "")
             clean_start = start.replace("-", "")
             clean_end = end.replace("-", "")
-            dates_clean = df["date"].str.replace("-", "")
-            df = df[(dates_clean >= clean_start) & (dates_clean <= clean_end)]
+            mask = (df["date"] >= clean_start) & (df["date"] <= clean_end)
+            df = df[mask]
 
             rows = []
             for _, r in df.iterrows():
                 rows.append({
                     "code": self.code,
                     "date": str(r.get("date", "")),
-                    "nav": float(r.get("close", 0) or 0),
-                    "acc_nav": 0.0,
+                    "nav": safe_float(r.get("nav", 0)),
+                    "acc_nav": safe_float(r.get("acc_nav", 0)),
                 })
             return rows
-        except RuntimeError as exc:
-            if "Daily API limit reached" not in str(exc):
-                logger.warning("FundNavFetcher fetch failed for %s: %s", self.code, exc)
         except Exception as exc:
             logger.warning("FundNavFetcher fetch failed for %s: %s", self.code, exc)
         return []
