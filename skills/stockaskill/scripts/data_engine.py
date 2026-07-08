@@ -412,11 +412,21 @@ def _try_baostock() -> Optional[Any]:
         return None
 
 
+_openbb_cache: Optional[Any] = None
+
+
 def _try_openbb() -> Optional[Any]:
-    """Import OpenBB, return obb object or None."""
+    """Import OpenBB, return obb object or None.
+
+    Cached at module level to avoid repeated extension installation.
+    """
+    global _openbb_cache
+    if _openbb_cache is not None:
+        return _openbb_cache
     try:
         from openbb import obb
 
+        _openbb_cache = obb
         return obb
     except Exception:
         # Catch all errors, not just ImportError — OpenBB may fail on
@@ -1023,7 +1033,7 @@ def get_kline(
 
 
 def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str, Any]]:
-    """Fetch K-line with true fallback: AKShare -> baostock -> efinance -> OpenBB -> yfinance."""
+    """Fetch K-line with true fallback: AKShare -> baostock -> efinance -> yfinance -> OpenBB."""
     ak = _try_akshare()
     if ak is not None:
         try:
@@ -1048,6 +1058,15 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                 return result
         except Exception as exc:
             logger.debug("efinance kline failed for %s: %s", code, exc)
+    # yfinance before OpenBB for HK/US — lighter and more stable
+    yf = _try_yfinance()
+    if yf is not None and market in ("HK", "US"):
+        try:
+            result = _fetch_kline_yfinance(code, market, start, end, yf)
+            if result:
+                return result
+        except Exception as exc:
+            logger.debug("yfinance kline failed for %s: %s", code, exc)
     obb = _try_openbb()
     if obb is not None and market in ("HK", "US"):
         try:
@@ -1056,12 +1075,6 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                 return result
         except Exception as exc:
             logger.debug("OpenBB kline failed for %s: %s", code, exc)
-    yf = _try_yfinance()
-    if yf is not None and market in ("HK", "US"):
-        try:
-            result = _fetch_kline_yfinance(code, market, start, end, yf)
-            if result:
-                return result
         except Exception as exc:
             logger.debug("yfinance kline failed for %s: %s", code, exc)
     _report_no_data(code, market, "K-line")
@@ -1716,14 +1729,15 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     if result:
         _backfill_valuation_from_price(result, code, market)
         return result
-    obb = _try_openbb()
-    if obb is not None and market in ("HK", "US"):
-        result = _fetch_fundamentals_openbb(code, market, obb)
-        if result:
-            return result
+    # yfinance first for HK/US — lighter, more stable than OpenBB
     yf = _try_yfinance()
     if yf is not None and market in ("HK", "US"):
         result = _fetch_fundamentals_yfinance(code, market, yf)
+        if result:
+            return result
+    obb = _try_openbb()
+    if obb is not None and market in ("HK", "US"):
+        result = _fetch_fundamentals_openbb(code, market, obb)
         if result:
             return result
     _report_no_data(code, market, "fundamentals")
