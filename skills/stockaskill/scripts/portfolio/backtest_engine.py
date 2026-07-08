@@ -15,7 +15,7 @@ from factors.low_vol import LowVolFactor
 from factors.momentum import MomentumFactor
 from factors.quality import QualityFactor
 from factors.value import ValueFactor
-from utils import _board, is_st
+from utils import is_st
 
 from portfolio.risk import RiskMetrics
 
@@ -387,10 +387,6 @@ class AlphaMomentumBacktest:
         return positions, cash
 
     # -- Diversification -----------------------------------------------------
-
-    @staticmethod
-    def _board(code: str, market: str = "A") -> str:
-        return _board(code, market=market)
 
     def _select_diversified(self, scored: List[Tuple[str, float]]) -> List[str]:
         """Select top stocks with board diversification."""

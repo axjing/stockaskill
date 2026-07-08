@@ -17,7 +17,7 @@ Factor weights (optimized for higher target return):
 from typing import Any, Dict, List
 
 from strategies.base import Strategy
-from utils import _board  # noqa: E402
+from utils import diversify_by_board  # noqa: E402
 
 LOW_VOL_MIN = 0.40
 

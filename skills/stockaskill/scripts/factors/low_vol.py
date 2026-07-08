@@ -32,7 +32,7 @@ class LowVolFactor(Factor):
         if len(closes) < 240:
             return 0.5
 
-        returns = np.diff(np.array(closes)) / np.array(closes[1:])
+        returns = np.diff(np.array(closes)) / np.array(closes[:-1])
         returns = returns[~np.isnan(returns)]
         returns = returns[~np.isinf(returns)]
 

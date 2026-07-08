@@ -147,7 +147,7 @@ def run_backtest():
         fund = fc.get(code, {})
         try:
             s = mf.compute(fund, kslice, "A")
-            lv = lf.compute(kslice, "A")
+            lv = lf.compute(fund, kslice, "A")
             q = qf.compute(fund, kslice, "A")
             v = vf.compute(fund, kslice, "A")
             g = gf.compute(fund, kslice, "A")
