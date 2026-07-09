@@ -523,8 +523,8 @@ class TestMarketScanner:
             }
         )
         output = capsys.readouterr().out
-        assert "Candidate readiness: ready=2/3" in output
-        assert "Candidate missing data: 000001" in output
+        assert "候选就绪: ready=2/3" in output
+        assert "缺失数据: 000001" in output
 
     def test_print_pool_metadata_status_includes_completeness(self, capsys):
         from advisor.scanner import MarketScanner
@@ -543,9 +543,9 @@ class TestMarketScanner:
             }
         )
         output = capsys.readouterr().out
-        assert "complete=2" in output
-        assert "partial=1" in output
-        assert "inactive=1" in output
+        assert "完整=2" in output
+        assert "部分=1" in output
+        assert "未激活=1" in output
 
     def test_print_metadata_quality_summary(self, capsys):
         from advisor.scanner import MarketScanner
@@ -555,7 +555,9 @@ class TestMarketScanner:
             label="candidate",
         )
         output = capsys.readouterr().out
-        assert "Candidate metadata quality: complete=2, partial=1, low=3" in output
+        assert "完整=2" in output
+        assert "部分=1" in output
+        assert "低=3" in output
 
     @patch("advisor.scanner.get_fundamentals")
     @patch("advisor.scanner.get_kline")
