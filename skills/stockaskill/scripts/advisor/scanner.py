@@ -137,14 +137,12 @@ class MarketScanner:
 
         if skipped_new:
             print(
-                f"  Excluded {skipped_new} newly listed candidates using cached"
-                " listing dates.",
+                f"  排除次新股: {skipped_new} 只 (上市不足60天)",
                 flush=True,
             )
         if unknown_list_date:
             print(
-                f"  Listing date still unavailable for {unknown_list_date}"
-                " candidates; they remain eligible for scan.",
+                f"  上市日期未知: {unknown_list_date} 只 (仍参与评分)",
                 flush=True,
             )
 
@@ -166,14 +164,12 @@ class MarketScanner:
             )
             if len(candidates_with_mcap) < len(filtered):
                 print(
-                    "  Market-cap data missing for part of the candidate set;"
-                    " ranked those names last.",
+                    f"  市值数据缺失: {len(filtered) - len(candidates_with_mcap)} 只排在末尾",
                     flush=True,
                 )
         else:
             print(
-                "  Candidate market-cap data not cached yet; preserving pool"
-                " order for scan.",
+                "  市值数据未缓存: 按股票池顺序排序",
                 flush=True,
             )
 
@@ -182,10 +178,8 @@ class MarketScanner:
         n = len(candidates)
         if n == 0:
             print(
-                "  No candidates to score (stock pool may be empty or all filtered"
-                " out). "
-                "Use 'python stockaskill/scripts/run.py fetch pool' to refresh"
-                " data.",
+                "  无候选可评分 (股票池可能为空或被全部过滤)."
+                " 执行 'python stockaskill/scripts/run.py fetch pool' 刷新数据.",
                 flush=True,
             )
             return []
@@ -199,7 +193,7 @@ class MarketScanner:
             time_label = f"{m}分{s}秒" if m else f"{s}秒"
             print(f"  数据同步完成: 耗时 {time_label}", flush=True)
         self._print_readiness_summary(sync_status)
-        print(f"Scoring {n} candidates...", flush=True)
+        print(f"开始评分: {n} 只候选...", flush=True)
 
         # Score each stock (parallel, cached-only for speed)
         results: List[Dict[str, Any]] = []
@@ -252,12 +246,9 @@ class MarketScanner:
 
         if not results:
             print(
-                "  All candidates scored 0 (no cached data yet). "
-                "Run 'python stockaskill/scripts/run.py diagnose' on individual"
-                " stocks"
-                " to build cache, "
-                "or use 'python stockaskill/scripts/run.py alpha A --top 20'"
-                " for full scoring.",
+                "  全部候选评分为0 (尚无缓存数据). "
+                "先对个股执行 diagnose 构建缓存, "
+                "或用 alpha 命令进行完整评分.",
                 flush=True,
             )
         else:
@@ -646,24 +637,18 @@ class MarketScanner:
         )
         if fetched == 0 and status.get("still_missing_list_date", 0) == 0:
             print(
-                "  Candidate metadata ready:"
-                f" {status.get('already_ready', requested)}/{requested}"
-                " listing dates already cached."
-                f" complete={metadata_complete},"
-                f" partial={metadata_partial},"
-                f" inactive={inactive_count}.",
+                f"  元数据已就绪: {status.get('already_ready', requested)}/{requested} 只已有上市日期."
+                f" 完整={metadata_complete}, 部分={metadata_partial}, 未激活={inactive_count}.",
                 flush=True,
             )
             return
         print(
-            "  Candidate metadata backfill:"
-            f" profile={status.get('profile_backfilled', 0)},"
-            f" local_history={status.get('cached_history_backfilled', 0)},"
-            f" remote_history={status.get('remote_history_backfilled', 0)},"
-            f" still_missing={status.get('still_missing_list_date', 0)},"
-            f" complete={metadata_complete},"
-            f" partial={metadata_partial},"
-            f" inactive={inactive_count}.",
+            f"  元数据回补: 公司资料={status.get('profile_backfilled', 0)}, "
+            f"本地历史={status.get('cached_history_backfilled', 0)}, "
+            f"远程历史={status.get('remote_history_backfilled', 0)}, "
+            f"仍缺失={status.get('still_missing_list_date', 0)}, "
+            f"完整={metadata_complete}, 部分={metadata_partial}, "
+            f"未激活={inactive_count}.",
             flush=True,
         )
 
@@ -721,17 +706,17 @@ class MarketScanner:
         if requested <= 0:
             return
         print(
-            "  Candidate readiness:"
-            f" ready={status.get('ready', 0)}/{requested},"
-            f" history_ready={status.get('history_ready', 0)}/{requested},"
-            f" fundamentals_ready={status.get('fundamentals_ready', 0)}/{requested},"
-            f" cache_hits={status.get('cache_hits', 0)}",
+            "  候选就绪: "
+            f"ready={status.get('ready', 0)}/{requested}, "
+            f"历史={status.get('history_ready', 0)}/{requested}, "
+            f"基本面={status.get('fundamentals_ready', 0)}/{requested}, "
+            f"缓存命中={status.get('cache_hits', 0)}",
             flush=True,
         )
         missing_codes = status.get("missing_codes", [])
         if missing_codes:
             preview = ", ".join(str(code) for code in missing_codes[:10])
-            print(f"  Candidate missing data: {preview}", flush=True)
+            print(f"  缺失数据: {preview}", flush=True)
 
     @staticmethod
     def _metadata_quality_counts(stocks: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -762,10 +747,10 @@ class MarketScanner:
         if total <= 0:
             return
         print(
-            f"  {label.capitalize()} metadata quality:"
-            f" complete={metadata_quality.get('complete', 0)},"
-            f" partial={metadata_quality.get('partial', 0)},"
-            f" low={metadata_quality.get('low', 0)}",
+            f"  元数据质量 ({label}): "
+            f"完整={metadata_quality.get('complete', 0)}, "
+            f"部分={metadata_quality.get('partial', 0)}, "
+            f"低={metadata_quality.get('low', 0)}",
             flush=True,
         )
 
