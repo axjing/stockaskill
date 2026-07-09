@@ -874,6 +874,26 @@ def cmd_scan(args: argparse.Namespace) -> None:
     try:
         regime = _safe_market_regime(market)
         print("  " + summarize_market_regime(regime), flush=True)
+
+        # Risk alert for cautious/defensive market states
+        posture = regime.get("posture", "neutral")
+        if posture in ("cautious", "defensive"):
+            actions = {
+                "cautious": "谨慎，建议减仓至60%以下",
+                "defensive": "防御，建议降至25%以下仓位，避免新仓",
+            }
+            risk_budget = float(regime.get("risk_budget", 1.0) or 1.0)
+            allowed = regime.get("new_positions_allowed", True)
+            print(
+                f"  ⚠️  市场风险预警: {regime.get('posture_label', '中性')}",
+                flush=True,
+            )
+            print(f"  建议: {actions.get(posture, '观望')}", flush=True)
+            print(f"  风险预算: {risk_budget:.0%}", flush=True)
+            if not allowed:
+                print(f"  当前不建议新开仓位", flush=True)
+            print(flush=True)
+
         from advisor.scanner import MarketScanner
 
         scanner = MarketScanner()
@@ -1657,6 +1677,23 @@ def cmd_alpha(args: argparse.Namespace) -> None:
     print(f"Alpha Momentum scan on {market}, top {top_n}...")
     regime = _safe_market_regime(market)
     print("  " + summarize_market_regime(regime))
+
+    # Risk alert for cautious/defensive market states
+    posture = regime.get("posture", "neutral")
+    if posture in ("cautious", "defensive"):
+        actions = {
+            "cautious": "谨慎，建议减少候选数量",
+            "defensive": "防御，建议暂停扫描，避免追高",
+        }
+        risk_budget = float(regime.get("risk_budget", 1.0) or 1.0)
+        print(
+            f"  ⚠️  市场风险预警: {regime.get('posture_label', '中性')}",
+            flush=True,
+        )
+        print(f"  建议: {actions.get(posture, '观望')}", flush=True)
+        print(f"  风险预算: {risk_budget:.0%}", flush=True)
+        print(flush=True)
+
     try:
         pool = get_stock_pool(market)
         max_candidates = getattr(args, "candidates", 0) or cfg_get("scan_max_candidates", 0)
@@ -2049,6 +2086,70 @@ def cmd_market_regime(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_risk_alert(args: argparse.Namespace) -> None:
+    """Show market risk alert with actionable suggestions."""
+    market = getattr(args, "market", "A") or "A"
+    output_dir, fmt = _cmd_output(args)
+
+    regime = _safe_market_regime(market)
+    posture = regime.get("posture", "neutral")
+    score = float(regime.get("score", 50) or 50)
+    label = regime.get("posture_label", "中性")
+    risk_budget = float(regime.get("risk_budget", 1.0) or 1.0)
+    allowed = regime.get("new_positions_allowed", True)
+
+    actions = {
+        "offensive": "市场积极，可正常操作",
+        "constructive": "市场偏积极，可适当加仓",
+        "neutral": "市场中性，控制节奏",
+        "cautious": "市场谨慎，建议减仓至60%以下",
+        "defensive": "市场防御，建议降至25%以下仓位，避免新仓",
+    }
+
+    print(f"\n市场风险预警 ({market})")
+    print(f"  状态: {label} (score={score:.1f}/100)")
+    print(f"  风险预算: {risk_budget:.0%}")
+    print(f"  建议: {actions.get(posture, '观望')}")
+    print(f"  新开仓: {'允许' if allowed else '不建议'}")
+    print()
+
+    technical = regime.get("technical", {}) or {}
+    if technical:
+        print(
+            f"  技术面: 当前={technical.get('current', 'N/A')}, "
+            f"MA20={technical.get('ma20', 'N/A')}, "
+            f"MA60={technical.get('ma60', 'N/A')}"
+        )
+
+    for reason in regime.get("reasons", [])[:5]:
+        print(f"  - {reason}")
+
+    alert_data = {
+        "market": market,
+        "posture": posture,
+        "posture_label": label,
+        "score": score,
+        "risk_budget": risk_budget,
+        "new_positions_allowed": allowed,
+        "suggested_action": actions.get(posture, "观望"),
+        "technical": technical,
+        "reasons": regime.get("reasons", [])[:5],
+    }
+    md = f"# 市场风险预警 ({market})\n\n"
+    md += f"- 状态: {label} (score={score:.1f}/100)\n"
+    md += f"- 风险预算: {risk_budget:.0%}\n"
+    md += f"- 建议: {actions.get(posture, '观望')}\n"
+    md += f"- 新开仓: {'允许' if allowed else '不建议'}\n"
+    _save_report(
+        f"risk_alert_{market}",
+        fmt,
+        output_dir,
+        data=alert_data,
+        md=md,
+        metadata={"command": "risk-alert", "market": market},
+    )
+
+
 def main() -> None:
     from cli import build_parser
 
@@ -2065,6 +2166,7 @@ def main() -> None:
         cmd_refresh_scan=cmd_refresh_scan,
         cmd_portfolio=cmd_portfolio,
         cmd_market_regime=cmd_market_regime,
+        cmd_risk_alert=cmd_risk_alert,
         cmd_fetch=cmd_fetch,
         cmd_sync=cmd_sync,
         cmd_status=cmd_status,

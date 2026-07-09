@@ -518,6 +518,18 @@ def _add_cache(sub: argparse._SubParsersAction, func: Callable) -> None:
     p_clean.set_defaults(func=func)
 
 
+def _add_risk_alert(sub: argparse._SubParsersAction, func: Callable) -> None:
+    p = sub.add_parser("risk-alert", help="Show market risk alert and suggestions")
+    p.add_argument(
+        "--market",
+        default="A",
+        choices=["A", "HK", "US"],
+        help="Market to check (default: A)",
+    )
+    _common_output_args(p)
+    p.set_defaults(func=func)
+
+
 # -- Entry point ---------------------------------------------------------------
 
 
@@ -534,6 +546,7 @@ def build_parser(
     cmd_refresh_scan,
     cmd_portfolio,
     cmd_market_regime,
+    cmd_risk_alert,
     cmd_fetch,
     cmd_sync,
     cmd_status,
@@ -573,5 +586,6 @@ def build_parser(
     _add_portfolio_enhanced(sub, cmd_portfolio_enhanced)
     _add_scheduler(sub, cmd_scheduler)
     _add_cache(sub, cmd_cache)
+    _add_risk_alert(sub, cmd_risk_alert)
 
     return parser
