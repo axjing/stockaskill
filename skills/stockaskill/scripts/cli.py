@@ -530,6 +530,40 @@ def _add_risk_alert(sub: argparse._SubParsersAction, func: Callable) -> None:
     p.set_defaults(func=func)
 
 
+def _add_track(sub: argparse._SubParsersAction, func: Callable) -> None:
+    p = sub.add_parser("track", help="Portfolio stop-loss/take-profit tracking")
+    track_sub = p.add_subparsers(dest="action", required=True)
+
+    p_start = track_sub.add_parser("start", help="Start tracking a position")
+    p_start.add_argument("code", help="Stock code")
+    p_start.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_start.add_argument("--price", type=float, required=True, help="Entry price")
+    p_start.add_argument("--stop-loss", type=float, default=0.15, help="Stop-loss pct (default 15%%)")
+    p_start.add_argument("--take-profit", type=float, default=0.30, help="Take-profit pct (default 30%%)")
+    p_start.add_argument("--notes", default="", help="Notes")
+    _common_output_args(p_start)
+    p_start.set_defaults(func=func)
+
+    p_status = track_sub.add_parser("status", help="List tracked positions")
+    p_status.add_argument("--status", default="active", choices=["active", "closed", "all"])
+    p_status.add_argument("--market", default="A")
+    _common_output_args(p_status)
+    p_status.set_defaults(func=func)
+
+    p_check = track_sub.add_parser("check", help="Check for stop-loss/take-profit triggers")
+    p_check.add_argument("--market", default="A")
+    p_check.add_argument("--days", type=int, default=5, help="Days of kline to check")
+    _common_output_args(p_check)
+    p_check.set_defaults(func=func)
+
+    p_close = track_sub.add_parser("close", help="Close a tracked position")
+    p_close.add_argument("tracking_id", help="Tracking ID")
+    p_close.add_argument("--price", type=float, default=0, help="Exit price")
+    p_close.add_argument("--notes", default="", help="Exit notes")
+    _common_output_args(p_close)
+    p_close.set_defaults(func=func)
+
+
 # -- Entry point ---------------------------------------------------------------
 
 
@@ -556,6 +590,7 @@ def build_parser(
     cmd_portfolio_enhanced,
     cmd_scheduler,
     cmd_cache,
+    cmd_track,
 ) -> argparse.ArgumentParser:
     """Build and return the root ArgumentParser.
 
@@ -587,5 +622,6 @@ def build_parser(
     _add_scheduler(sub, cmd_scheduler)
     _add_cache(sub, cmd_cache)
     _add_risk_alert(sub, cmd_risk_alert)
+    _add_track(sub, cmd_track)
 
     return parser
