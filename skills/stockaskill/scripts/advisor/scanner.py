@@ -55,18 +55,22 @@ class MarketScanner:
         if not pool:
             return []
 
+        total_pool = len(pool)
         limit = max_candidates or cfg_get("scan_max_candidates", 0)
         metadata_limit = cfg_get(
             "data_readiness.scan_pool_metadata_limit",
             limit,
         )
         pre_candidates = []
+        skipped_st = 0
+        skipped_bj = 0
         for stock in pool:
             code = stock.get("code", "")
             name = stock.get("name", "")
 
             # Filter ST/delisted
             if is_st(code, name):
+                skipped_st += 1
                 continue
             if not bool(stock.get("is_active", 1)):
                 continue
@@ -76,12 +80,27 @@ class MarketScanner:
                 continue
 
             if code.startswith("bj"):
+                skipped_bj += 1
                 continue
 
             pre_candidates.append(stock)
 
         if not pre_candidates:
             return []
+
+        # Print pool summary
+        if limit and limit < len(pre_candidates):
+            print(
+                f"  候选范围: {total_pool} 只 → 过滤后 {len(pre_candidates)} 只 → "
+                f"评估前 {limit} 只 (ST={skipped_st}, 北交所={skipped_bj})",
+                flush=True,
+            )
+        else:
+            print(
+                f"  扫描全市场: {len(pre_candidates)} 只候选 "
+                f"(ST={skipped_st}, 北交所={skipped_bj})",
+                flush=True,
+            )
 
         metadata_candidates = pre_candidates[: max(metadata_limit, limit)] if limit else pre_candidates[:]
         metadata_status = ensure_stock_pool_candidates_ready(
@@ -171,7 +190,14 @@ class MarketScanner:
             )
             return []
 
+        import time as _time
+        _sync_start = _time.time()
         sync_status = ensure_market_scan_ready(market, candidates)
+        _sync_elapsed = _time.time() - _sync_start
+        if _sync_elapsed >= 1.0:
+            m, s = divmod(int(_sync_elapsed), 60)
+            time_label = f"{m}分{s}秒" if m else f"{s}秒"
+            print(f"  数据同步完成: 耗时 {time_label}", flush=True)
         self._print_readiness_summary(sync_status)
         print(f"Scoring {n} candidates...", flush=True)
 
@@ -208,6 +234,7 @@ class MarketScanner:
                 return None
 
         done = 0
+        _score_start = _time.time()
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {
                 executor.submit(_score_one, stock): stock for stock in candidates
@@ -215,11 +242,13 @@ class MarketScanner:
             for f in as_completed(futures):
                 done += 1
                 if done % 25 == 0 or done == n:
-                    print(f"  Scan progress: {done}/{n}", flush=True)
+                    print(f"  评分进度: {done}/{n}", flush=True)
 
                 result = f.result()
                 if result is not None:
                     results.append(result)
+
+        _score_elapsed = _time.time() - _score_start
 
         if not results:
             print(
@@ -232,7 +261,12 @@ class MarketScanner:
                 flush=True,
             )
         else:
-            print(f"  Scored {len(results)} stocks successfully.", flush=True)
+            m, s = divmod(int(_score_elapsed), 60)
+            time_label = f"{m}分{s}秒" if m else f"{s}秒"
+            print(
+                f"  评分完成: {len(results)}/{n} 只成功, 耗时 {time_label}",
+                flush=True,
+            )
 
         # Sort by score descending
         results.sort(
