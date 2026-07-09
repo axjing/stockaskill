@@ -1706,38 +1706,46 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
 
     For A-shares: THS provides detailed financials (ROE, margins, growth).
     PE/PB are computed from cached price + EPS/BVPS when available.
+    For US/HK: yfinance is the primary source (AKShare US financials unreliable).
     """
+    # US/HK: yfinance first (AKShare US/HK financial endpoints are unreliable)
+    if market in ("HK", "US"):
+        yf = _try_yfinance()
+        if yf is not None:
+            result = _fetch_fundamentals_yfinance(code, market, yf)
+            if result:
+                return result
+        obb = _try_openbb()
+        if obb is not None:
+            result = _fetch_fundamentals_openbb(code, market, obb)
+            if result:
+                return result
+        # Fallback: try AKShare (HK only, US already known to be unreliable)
+        if market == "HK":
+            ak = _try_akshare()
+            if ak is not None:
+                result = _fetch_fundamentals_hk_analysis(code, ak)
+                if result:
+                    return result
+
+    # A-shares: THS -> Sina path
     ak = _try_akshare()
     result: Optional[Dict[str, Any]] = None
     if ak is not None:
-        if market == "A":
-            ths_result = _fetch_fundamentals_ths(code, ak)
-            sina_result = _fetch_fundamentals_ak(code, market, ak)
-            if ths_result is not None:
-                result = ths_result
-                if sina_result is not None:
-                    for vk in ("market_cap", "pe_ttm", "pe_static", "pb",
-                               "ps_ttm", "pcf_ttm", "dividend_yield"):
-                        if sina_result.get(vk) and not result.get(vk):
-                            result[vk] = sina_result[vk]
-            else:
-                result = sina_result
+        ths_result = _fetch_fundamentals_ths(code, ak)
+        sina_result = _fetch_fundamentals_ak(code, market, ak)
+        if ths_result is not None:
+            result = ths_result
+            if sina_result is not None:
+                for vk in ("market_cap", "pe_ttm", "pe_static", "pb",
+                           "ps_ttm", "pcf_ttm", "dividend_yield"):
+                    if sina_result.get(vk) and not result.get(vk):
+                        result[vk] = sina_result[vk]
         else:
-            result = _fetch_fundamentals_ak(code, market, ak)
+            result = sina_result
     if result:
         _backfill_valuation_from_price(result, code, market)
         return result
-    # yfinance first for HK/US — lighter, more stable than OpenBB
-    yf = _try_yfinance()
-    if yf is not None and market in ("HK", "US"):
-        result = _fetch_fundamentals_yfinance(code, market, yf)
-        if result:
-            return result
-    obb = _try_openbb()
-    if obb is not None and market in ("HK", "US"):
-        result = _fetch_fundamentals_openbb(code, market, obb)
-        if result:
-            return result
     _report_no_data(code, market, "fundamentals")
     return None
 
