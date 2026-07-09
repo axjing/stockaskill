@@ -288,6 +288,35 @@ class CacheManager:
                 v2_rows,
             )
 
+    def get_factor_snapshot_as_of(
+        self,
+        code: str,
+        market: str,
+        as_of_date: str,
+    ) -> Dict[str, Any] | None:
+        """Get the latest factor snapshot for a stock as of a specific date.
+
+        Used for point-in-time backtesting to avoid look-ahead bias.
+
+        Args:
+            code: Stock code.
+            market: Market identifier.
+            as_of_date: Maximum date (YYYY-MM-DD).
+
+        Returns:
+            Factor snapshot dict or None.
+        """
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT * FROM factor_snapshot "
+                "WHERE market=? AND code=? AND date<=? "
+                "ORDER BY date DESC LIMIT 1",
+                (market, code, as_of_date),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
     def get_latest_factor_snapshot(
         self,
         code: str,

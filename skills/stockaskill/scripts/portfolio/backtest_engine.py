@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from cache import get_cache
 from config import get as cfg_get
-from data_engine import get_fundamentals
 from data_readiness import ensure_backtest_ready
 from factors.growth import GrowthFactor
 from factors.low_vol import LowVolFactor
@@ -87,9 +86,6 @@ class AlphaMomentumBacktest:
         codes, st_codes = self._load_eligible_codes(conn)
         codes = sorted(c for c in codes if c not in st_codes)
 
-        fc = self._load_fundamentals(codes)
-        codes = sorted(fc.keys())
-
         all_d = self._load_dates(conn)
         _, rd = self._rebalance_dates(all_d)
 
@@ -103,7 +99,7 @@ class AlphaMomentumBacktest:
                 continue
             wsd = self._load_window_data(conn, wstart, wend)
             positions, cash, nav = self._process_window(
-                wrd, wsd, fc, codes, positions, cash, nav
+                wrd, wsd, codes, positions, cash, nav, conn
             )
             wsd.clear()
 
@@ -156,16 +152,64 @@ class AlphaMomentumBacktest:
 
         return all_codes, st_codes
 
-    def _load_fundamentals(self, codes: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Load fundamentals for codes, keeping only EPS-positive stocks."""
+    def _load_fundamentals_as_of(
+        self, codes: List[str], as_of_date: str, conn: sqlite3.Connection
+    ) -> Dict[str, Dict[str, Any]]:
+        """Load fundamentals for all codes as of a specific date.
+
+        Uses point-in-time factor_snapshot queries to avoid look-ahead bias.
+        For each code, returns the latest snapshot with date <= as_of_date.
+
+        Args:
+            codes: List of stock codes.
+            as_of_date: Maximum date (YYYY-MM-DD).
+            conn: SQLite connection.
+
+        Returns:
+            Dict mapping code to fundamentals dict (EPS-positive only).
+        """
+        if not codes:
+            return {}
+        placeholders = ",".join(["?" for _ in codes])
+        cur = conn.execute(
+            f"SELECT code, date, market_cap, pe_ttm, pe_static, pb, ps_ttm, "
+            f"pcf_ttm, dividend_yield, roe, roa, gross_margin, net_margin, "
+            f"revenue_growth, profit_growth, debt_ratio, current_ratio, eps, bvps "
+            f"FROM factor_snapshot "
+            f"WHERE market=? AND code IN ({placeholders}) AND date<=? "
+            f"ORDER BY code, date DESC",
+            (self.market, *codes, as_of_date),
+        )
+        # Pick latest per code (first occurrence due to DESC ordering)
+        seen: set[str] = set()
         fc: Dict[str, Dict[str, Any]] = {}
-        for code in codes:
-            try:
-                f = get_fundamentals(code, self.market, force_refresh=False)
-                if f and f.get("eps", 0) > 0:
-                    fc[code] = f
-            except Exception:
-                pass
+        for row in cur.fetchall():
+            code = row[0]
+            if code not in seen:
+                seen.add(code)
+                eps = float(row[17] or 0)
+                if eps > 0:
+                    fc[code] = {
+                        "code": code,
+                        "date": row[1],
+                        "market_cap": float(row[2] or 0),
+                        "pe_ttm": float(row[3] or 0),
+                        "pe_static": float(row[4] or 0),
+                        "pb": float(row[5] or 0),
+                        "ps_ttm": float(row[6] or 0),
+                        "pcf_ttm": float(row[7] or 0),
+                        "dividend_yield": float(row[8] or 0),
+                        "roe": float(row[9] or 0),
+                        "roa": float(row[10] or 0),
+                        "gross_margin": float(row[11] or 0),
+                        "net_margin": float(row[12] or 0),
+                        "revenue_growth": float(row[13] or 0),
+                        "profit_growth": float(row[14] or 0),
+                        "debt_ratio": float(row[15] or 0),
+                        "current_ratio": float(row[16] or 0),
+                        "eps": eps,
+                        "bvps": float(row[18] or 0),
+                    }
         return fc
 
     def _load_dates(self, conn: sqlite3.Connection) -> List[str]:
@@ -254,22 +298,22 @@ class AlphaMomentumBacktest:
         self,
         wrd: List[str],
         wsd: Dict[str, List[Dict[str, Any]]],
-        fc: Dict[str, Dict[str, Any]],
         all_codes: List[str],
         prev_positions: Dict[str, int],
         prev_cash: float,
         prev_nav: List[float],
+        conn: sqlite3.Connection,
     ) -> Tuple[Dict[str, int], float, List[float]]:
         """Process all rebalance dates within a single data window.
 
         Args:
             wrd: Rebalance dates for this window.
             wsd: Window kline data (code -> [{date, close}]).
-            fc: Fundamentals dict.
             all_codes: All eligible stock codes.
             prev_positions: Positions carried from previous window.
             prev_cash: Cash carried from previous window.
             prev_nav: NAV history accumulated so far.
+            conn: SQLite connection for point-in-time fundamental queries.
 
         Returns:
             (positions, cash, nav) after processing this window.
@@ -283,7 +327,11 @@ class AlphaMomentumBacktest:
             if i == 0 and not nav:
                 continue
 
-            scored = self._score_codes(codes, wsd, fc, reb_date)
+            # Load point-in-time fundamentals at each rebalance date
+            fc = self._load_fundamentals_as_of(codes, reb_date, conn)
+            active_codes = sorted(fc.keys())
+
+            scored = self._score_codes(active_codes, wsd, fc, reb_date)
             scored.sort(key=lambda x: x[1], reverse=True)
             selected = self._select_diversified(scored)
 
