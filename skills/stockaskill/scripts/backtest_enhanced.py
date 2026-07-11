@@ -18,9 +18,6 @@ import argparse
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, List
-
-from utils import _board, normalize_code_for_market  # noqa: E402
 from typing import TypedDict
 
 import numpy as np
@@ -37,7 +34,7 @@ from report_generator import (
     save_markdown,
     save_report,
 )
-from utils import is_st
+from utils import _board, is_st  # noqa: E402
 
 LOW_VOL_MIN = 0.40
 
@@ -78,8 +75,8 @@ def _trend_filter(
     closes = [x["close"] for x in kline if x["close"] > 0]
     if len(closes) < ma_long:
         return True
-    ma50 = np.mean(closes[:ma_short])
-    ma200 = np.mean(closes[:ma_long])
+    ma50 = np.mean(closes[-ma_short:])
+    ma200 = np.mean(closes[-ma_long:])
     return bool(ma50 > ma200)
 
 
@@ -112,6 +109,15 @@ def run_backtest():
         sd[row[0]].append({"date": row[1], "close": float(row[2])})
         if is_st(row[0], row[3]):
             st_codes.add(row[0])
+
+    # Also check inactive pool stocks for ST status to catch delisted ST stocks
+    cur2 = conn.execute(
+        "SELECT code, name FROM stock_pool WHERE market='A' AND is_active=0",
+    )
+    for row in cur2.fetchall():
+        if is_st(row[0], row[1] or ""):
+            st_codes.add(row[0])
+
     conn.close()
 
     codes = sorted(sd.keys())
@@ -207,7 +213,8 @@ def run_backtest():
         for code in codes:
             if code in ETF_CODES:
                 continue
-            kslice = [x for x in sd[code] if x["date"] <= reb_date]
+            kslice = sorted([x for x in sd[code] if x["date"] <= reb_date],
+                            key=lambda x: x["date"], reverse=True)
             if len(kslice) < 120:
                 continue
             s = _score(code, kslice)

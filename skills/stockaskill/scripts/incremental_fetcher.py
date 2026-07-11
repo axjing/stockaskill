@@ -96,7 +96,14 @@ class IncrementalCacheFetcher(ABC):
         if len(cached) < days:
             return False
         latest = _latest_date(cached)
-        return latest == _date_str(datetime.now())
+        if not latest:
+            return False
+        # Normalize both dates to YYYY-MM-DD for comparison
+        latest_dt = _safe_parse_date(latest)
+        today_dt = datetime.now()
+        if latest_dt is None:
+            return False
+        return _date_str(latest_dt) == _date_str(today_dt)
 
     def compute_fetch_range(
         self,
@@ -140,8 +147,8 @@ class IncrementalCacheFetcher(ABC):
     ) -> tuple:
         """Compute fetch range for full_history mode.
 
-        Handles the bidirectional gap-fill: if both early and late data
-        are missing, prefer the smaller gap to minimise work.
+        When both early and late gaps exist, fills early gap first (needed
+        for backtest correctness), then late gap on the next run.
         """
         target_start = _cold_start_date(self._market())
 
@@ -167,13 +174,9 @@ class IncrementalCacheFetcher(ABC):
             early_dt = _safe_parse_date(local_earliest)
             latest_dt = _safe_parse_date(local_latest)
             if early_dt and latest_dt:
-                early_gap = (early_dt - _safe_parse_date(target_start)).days
-                latest_gap = (_safe_parse_date(today_str) - latest_dt).days
-                if early_gap <= latest_gap:
-                    return target_start, _date_str(early_dt + timedelta(days=3))
-                else:
-                    return _date_str(latest_dt - timedelta(days=padding)), today_str
-            # Fall back to early-first if dates can't be parsed
+                # Always fill early gap first — backtest factor computation
+                # requires sufficient historical depth, not just recency.
+                return target_start, _date_str(early_dt + timedelta(days=3))
             return target_start, _date_str(
                 _safe_parse_date(local_earliest) + timedelta(days=3)
             )
@@ -304,7 +307,7 @@ class FundNavFetcher(IncrementalCacheFetcher):
         """Fetch ETF/fund NAV history via AKShare fund_etf_fund_info_em."""
         import logging
         logger = logging.getLogger(__name__)
-        from data_engine import _try_akshare, _akshare_lock, safe_float
+        from data_engine import _akshare_lock, _try_akshare, safe_float
 
         ak = _try_akshare()
         if not ak:
@@ -338,9 +341,16 @@ class FundNavFetcher(IncrementalCacheFetcher):
 
             rows = []
             for _, r in df.iterrows():
+                raw_date = str(r.get("date", ""))
+                # Normalize to YYYY-MM-DD for system-wide consistency
+                raw_clean = raw_date.replace("-", "")
+                if len(raw_clean) >= 8 and raw_clean[:8].isdigit():
+                    norm_date = f"{raw_clean[:4]}-{raw_clean[4:6]}-{raw_clean[6:8]}"
+                else:
+                    norm_date = raw_date
                 rows.append({
                     "code": self.code,
-                    "date": str(r.get("date", "")),
+                    "date": norm_date,
                     "nav": safe_float(r.get("nav", 0)),
                     "acc_nav": safe_float(r.get("acc_nav", 0)),
                 })

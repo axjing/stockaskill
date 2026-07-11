@@ -32,9 +32,20 @@ class MomentumFactor(Factor):
         if len(closes) < 120:
             return 0.5
 
-        m1_ago = closes[20] if len(closes) > 20 else closes[0]
-        m6_ago = closes[120] if len(closes) > 120 else closes[-1]
-        ret_6m = (m1_ago - m6_ago) / max(m6_ago, 1e-9)
+        # kline is ordered newest-first (index 0 = most recent).
+        # A-shares have ~242 trading days/year; 1 month ~21 trading days,
+        # 3 months ~63, 6 months ~126.
+        trading_days_per_month = 21
+        trading_days_6m = 126
+        if len(closes) > trading_days_per_month:
+            m1_skip = closes[trading_days_per_month]
+        else:
+            m1_skip = closes[0]
+        if len(closes) > trading_days_6m:
+            m6_ago = closes[trading_days_6m]
+        else:
+            m6_ago = closes[-1]
+        ret_6m = (m1_skip - m6_ago) / max(m6_ago, 1e-9)
 
         ret_min, ret_max = self._range("ret_6m", market)
         ret_span = ret_max - ret_min

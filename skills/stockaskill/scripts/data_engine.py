@@ -327,6 +327,12 @@ def _api_call(api_name: str):
             last_exc: Exception | None = None
             for attempt in range(retry_max):
                 try:
+                    # Check and record API usage against daily limit
+                    if not _cache.record_api_call(api_name):
+                        raise RuntimeError(
+                            f"Daily API limit ({cfg_get('daily_api_limit', 500)}) "
+                            f"exceeded for {api_name}"
+                        )
                     time.sleep(interval[0])
                     result = func(*args, **kwargs)
                     return result
@@ -477,12 +483,18 @@ def _sina_code(code: str, market: str = "A") -> str:
 
 
 def get_stock_pool(
-    market: str = "A", force_refresh: bool = False
+    market: str = "A", force_refresh: bool = False, include_inactive: bool = False
 ) -> List[Dict[str, Any]]:
-    """Get stock pool for a market. Returns cached data, refreshes if needed."""
+    """Get stock pool for a market. Returns cached data, refreshes if needed.
+
+    Args:
+        market: Market identifier.
+        force_refresh: Force a pool rebuild from upstream API.
+        include_inactive: Include delisted/inactive stocks (for backtests).
+    """
     if force_refresh or _cache.pool_needs_refresh(market):
         _refresh_stock_pool(market)
-    return _cache.get_stock_pool(market)
+    return _cache.get_stock_pool(market, include_inactive=include_inactive)
 
 
 def ensure_stock_pool_candidates_ready(
@@ -1140,45 +1152,6 @@ def _detect_quality_flags(rows: List[Dict[str, Any]], market: str) -> List[Dict[
     return rows
 
 
-def _cross_source_validate(
-    rows_a: List[Dict[str, Any]],
-    rows_b: List[Dict[str, Any]],
-    tolerance_pct: float = 0.02,
-) -> List[Dict[str, Any]]:
-    """Compare K-line data from two sources and flag discrepancies.
-
-    Returns the rows_a set with a 'source_mismatch' quality flag added
-    to rows where close prices differ by more than tolerance_pct between
-    the two sources for the same date.
-    """
-    if not rows_a or not rows_b:
-        return rows_a
-
-    # Build date-indexed lookup for rows_b
-    b_by_date = {
-        str(r.get("date", "")).strip(): r
-        for r in rows_b
-        if str(r.get("date", "")).strip()
-    }
-
-    flagged = []
-    for r in rows_a:
-        date_str = str(r.get("date", "")).strip()
-        if date_str in b_by_date:
-            b_close = b_by_date[date_str].get("close", 0) or 0
-            a_close = r.get("close", 0) or 0
-            if a_close > 0 and b_close > 0:
-                diff = abs(a_close - b_close) / a_close
-                if diff > tolerance_pct:
-                    existing_flags = r.get("quality_flags", "")
-                    new_flag = f"source_mismatch({diff:.1%})"
-                    if existing_flags:
-                        r["quality_flags"] = f"{existing_flags},{new_flag}"
-                    else:
-                        r["quality_flags"] = new_flag
-        flagged.append(r)
-
-    return flagged
 
 
 def _detect_gaps(rows: List[Dict[str, Any]], market: str = "A") -> List[str]:
@@ -1217,11 +1190,20 @@ def _detect_gaps(rows: List[Dict[str, Any]], market: str = "A") -> List[str]:
 
 
 def _normalize_kline_df(
-    df, code: str, market: str
+    df, code: str, market: str, adjust_type: str = "qfq"
 ) -> List[Dict[str, Any]]:
     """Normalize a pandas DataFrame into K-line row dicts.
 
     Handles both EastMoney (stock_zh_a_hist) and Sina column names.
+
+    Args:
+        df: Raw DataFrame from data source.
+        code: Stock code.
+        market: Market identifier ('A', 'HK', 'US', 'FUND').
+        adjust_type: Price adjustment type ('qfq', 'hfq', 'unadjusted', 'yfinance').
+
+    Returns:
+        List of normalized K-line row dicts.
     """
     east_cols = {
         "\u65e5\u671f": "date",
@@ -1246,16 +1228,37 @@ def _normalize_kline_df(
         return []
 
     df = df.rename(columns=col_map)
+    today = datetime.now().strftime("%Y-%m-%d")
     rows = []
     for _, r in df.iterrows():
+        close = safe_float(r.get("close", 0))
+        high = safe_float(r.get("high", 0))
+        low = safe_float(r.get("low", 0))
+        open_ = safe_float(r.get("open", 0))
+        date_str = str(r.get("date", ""))
+
+        # Reject rows with invalid prices
+        if close <= 0 or open_ <= 0 or high <= 0 or low <= 0:
+            continue
+        # Reject rows with impossible OHLC relationships
+        if high < low:
+            continue
+        if close > high or close < low:
+            continue
+        if open_ > high or open_ < low:
+            continue
+        # Reject rows with future dates
+        if date_str > today:
+            continue
+
         rows.append(
             {
                 "code": code,
-                "date": str(r.get("date", "")),
-                "open": safe_float(r.get("open", 0)),
-                "high": safe_float(r.get("high", 0)),
-                "low": safe_float(r.get("low", 0)),
-                "close": safe_float(r.get("close", 0)),
+                "date": date_str,
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
                 "volume": safe_float(r.get("volume", 0)),
                 "amount": safe_float(r.get("amount", 0)),
                 "market": market,
@@ -1401,7 +1404,7 @@ def _fetch_kline_bs(
         start_date=start,
         end_date=end,
         frequency="d",
-        adjustflag="2",
+        adjustflag="1",  # qfq (forward-adjusted) to match AKShare primary source
     )
     try:
         if rs.error_code != "0":
@@ -2267,6 +2270,10 @@ def sync_symbols_data(
     if total > 100:
         print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
 
+    # Batch-read date ranges for all symbols upfront to avoid N+1 queries.
+    # Each symbol would otherwise trigger a separate get_daily_price() SELECT.
+    cached_date_ranges = _cache.get_date_ranges(selected_codes, market=market)
+
     # Thread-safe accumulators for progress tracking
     results_lock = threading.Lock()
     per_symbol: List[Dict[str, Any]] = []
@@ -2303,15 +2310,9 @@ def sync_symbols_data(
             total_rows += hist_after
 
             code = result.get("code", "")
-            cached = _cache.get_daily_price(code, market=market)
-            if cached:
-                values = sorted(
-                    str(r.get("date", "")).strip()
-                    for r in cached
-                    if str(r.get("date", "")).strip()
-                )
-                if values:
-                    all_earliest.append(values[0])
+            rng = cached_date_ranges.get(code)
+            if rng:
+                all_earliest.append(rng[0])
 
             processed_count += 1
 

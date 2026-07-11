@@ -8,10 +8,23 @@ import numpy as np
 class RiskMetrics:
     """Calculate portfolio risk metrics from return series."""
 
-    def __init__(self, returns: List[float], risk_free: float = 0.03) -> None:
+    def __init__(
+        self,
+        returns: List[float],
+        risk_free: float = 0.03,
+        frequency: int = 252,
+    ) -> None:
+        """Initialize risk metrics.
+
+        Args:
+            returns: Return series (order does not matter for most metrics).
+            risk_free: Annual risk-free rate.
+            frequency: Number of periods per year (252 for daily, 12 for monthly).
+        """
         self.returns = np.array(returns, dtype=float)
         self.risk_free = risk_free
-        self.daily_rf = risk_free / 252
+        self.frequency = frequency
+        self.period_rf = risk_free / frequency
 
     def max_drawdown(self) -> float:
         """Maximum drawdown from cumulative returns."""
@@ -42,32 +55,32 @@ class RiskMetrics:
         """Annualized Sharpe ratio."""
         if len(self.returns) < 2:
             return 0.0
-        excess = self.returns - self.daily_rf
+        excess = self.returns - self.period_rf
         mean_excess = np.mean(excess)
         std = np.std(excess, ddof=1)
         if std == 0:
             return 0.0
-        return float(mean_excess / std * np.sqrt(252))
+        return float(mean_excess / std * np.sqrt(self.frequency))
 
     def sortino_ratio(self) -> float:
         """Annualized Sortino ratio (downside deviation)."""
         if len(self.returns) < 2:
             return 0.0
-        excess = self.returns - self.daily_rf
+        excess = self.returns - self.period_rf
         mean_excess = np.mean(excess)
         downside = self.returns[self.returns < 0]
         if len(downside) == 0:
-            return float(mean_excess * np.sqrt(252) / 1e-9)
+            return float(mean_excess * np.sqrt(self.frequency) / 1e-9)
         down_std = np.std(downside, ddof=1)
         if down_std == 0:
             return 0.0
-        return float(mean_excess / down_std * np.sqrt(252))
+        return float(mean_excess / down_std * np.sqrt(self.frequency))
 
     def volatility(self) -> float:
         """Annualized volatility."""
         if len(self.returns) < 2:
             return 0.0
-        return float(np.std(self.returns, ddof=1) * np.sqrt(252))
+        return float(np.std(self.returns, ddof=1) * np.sqrt(self.frequency))
 
     def summary(self) -> Dict[str, float]:
         """All risk metrics as a dict."""

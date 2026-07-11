@@ -137,6 +137,7 @@ class CacheManager:
     @contextmanager
     def _conn(self):
         conn = sqlite3.connect(str(self.db_path), timeout=5.0)
+        conn.execute("PRAGMA journal_mode=WAL")
         try:
             yield conn
             conn.commit()
@@ -182,14 +183,28 @@ class CacheManager:
             for market, count in counts_by_market.items():
                 self._touch_meta(self._stock_pool_meta_key(market), count, conn)
 
-    def get_stock_pool(self, market: str = "A") -> List[Dict[str, Any]]:
-        """Get stock pool for a market (v2 table)."""
+    def get_stock_pool(
+        self, market: str = "A", include_inactive: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Get stock pool for a market (v2 table).
+
+        Args:
+            market: Market identifier.
+            include_inactive: If True, include delisted/inactive stocks
+                to avoid survivorship bias in backtests.
+        """
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(
-                "SELECT * FROM stock_pool WHERE market=? AND is_active=1",
-                (market,),
-            )
+            if include_inactive:
+                cur = conn.execute(
+                    "SELECT * FROM stock_pool WHERE market=?",
+                    (market,),
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT * FROM stock_pool WHERE market=? AND is_active=1",
+                    (market,),
+                )
             return [dict(r) for r in cur.fetchall()]
 
     def pool_needs_refresh(self, market: str = "A") -> bool:
@@ -204,19 +219,26 @@ class CacheManager:
 
     def upsert_daily_price(self, rows: List[Dict[str, Any]]) -> None:
         """Bulk upsert daily K-line data (v2 table only)."""
+        # Ensure adjust_type column exists (additive migration)
+        with self._conn() as conn:
+            conn.execute(
+                "ALTER TABLE daily_price ADD COLUMN adjust_type TEXT DEFAULT 'qfq'"
+            )
         for row in rows:
             row.setdefault("quality_flags", "")
+            row.setdefault("adjust_type", "qfq")
         with self._conn() as conn:
             conn.executemany(
                 "INSERT INTO daily_price "
                 "(market, code, date, open, high, low, close, volume, amount, "
-                "quality_flags) "
+                "quality_flags, adjust_type) "
                 "VALUES (:market, :code, :date, :open, :high, :low, :close, "
-                ":volume, :amount, :quality_flags) "
+                ":volume, :amount, :quality_flags, :adjust_type) "
                 "ON CONFLICT(market, code, date) DO UPDATE SET "
                 "open=excluded.open, high=excluded.high, low=excluded.low, "
                 "close=excluded.close, volume=excluded.volume, "
-                "amount=excluded.amount, quality_flags=excluded.quality_flags",
+                "amount=excluded.amount, quality_flags=excluded.quality_flags, "
+                "adjust_type=excluded.adjust_type",
                 rows,
             )
 
@@ -241,6 +263,36 @@ class CacheManager:
             query += " ORDER BY date DESC"
             cur = conn.execute(query, tuple(params))
             return [dict(r) for r in cur.fetchall()]
+
+    def get_date_ranges(
+        self, codes: List[str], market: str = "A"
+    ) -> Dict[str, tuple]:
+        """Get (earliest_date, latest_date) for many codes in one query.
+
+        Args:
+            codes: List of stock codes.
+            market: Market identifier.
+
+        Returns:
+            Dict mapping code to (earliest, latest) date strings.
+            Codes with no data are omitted.
+        """
+        if not codes:
+            return {}
+        placeholders = ",".join(["?" for _ in codes])
+        with self._conn() as conn:
+            cur = conn.execute(
+                f"SELECT code, MIN(date), MAX(date) "
+                f"FROM daily_price "
+                f"WHERE market=? AND code IN ({placeholders}) "
+                f"GROUP BY code",
+                (market, *codes),
+            )
+            return {
+                row[0]: (row[1], row[2])
+                for row in cur.fetchall()
+                if row[1] and row[2]
+            }
 
     def get_latest_date(self, code: str, market: str = "A") -> str | None:
         """Get the latest cached date for a stock (v2 table)."""
@@ -1019,6 +1071,7 @@ class CacheManager:
 
         # VACUUM must run outside an active transaction.
         with sqlite3.connect(str(self.db_path), timeout=5.0) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("VACUUM")
 
         return removed

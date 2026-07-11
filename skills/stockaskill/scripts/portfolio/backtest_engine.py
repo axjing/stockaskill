@@ -66,6 +66,7 @@ class AlphaMomentumBacktest:
             if max_per_board is not None
             else cfg_get("alpha_momentum.max_per_board", 3)
         )
+        self.slippage = cfg_get("backtest.slippage", 0.002)  # 0.2% default slippage
 
         self.mf = MomentumFactor()
         self.lf = LowVolFactor()
@@ -126,10 +127,16 @@ class AlphaMomentumBacktest:
     ) -> Tuple[List[str], set[str]]:
         """Get codes with sufficient data history and identify ST stocks.
 
+        Includes delisted stocks that have enough historical bars to avoid
+        survivorship bias. ST stocks are excluded regardless of bar count.
+
         Returns:
             (all_eligible_codes, st_codes_set).
         """
         min_bars = cfg_get("alpha_momentum.min_history_bars", 1500)
+        # Include all codes with enough bars, regardless of is_active status.
+        # Delisted stocks with sufficient history are retained to avoid
+        # survivorship bias. ST filtering is applied separately.
         cur = conn.execute(
             "SELECT code FROM daily_price "
             "WHERE market=? "
@@ -139,14 +146,13 @@ class AlphaMomentumBacktest:
         all_codes = [row[0] for row in cur.fetchall()]
 
         st_codes: set[str] = set()
-        for code in all_codes:
-            cur = conn.execute(
-                "SELECT COALESCE(s.name, '') FROM stock_pool s "
-                "WHERE s.market=? AND s.code=?",
-                (self.market, code),
-            )
-            row = cur.fetchone()
-            name = row[0] if row else ""
+        # Also check ALL pool stocks (including inactive) for ST status
+        cur = conn.execute(
+            "SELECT code, name FROM stock_pool WHERE market=?",
+            (self.market,),
+        )
+        for row in cur.fetchall():
+            code, name = row[0], row[1] or ""
             if is_st(code, name):
                 st_codes.add(code)
 
@@ -283,7 +289,7 @@ class AlphaMomentumBacktest:
             "SELECT d.code, d.date, d.close "
             "FROM daily_price d "
             "WHERE d.market=? AND d.date >= ? AND d.date <= ? "
-            "ORDER BY d.code, d.date ASC",
+            "ORDER BY d.code, d.date DESC",
             (self.market, start, end),
         )
 
@@ -388,28 +394,35 @@ class AlphaMomentumBacktest:
                 continue
         return scored
 
-    @staticmethod
     def _sell_others(
+        self,
         positions: Dict[str, int],
         cash: float,
         selected: List[str],
         wsd: Dict[str, List[Dict[str, Any]]],
         reb_date: str,
     ) -> Tuple[Dict[str, int], float]:
-        """Sell positions not in the selected set."""
+        """Sell positions not in the selected set.
+
+        If a held stock has no data in the current window (window boundary gap),
+        the position is retained rather than being liquidated at price=0.
+        """
         commission = cfg_get("commission", 0.0003)
         stamp_tax = cfg_get("stamp_tax", 0.001)
+        slippage = self.slippage
         for code in list(positions.keys()):
             if code not in selected:
                 p = [x["close"] for x in wsd.get(code, []) if x["date"] <= reb_date]
-                price = p[-1] if p else 0
-                if price > 0:
-                    cash += positions[code] * price * (1 - commission - stamp_tax)
+                if p:
+                    exec_price = p[-1] * (1 - slippage)
+                    cash += positions[code] * exec_price * (1 - commission - stamp_tax)
                     del positions[code]
+                # No data for this code in window — retain position, skip silently.
+                # This prevents price=0 liquidation at window boundaries.
         return positions, cash
 
-    @staticmethod
     def _buy_new(
+        self,
         positions: Dict[str, int],
         cash: float,
         selected: List[str],
@@ -420,15 +433,22 @@ class AlphaMomentumBacktest:
         if not selected:
             return positions, cash
         commission = cfg_get("commission", 0.0003)
-        alloc = cash / len(selected)
+        slippage = self.slippage
+        nav = cash
+        for code in positions:
+            p = [x["close"] for x in wsd.get(code, []) if x["date"] <= reb_date]
+            if p:
+                nav += positions[code] * p[-1]
+        alloc = nav / len(selected)
         for code in selected:
             if code not in positions:
                 p = [x["close"] for x in wsd.get(code, []) if x["date"] <= reb_date]
                 price = p[-1] if p else 0
                 if price > 0:
+                    exec_price = price * (1 + slippage)
                     lot = cfg_get("alpha_momentum.lot_size", 100)
-                    shares = max(lot, int(alloc / price / lot) * lot)
-                    cost = shares * price * (1 + commission)
+                    shares = max(lot, int(alloc / exec_price / lot) * lot)
+                    cost = shares * exec_price * (1 + commission)
                     if cost <= cash and shares > 0:
                         positions[code] = shares
                         cash -= cost
@@ -476,7 +496,7 @@ class AlphaMomentumBacktest:
         if len(ret_arr) > 1 and np.std(ret_arr) > 0:
             sharpe = float(np.mean(ret_arr) / np.std(ret_arr) * np.sqrt(12))
 
-        risk = RiskMetrics(period_returns)
+        risk = RiskMetrics(period_returns, frequency=12)  # monthly returns
 
         return {
             "pool_size": len(rd) - 1,

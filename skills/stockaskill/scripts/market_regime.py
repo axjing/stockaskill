@@ -232,6 +232,7 @@ def _risk_penalty(vol20: float, drawdown60: float) -> float:
 
 def _compute_breadth(market: str) -> Dict[str, Any]:
     """Estimate breadth from a bounded sample of the market pool."""
+    import random
     pool = get_stock_pool(market)
     sample_limit = int(cfg_get("market_regime.breadth_sample_limit", 60) or 60)
     min_sample = int(cfg_get("market_regime.min_breadth_sample", 15) or 15)
@@ -242,7 +243,8 @@ def _compute_breadth(market: str) -> Dict[str, Any]:
         for row in pool
         if str(row.get("code", "")).strip() and bool(row.get("is_active", 1))
     ]
-    selected = eligible[:sample_limit]
+    # Random sample to avoid systematic bias (pool is often sorted by code/cap)
+    selected = random.sample(eligible, min(len(eligible), sample_limit))
 
     def _check_one(row: Dict[str, Any]):
         """Check if a stock is above MA20/MA60."""

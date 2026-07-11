@@ -44,6 +44,9 @@ class QualityFactor(Factor):
         scores.append(gm_score * 0.25)
 
         # Debt safety (20%): lower is better, range 0-100%
+        # Normalize: if debt_ratio > 1, assume percentage form (e.g., 60 means 60%)
+        if debt > 1:
+            debt = debt / 100.0
         debt_score = max(0, min(1, 1 - debt))
         scores.append(debt_score * 0.20)
 

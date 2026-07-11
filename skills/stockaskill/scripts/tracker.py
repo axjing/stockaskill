@@ -6,8 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from cache import get_cache
-from config import get as cfg_get
 from data_engine import get_kline
 from utils import normalize_code_for_market, safe_float
 
@@ -56,10 +54,12 @@ def start_tracking(
         "take_profit_pct": take_profit_pct,
         "stop_loss_price": stop_loss_price,
         "take_profit_price": take_profit_price,
+        "trailing_stop_pct": 0.08,  # default trailing stop at 8% below high
         "status": "active",
         "notes": notes,
         "last_check": None,
         "last_price": None,
+        "highest_price": entry,  # track highest price since entry for trailing stop
         "pnl_pct": None,
     }
     path = _TRACKING_DIR / f"{tracking_id}_{code}.json"
@@ -119,10 +119,21 @@ def check_trackings(
             _save_tracking(t)
             continue
 
-        pnl_pct = ((current_price - t["entry_price"]) / max(t["entry_price"], 1e-9)) * 100
+        pnl_pct = (
+            (current_price - t["entry_price"]) / max(t["entry_price"], 1e-9)
+        ) * 100
         t["last_price"] = current_price
         t["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M")
         t["pnl_pct"] = round(pnl_pct, 2)
+
+        # Update trailing stop: track highest price and adjust stop-loss
+        highest = max(current_price, t.get("highest_price", t["entry_price"]))
+        t["highest_price"] = highest
+        trail_pct = t.get("trailing_stop_pct", 0.08)
+        trail_stop = highest * (1 - trail_pct)
+        # Only tighten the stop-loss, never loosen it (monotonically increasing)
+        if trail_stop > t["stop_loss_price"] and highest > t["entry_price"] * 1.05:
+            t["stop_loss_price"] = round(trail_stop, 3)
 
         stop_hit = current_price <= t["stop_loss_price"]
         profit_hit = current_price >= t["take_profit_price"]
@@ -164,9 +175,14 @@ def close_tracking(
             data["exit_date"] = datetime.now().strftime("%Y-%m-%d")
             data["exit_notes"] = notes
             if exit_price > 0 and data.get("entry_price", 0) > 0:
-                pnl = ((exit_price - data["entry_price"]) / data["entry_price"]) * 100
+                pnl = (
+                    (exit_price - data["entry_price"]) / data["entry_price"]
+                ) * 100
                 data["exit_pnl_pct"] = round(pnl, 2)
-            f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            f.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
             return data
         except Exception:
             continue

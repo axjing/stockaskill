@@ -3,7 +3,7 @@
 from typing import Any, Dict, List
 
 import numpy as np
-from config import get as cfg_get, signal_from_score
+from config import signal_from_score
 from data_engine import get_fundamentals, get_kline
 from data_readiness import build_symbol_quality_summary, ensure_symbol_analysis_ready
 from factors.composite import CompositeAnalyzer
@@ -452,14 +452,32 @@ class StockDiagnosis:
 
     @staticmethod
     def _compute_rsi(closes: List[float], period: int = 14) -> float:
-        """Calculate RSI."""
-        if len(closes) < period + 1:
+        """Calculate RSI using Wilder's smoothing method.
+
+        Args:
+            closes: Price series, newest first.
+            period: Lookback period (default 14).
+
+        Returns:
+            RSI value in [0, 100].
+        """
+        if len(closes) < period * 2:
             return 50.0
-        changes = np.diff(closes[: period + 1][::-1])
+        # Take most recent (period+1) bars for price changes
+        recent = closes[: period + 1]
+        # Reverse to chronological order (oldest first)
+        recent = recent[::-1]
+        changes = np.diff(recent)
         gains = np.maximum(changes, 0)
         losses = np.maximum(-changes, 0)
-        avg_gain = np.mean(gains)
-        avg_loss = np.mean(losses)
+
+        # Wilder's smoothed moving average (Wilder's RSI)
+        avg_gain = gains[0]
+        avg_loss = losses[0]
+        for i in range(1, len(gains)):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
         if avg_loss == 0:
             return 100.0
         rs = avg_gain / avg_loss
