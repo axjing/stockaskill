@@ -107,6 +107,7 @@ def _cmd_error(msg: str, show_traceback: bool = False) -> None:
 from cache import get_cache  # noqa: E402
 from config import get as cfg_get, signal_from_score, signal_thresholds  # noqa: E402
 from data_engine import (  # noqa: E402
+    check_data_completeness,
     get_etf_pool,
     get_fund_pool,
     get_fundamentals,
@@ -1389,6 +1390,26 @@ def _print_scope_sync_summary(result: dict, label: str) -> None:
     if result.get("missing_codes"):
         print(f"    未就绪: {len(result['missing_codes'])} 只")
         print("    未就绪代码: " + ", ".join(result["missing_codes"][:10]))
+
+    # Data completeness report
+    market = result.get("market", "")
+    if market:
+        completeness = check_data_completeness(market)
+        if completeness:
+            top_incomplete = sorted(
+                completeness, key=lambda x: x["missing_days"], reverse=True
+            )[:5]
+            print(
+                f"    数据完整性: {len(completeness)} 只股票缺失交易日"
+            )
+            for item in top_incomplete:
+                print(
+                    f"      {item['code']}: "
+                    f"{item['actual_days']}/{item['expected_days']} 天 "
+                    f"(缺失 {item['missing_days']})"
+                )
+        else:
+            print("    数据完整性: 全部完成")
 
 
 def _format_elapsed(seconds: float) -> str:
