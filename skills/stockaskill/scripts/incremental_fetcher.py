@@ -264,6 +264,98 @@ class KlineFetcher(IncrementalCacheFetcher):
     def _market(self) -> str:
         return self.market
 
+    def is_cache_fresh(
+        self,
+        cached: List[Dict[str, Any]],
+        days: int,
+        force_refresh: bool,
+    ) -> bool:
+        """Check freshness using DB-level query instead of loading all rows."""
+        if force_refresh:
+            return False
+        from cache import get_cache
+        latest = get_cache().get_latest_date(self.code, market=self.market)
+        if not latest:
+            return False
+        if len(cached) < days:
+            return False
+        return latest == _date_str(datetime.now())
+
+    def compute_fetch_range(
+        self,
+        cached: List[Dict[str, Any]],
+        days: int,
+        full_history: bool,
+    ) -> tuple:
+        """Compute fetch range using DB-level MIN/MAX queries."""
+        today_str = _date_str(datetime.now())
+        padding = cfg_get("kline_incremental_padding_days", 3)
+
+        if full_history:
+            return self._full_history_range(cached, padding, today_str)
+
+        # Use DB-level latest date instead of scanning all rows in Python
+        from cache import get_cache
+        latest = get_cache().get_latest_date(self.code, market=self.market)
+
+        if latest:
+            latest_dt = _safe_parse_date(latest)
+            if latest_dt:
+                start = _date_str(latest_dt - timedelta(days=padding))
+            else:
+                start = _date_str(datetime.now() - timedelta(days=days + 30))
+        else:
+            start = _date_str(datetime.now() - timedelta(days=days + 30))
+
+        return start, today_str
+
+    def _full_history_range(
+        self,
+        cached: List[Dict[str, Any]],
+        padding: int,
+        today_str: str,
+    ) -> tuple:
+        """Compute full-history range using DB-level MIN/MAX."""
+        target_start = _cold_start_date(self._market())
+
+        if not cached:
+            return target_start, today_str
+
+        # Use DB-level queries instead of scanning rows
+        from cache import get_cache
+        cache = get_cache()
+        local_earliest = cache.get_earliest_date(self.code, market=self.market) or ""
+        local_latest = cache.get_latest_date(self.code, market=self.market) or ""
+
+        # Already fully covered — nothing to fetch
+        if (
+            local_earliest
+            and local_latest
+            and local_earliest <= target_start
+            and local_latest == today_str
+        ):
+            return None, None
+
+        needs_early = local_earliest > target_start if local_earliest else True
+        needs_latest = local_latest < today_str if local_latest else True
+
+        if needs_early and needs_latest:
+            early_dt = _safe_parse_date(local_earliest)
+            latest_dt = _safe_parse_date(local_latest)
+            if early_dt and latest_dt:
+                return target_start, _date_str(early_dt + timedelta(days=3))
+            return target_start, today_str
+        elif needs_early:
+            early_dt = _safe_parse_date(local_earliest)
+            if early_dt:
+                return target_start, _date_str(early_dt + timedelta(days=3))
+            return target_start, today_str
+        else:
+            latest_dt = _safe_parse_date(local_latest)
+            if latest_dt:
+                return _date_str(latest_dt - timedelta(days=padding)), today_str
+            return _date_str(datetime.now() - timedelta(days=365 + 30)), today_str
+
 
 def get_kline_incremental(
     code: str,

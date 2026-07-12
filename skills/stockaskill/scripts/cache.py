@@ -141,6 +141,33 @@ class CacheManager:
         finally:
             conn.close()
 
+    @staticmethod
+    def _validate_kline_row(row: dict) -> bool:
+        """Validate a K-line row before writing to cache.
+
+        Rejects rows with:
+        - Non-positive prices (close, open, high, low)
+        - OHLC inconsistencies (high < low, close outside range, etc.)
+        - Future dates
+        """
+        close = row.get("close", 0) or 0
+        open_ = row.get("open", 0) or 0
+        high = row.get("high", 0) or 0
+        low = row.get("low", 0) or 0
+        date_str = str(row.get("date", "")).strip()
+
+        if close <= 0 or open_ <= 0 or high <= 0 or low <= 0:
+            return False
+        if high < low:
+            return False
+        if close > high or close < low:
+            return False
+        if open_ > high or open_ < low:
+            return False
+        if date_str and date_str > __import__("datetime").datetime.now().strftime("%Y-%m-%d"):
+            return False
+        return True
+
     # -- stock pool ---------------------------------------------------------
 
     def upsert_stock_pool(self, rows: List[Dict[str, Any]]) -> None:
@@ -224,6 +251,17 @@ class CacheManager:
         for row in rows:
             row.setdefault("quality_flags", "")
             row.setdefault("adjust_type", "qfq")
+        # Two-phase ingest: reject malformed rows before writing to cache
+        validated = [
+            r for r in rows
+            if self._validate_kline_row(r)
+        ]
+        rejected = len(rows) - len(validated)
+        if rejected:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Rejected %d malformed K-line rows before cache ingestion", rejected,
+            )
         with self._conn() as conn:
             conn.executemany(
                 "INSERT INTO daily_price "
@@ -236,7 +274,7 @@ class CacheManager:
                 "close=excluded.close, volume=excluded.volume, "
                 "amount=excluded.amount, quality_flags=excluded.quality_flags, "
                 "adjust_type=excluded.adjust_type",
-                rows,
+                validated,
             )
 
     def get_daily_price(
@@ -300,6 +338,26 @@ class CacheManager:
             )
             row = cur.fetchone()
             return row[0] if row and row[0] else None
+
+    def get_earliest_date(self, code: str, market: str = "A") -> str | None:
+        """Get the earliest cached date for a stock (v2 table)."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT MIN(date) FROM daily_price WHERE market=? AND code=?",
+                (market, code),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
+    def get_row_count(self, code: str, market: str = "A") -> int:
+        """Get cached row count for a stock."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM daily_price WHERE market=? AND code=?",
+                (market, code),
+            )
+            row = cur.fetchone()
+            return row[0] if row else 0
 
     # -- factor snapshot ----------------------------------------------------
 
