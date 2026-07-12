@@ -1529,15 +1529,32 @@ def _fetch_kline_openbb(
                 return []
         df["date"] = df["date"].astype(str).str.replace("T.*", "", regex=True)
         rows = []
+        today = datetime.now().strftime("%Y-%m-%d")
         for _, r in df.iterrows():
+            close = safe_float(r.get("close", 0))
+            high = safe_float(r.get("high", 0))
+            low = safe_float(r.get("low", 0))
+            open_ = safe_float(r.get("open", 0))
+            date_str = str(r.get("date", ""))
+
+            # Reject rows with invalid prices
+            if close <= 0 or open_ <= 0 or high <= 0 or low <= 0:
+                continue
+            # Reject rows with impossible OHLC relationships
+            if high < low or close > high or close < low or open_ > high or open_ < low:
+                continue
+            # Reject rows with future dates
+            if date_str > today:
+                continue
+
             rows.append(
                 {
                     "code": code,
-                    "date": str(r.get("date", "")),
-                    "open": safe_float(r.get("open", 0)),
-                    "high": safe_float(r.get("high", 0)),
-                    "low": safe_float(r.get("low", 0)),
-                    "close": safe_float(r.get("close", 0)),
+                    "date": date_str,
+                    "open": open_,
+                    "high": high,
+                    "low": low,
+                    "close": close,
                     "volume": safe_float(r.get("volume", 0)),
                     "amount": safe_float(r.get("amount", 0)),
                     "market": market,
@@ -1579,15 +1596,32 @@ def _fetch_kline_yfinance(
             return []
         df["date"] = df["Date"].astype(str).str.replace("T.*", "", regex=True)
         rows = []
+        today = datetime.now().strftime("%Y-%m-%d")
         for _, r in df.iterrows():
+            close = safe_float(r.get("Close", 0))
+            high = safe_float(r.get("High", 0))
+            low = safe_float(r.get("Low", 0))
+            open_ = safe_float(r.get("Open", 0))
+            date_str = str(r.get("date", ""))
+
+            # Reject rows with invalid prices
+            if close <= 0 or open_ <= 0 or high <= 0 or low <= 0:
+                continue
+            # Reject rows with impossible OHLC relationships
+            if high < low or close > high or close < low or open_ > high or open_ < low:
+                continue
+            # Reject rows with future dates
+            if date_str > today:
+                continue
+
             rows.append(
                 {
                     "code": code,
-                    "date": str(r.get("date", "")),
-                    "open": safe_float(r.get("Open", 0)),
-                    "high": safe_float(r.get("High", 0)),
-                    "low": safe_float(r.get("Low", 0)),
-                    "close": safe_float(r.get("Close", 0)),
+                    "date": date_str,
+                    "open": open_,
+                    "high": high,
+                    "low": low,
+                    "close": close,
                     "volume": safe_float(r.get("Volume", 0)),
                     "amount": 0.0,
                     "market": market,
