@@ -18,7 +18,7 @@ def test_cmd_backtest_uses_cagr_value(capsys):
 
     with patch("portfolio.backtest_engine.AlphaMomentumBacktest") as mock_engine:
         mock_engine.return_value.run.return_value = mock_result
-        with patch("run._save_report"):
+        with patch("commands.backtest._save_report"):
             cmd_backtest(type("Args", (), {"output_dir": "reports", "format": "none"}))
 
     output = capsys.readouterr().out
@@ -62,8 +62,8 @@ def test_cmd_market_regime_prints_summary(capsys):
         "provenance": {"source": "000300", "source_status": "ok", "freshness": "fresh"},
     }
 
-    with patch("run.analyze_market_regime", return_value=regime):
-        with patch("run._save_report"):
+    with patch("commands.market_regime.analyze_market_regime", return_value=regime):
+        with patch("commands.market_regime._save_report"):
             cmd_market_regime(args)
 
     output = capsys.readouterr().out
@@ -91,7 +91,7 @@ def test_cmd_route_recommends_opportunity_scan(capsys):
         },
     )
 
-    with patch("run._save_report"):
+    with patch("commands.route._save_report"):
         cmd_route(args)
 
     output = capsys.readouterr().out
@@ -118,7 +118,7 @@ def test_cmd_route_recommends_portfolio_flow(capsys):
         },
     )
 
-    with patch("run._save_report"):
+    with patch("commands.route._save_report"):
         cmd_route(args)
 
     output = capsys.readouterr().out
@@ -145,7 +145,7 @@ def test_cmd_route_recommends_theme_research(capsys):
         },
     )
 
-    with patch("run._save_report"):
+    with patch("commands.route._save_report"):
         cmd_route(args)
 
     output = capsys.readouterr().out
@@ -169,12 +169,12 @@ def test_cmd_workflow_list_prints_builtin_manifests(capsys):
         },
     )
 
-    with patch("run.list_workflow_manifests") as mock_list:
+    with patch("commands.route.list_workflow_manifests") as mock_list:
         mock_list.return_value = [
             "market-regime-daily",
             "portfolio-review-weekly",
         ]
-        with patch("run._save_report"):
+        with patch("commands.route._save_report"):
             cmd_workflow(args)
 
     output = capsys.readouterr().out
@@ -223,9 +223,9 @@ def test_cmd_workflow_run_prints_resolved_steps(capsys):
         "tags": ["weekly"],
     }
 
-    with patch("run.build_workflow_run_plan") as mock_plan:
+    with patch("commands.route.build_workflow_run_plan") as mock_plan:
         mock_plan.return_value = type("Plan", (), {"to_dict": lambda self=None: plan})()
-        with patch("run._save_report"):
+        with patch("commands.route._save_report"):
             cmd_workflow(args)
 
     output = capsys.readouterr().out
@@ -256,8 +256,8 @@ def test_cmd_scorecard_thesis_prints_score(capsys):
         "scorecard": {"name": "thesis_scorecard", "score": 78.0, "level": "high"},
     }
 
-    with patch("run.get_thesis_record", return_value=record):
-        with patch("run._save_report"):
+    with patch("commands.scorecard.get_thesis_record", return_value=record):
+        with patch("commands.scorecard._save_report"):
             cmd_scorecard(args)
 
     output = capsys.readouterr().out
@@ -284,11 +284,11 @@ def test_cmd_scorecard_theme_prints_score(capsys):
         "scorecard": {"name": "theme_scorecard", "score": 71.0, "level": "medium"}
     }
 
-    with patch("run.build_theme_report") as mock_build:
+    with patch("commands.scorecard.build_theme_report") as mock_build:
         mock_build.return_value = type(
             "ThemeReport", (), {"to_dict": lambda self=None: report}
         )()
-        with patch("run._save_report"):
+        with patch("commands.scorecard._save_report"):
             cmd_scorecard(args)
 
     output = capsys.readouterr().out
@@ -341,13 +341,13 @@ def test_cmd_theme_scan_prints_ranked_layers(capsys):
         "next_checks": [],
     }
 
-    with patch("run.build_theme_report") as mock_build:
+    with patch("commands.theme.build_theme_report") as mock_build:
         mock_build.return_value = type(
             "ThemeReport",
             (),
             {"to_dict": lambda self=None: report},
         )()
-        with patch("run._save_report"):
+        with patch("commands.theme._save_report"):
             cmd_theme_scan(args)
 
     output = capsys.readouterr().out
@@ -389,8 +389,8 @@ def test_cmd_deep_diagnose_prints_conflicts_and_checks(capsys):
         ],
     }
 
-    with patch("run.build_deep_diagnosis", return_value=report):
-        with patch("run._save_report"):
+    with patch("commands.analyze.build_deep_diagnosis", return_value=report):
+        with patch("commands.analyze._save_report"):
             cmd_deep_diagnose(args)
 
     output = capsys.readouterr().out
@@ -450,18 +450,18 @@ def test_cmd_thesis_capture_persists_record(capsys):
 
     with patch("advisor.diagnosis.StockDiagnosis") as mock_diag:
         mock_diag.return_value.full_report.return_value = report
-        with patch("run.build_thesis_record") as mock_build:
+        with patch("commands.thesis.build_thesis_record") as mock_build:
             mock_build.return_value = type(
                 "Record",
                 (),
                 {"thesis_id": record["thesis_id"], "to_dict": lambda self=None: record},
             )()
-            with patch("run.save_thesis_record") as mock_save:
+            with patch("commands.thesis.save_thesis_record") as mock_save:
                 mock_save.return_value = {
                     "json_path": "memory/theses/A_601318.json",
                     "md_path": "memory/theses/A_601318.md",
                 }
-                with patch("run._save_report"):
+                with patch("commands.thesis._save_report"):
                     cmd_thesis(args)
 
     output = capsys.readouterr().out
@@ -486,7 +486,7 @@ def test_cmd_thesis_list_prints_records(capsys):
         },
     )
 
-    with patch("run.list_thesis_records") as mock_list:
+    with patch("commands.thesis.list_thesis_records") as mock_list:
         mock_list.return_value = [
             {
                 "thesis_id": "A_601318_1",
@@ -498,7 +498,7 @@ def test_cmd_thesis_list_prints_records(capsys):
                 "summary": "BUY 观点",
             }
         ]
-        with patch("run._save_report"):
+        with patch("commands.thesis._save_report"):
             cmd_thesis(args)
 
     output = capsys.readouterr().out
@@ -550,8 +550,8 @@ def test_cmd_thesis_postmortem_updates_record(capsys):
         "diagnosis_report": {},
     }
 
-    with patch("run.update_thesis_postmortem", return_value=updated):
-        with patch("run._save_report"):
+    with patch("commands.thesis.update_thesis_postmortem", return_value=updated):
+        with patch("commands.thesis._save_report"):
             cmd_thesis(args)
 
     output = capsys.readouterr().out
@@ -821,9 +821,9 @@ def test_cmd_scan_fund_warms_etf_scope(capsys):
         },
     )
 
-    with patch("run.get_etf_pool", return_value=funds):
-        with patch("run.ensure_etf_ready") as mock_ready:
-            with patch("run._save_report"):
+    with patch("commands.scan.get_etf_pool", return_value=funds):
+        with patch("commands.scan.ensure_etf_ready") as mock_ready:
+            with patch("commands.scan._save_report"):
                 cmd_scan(args)
 
     mock_ready.assert_called_once_with(["510300"], limit=1)
@@ -866,8 +866,8 @@ def test_cmd_scan_prints_market_regime_summary(capsys):
     ]
 
     try:
-        with patch("run._safe_market_regime", return_value=regime):
-            with patch("run._save_report"):
+        with patch("commands.scan._safe_market_regime", return_value=regime):
+            with patch("commands.scan._save_report"):
                 cmd_scan(args)
     finally:
         patch.stopall()
@@ -926,7 +926,7 @@ def test_cmd_scan_snapshot_reads_cached_snapshot(capsys):
     }
 
     try:
-        with patch("run._save_report"):
+        with patch("commands.scan._save_report"):
             cmd_scan(args)
     finally:
         patch.stopall()
@@ -998,7 +998,7 @@ def test_cmd_scan_refresh_triggers_snapshot_build(capsys):
     }
 
     try:
-        with patch("run._save_report"):
+        with patch("commands.scan._save_report"):
             cmd_scan(args)
     finally:
         patch.stopall()
@@ -1038,7 +1038,7 @@ def test_cmd_scan_auto_falls_back_to_realtime_when_snapshot_missing(capsys):
     ]
 
     try:
-        with patch("run._save_report"):
+        with patch("commands.scan._save_report"):
             cmd_scan(args)
     finally:
         patch.stopall()
@@ -1073,7 +1073,7 @@ def test_cmd_scan_realtime_uses_candidate_mode(capsys):
     ]
 
     try:
-        with patch("run._save_report"):
+        with patch("commands.scan._save_report"):
             cmd_scan(args)
     finally:
         patch.stopall()
@@ -1124,8 +1124,8 @@ def test_cmd_portfolio_applies_market_risk_budget(capsys):
     )()
 
     try:
-        with patch("run._safe_market_regime", return_value=regime):
-            with patch("run._save_report"):
+        with patch("commands.portfolio._safe_market_regime", return_value=regime):
+            with patch("commands.portfolio._save_report"):
                 cmd_portfolio(args)
     finally:
         patch.stopall()
@@ -1154,7 +1154,7 @@ def test_cmd_sync_symbol_reports_summary(capsys):
         },
     )
 
-    with patch("run.sync_symbol_data") as mock_sync:
+    with patch("commands.sync.sync_symbol_data") as mock_sync:
         mock_sync.return_value = {
             "code": "601318",
             "market": "A",
@@ -1169,7 +1169,7 @@ def test_cmd_sync_symbol_reports_summary(capsys):
             "ready": True,
             "errors": [],
         }
-        with patch("run._save_report"):
+        with patch("commands.sync._save_report"):
             cmd_sync(args)
 
     output = capsys.readouterr().out
@@ -1195,7 +1195,7 @@ def test_cmd_sync_watchlist_reports_scope_summary(capsys):
         },
     )
 
-    with patch("run.sync_watchlist_data") as mock_sync:
+    with patch("commands.sync.sync_watchlist_data") as mock_sync:
         mock_sync.return_value = {
             "requested": 3,
             "ready": 2,
@@ -1206,7 +1206,7 @@ def test_cmd_sync_watchlist_reports_scope_summary(capsys):
             "missing_codes": ["600519"],
             "symbols": [],
         }
-        with patch("run._save_report"):
+        with patch("commands.sync._save_report"):
             cmd_sync(args)
 
     output = capsys.readouterr().out
@@ -1233,7 +1233,7 @@ def test_cmd_sync_portfolio_uses_codes(capsys):
         },
     )
 
-    with patch("run.sync_portfolio_data") as mock_sync:
+    with patch("commands.sync.sync_portfolio_data") as mock_sync:
         mock_sync.return_value = {
             "requested": 2,
             "ready": 2,
@@ -1244,7 +1244,7 @@ def test_cmd_sync_portfolio_uses_codes(capsys):
             "missing_codes": [],
             "symbols": [],
         }
-        with patch("run._save_report"):
+        with patch("commands.sync._save_report"):
             cmd_sync(args)
 
     mock_sync.assert_called_once_with(
@@ -1271,7 +1271,7 @@ def test_cmd_sync_etf_uses_etf_scope(capsys):
         },
     )
 
-    with patch("run.sync_etf_data") as mock_sync:
+    with patch("commands.sync.sync_etf_data") as mock_sync:
         mock_sync.return_value = {
             "requested": 2,
             "ready": 2,
@@ -1282,7 +1282,7 @@ def test_cmd_sync_etf_uses_etf_scope(capsys):
             "missing_codes": [],
             "symbols": [],
         }
-        with patch("run._save_report"):
+        with patch("commands.sync._save_report"):
             cmd_sync(args)
 
     mock_sync.assert_called_once_with(
@@ -1308,8 +1308,8 @@ def test_cmd_status_symbol_reads_sync_state(capsys):
     )
 
     with (
-        patch("run.get_cache") as mock_get_cache,
-        patch("run.get_stock_pool") as mock_pool,
+        patch("commands.sync.get_cache") as mock_get_cache,
+        patch("commands.sync.get_stock_pool") as mock_pool,
     ):
         mock_pool.return_value = [
             {
@@ -1351,9 +1351,9 @@ def test_cmd_status_watchlist_prints_scope_summary(capsys):
     )
 
     with (
-        patch("run.get_cache") as mock_get_cache,
-        patch("run.cfg_get") as mock_cfg,
-        patch("run.get_stock_pool") as mock_pool,
+        patch("commands.sync.get_cache") as mock_get_cache,
+        patch("commands.sync.cfg_get") as mock_cfg,
+        patch("commands.sync.get_stock_pool") as mock_pool,
     ):
         mock_cfg.side_effect = lambda key, default=None: {
             "watchlist": ["600519", "000858"],
@@ -1430,9 +1430,9 @@ def test_cmd_status_etf_prints_scope_summary(capsys):
     )
 
     with (
-        patch("run.get_cache") as mock_get_cache,
-        patch("run.cfg_get") as mock_cfg,
-        patch("run.get_etf_pool") as mock_pool,
+        patch("commands.sync.get_cache") as mock_get_cache,
+        patch("commands.sync.cfg_get") as mock_cfg,
+        patch("commands.sync.get_etf_pool") as mock_pool,
     ):
         mock_cfg.side_effect = lambda key, default=None: {
             "cache_ttl.daily_kline": 3600,
