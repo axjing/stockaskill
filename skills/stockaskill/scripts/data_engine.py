@@ -816,15 +816,12 @@ def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
     except Exception:
         print("EM pool failed, fallback to Sina.")
 
-    # Attempt 2: Sina (code+name only)
+    # Attempt 2: Sina (code+name only), then enrich with Baostock
     try:
         with _akshare_lock:
             df = ak.stock_info_a_code_name()
-        df["industry"] = ""
-        df["sector"] = ""
-        df["list_date"] = ""
-        df["total_market_cap"] = 0.0
-        print(f"Fetch A-share pool via Sina ({len(df)} stocks)")
+        df = _enrich_a_pool_from_baostock(df)
+        print(f"Fetch A-share pool via Sina+BS ({len(df)} stocks)")
         return df
     except Exception:
         print("Sina pool failed, fallback to Baostock.")
@@ -867,6 +864,66 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
     except Exception as exc:
         print(f"Baostock pool fetch failed: {exc}")
         return None
+    finally:
+        try:
+            with _suppress_output():
+                bs.logout()
+        except Exception:
+            pass
+
+
+def _enrich_a_pool_from_baostock(df: pd.DataFrame) -> pd.DataFrame:
+    """Add industry and list_date to a Sina-fetched A-share pool via Baostock."""
+    bs = _try_baostock()
+    if bs is None or df is None or df.empty:
+        df["industry"] = ""
+        df["sector"] = ""
+        df["list_date"] = ""
+        if "total_market_cap" not in df.columns:
+            df["total_market_cap"] = 0.0
+        return df
+    try:
+        # Build mapping from Baostock: code -> {list_date}
+        basic_map: Dict[str, str] = {}
+        rs = bs.query_stock_basic()
+        while rs.error_code == "0" and rs.next():
+            row = rs.get_row_data()
+            code = row[0]
+            if code.startswith(("sh.", "sz.", "bj.")):
+                code = code[3:]
+            if row[4] == "1":  # stock type
+                basic_map[code] = str(row[2]).strip()
+
+        # Build mapping from Baostock: code -> industry
+        industry_map: Dict[str, str] = {}
+        rs2 = bs.query_stock_industry()
+        while rs2.error_code == "0" and rs2.next():
+            row_data = rs2.get_row_data()
+            # Fields: updateDate, code, code_name, industry, industryClassification
+            code = row_data[1]  # code with prefix
+            if code.startswith(("sh.", "sz.", "bj.")):
+                code = code[3:]
+            ind = str(row_data[3]).strip() if len(row_data) > 3 else ""
+            if ind:
+                industry_map[code] = ind
+
+        # Apply mappings
+        df["industry"] = df["code"].map(industry_map).fillna("").astype(str)
+        df["sector"] = ""
+        df["list_date"] = df["code"].map(basic_map).fillna("").astype(str)
+        if "total_market_cap" not in df.columns:
+            df["total_market_cap"] = 0.0
+        else:
+            df["total_market_cap"] = df["total_market_cap"].fillna(0).astype(float)
+        return df
+    except Exception as exc:
+        print(f"Baostock enrichment failed: {exc}")
+        df["industry"] = ""
+        df["sector"] = ""
+        df["list_date"] = ""
+        if "total_market_cap" not in df.columns:
+            df["total_market_cap"] = 0.0
+        return df
     finally:
         try:
             with _suppress_output():
@@ -1329,9 +1386,11 @@ def _fetch_kline_sina(
                 return _normalize_kline_df(df, code, market)
         return []
     elif market == "US":
+        # US stocks: use raw prices (no adjustment) to avoid negative
+        # prices from AKShare's A-share oriented qfq algorithm.
         with _suppress_output(capture_exceptions=True):
             with _akshare_lock:
-                df = ak.stock_us_daily(symbol=code.upper(), adjust="qfq")
+                df = ak.stock_us_daily(symbol=code.upper(), adjust="")
         if df is not None and not df.empty and "date" in df.columns:
             df["date"] = df["date"].astype(str)
             clean_start = start.replace("-", "")
@@ -1671,6 +1730,7 @@ def get_fundamentals(
         snapshot = _fetch_fundamentals(code, market)
         if snapshot:
             snapshot["market"] = market
+            _backfill_missing_factors(snapshot, code, market)
             _cache.upsert_factor_snapshot([snapshot])
             return snapshot
     except RuntimeError as exc:
@@ -1684,8 +1744,37 @@ def get_fundamentals(
     return cached
 
 
+def _backfill_missing_factors(result: Dict[str, Any], code: str, market: str) -> None:
+    """Backfill missing factor values from related data sources."""
+    # Backfill pe_static from pe_ttm (close approximation for A-shares)
+    if not result.get("pe_static") and result.get("pe_ttm"):
+        result["pe_static"] = result["pe_ttm"]
+
+    # Backfill market_cap from stock_pool
+    if not result.get("market_cap"):
+        with _cache._conn() as conn:
+            cur = conn.execute(
+                "SELECT total_market_cap FROM stock_pool "
+                "WHERE market=? AND code=? LIMIT 1",
+                (market, code),
+            )
+            row = cur.fetchone()
+            if row and row[0] and row[0] > 0:
+                result["market_cap"] = float(row[0])
+
+    # Backfill roa from roe and debt_ratio if available
+    # ROA = ROE * (1 - debt_ratio) is a rough approximation
+    if not result.get("roa") and result.get("roe") and result.get("debt_ratio"):
+        roe = float(result.get("roe", 0) or 0)
+        debt = float(result.get("debt_ratio", 0) or 0)
+        if roe and debt:
+            result["roa"] = round(roe * (1 - debt), 4)
+
+
 def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: str) -> None:
-    """Compute PE / PB from cached close price and fundamental EPS / BVPS."""
+    """Compute PE / PB from cached close price and fundamental EPS / BVPS.
+    Also backfill market_cap from stock_pool when upstream doesn't provide it.
+    """
     eps = result.get("eps", 0.0) or 0.0
     bvps = result.get("bvps", 0.0) or 0.0
     price = None
@@ -1703,6 +1792,109 @@ def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: st
     if price and bvps > 0 and not result.get("pb"):
         result["pb"] = round(price / bvps, 2)
 
+    # Backfill market_cap from stock_pool when upstream doesn't provide it
+    if not result.get("market_cap"):
+        with _cache._conn() as conn:
+            cur = conn.execute(
+                "SELECT total_market_cap FROM stock_pool "
+                "WHERE market=? AND code=? LIMIT 1",
+                (market, code),
+            )
+            row = cur.fetchone()
+            if row and row[0] and row[0] > 0:
+                result["market_cap"] = float(row[0])
+
+
+def _fetch_fundamentals_us_akshare(
+    code: str, ak
+) -> Optional[Dict[str, Any]]:
+    """Fetch US stock fundamentals via AKShare stock_financial_us_analysis_indicator_em.
+
+    Returns a dict with the same schema as other fundamental fetchers.
+    """
+    try:
+        with _akshare_lock:
+            df = ak.stock_financial_us_analysis_indicator_em(symbol=code)
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+
+    # Latest report row (AKShare returns newest first, row 0 = most recent)
+    latest = df.iloc[0]
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    def _get_num(col: str, default: float = 0.0) -> float:
+        """Safely extract a numeric value from the AKShare DataFrame."""
+        try:
+            val = latest.get(col)
+            if val is None or str(val).strip() in ("", "--", "-"):
+                return default
+            if isinstance(val, float) and val != val:  # NaN check
+                return default
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+
+    # EPS / BVPS (BPS not available, derive from equity ratio)
+    eps = _get_num("BASIC_EPS")
+    bvps = 0.0
+
+    # PE/PB — compute from price if not directly available
+    pe_ttm = _get_num("PE_TTM")
+    pb = _get_num("PB")
+    if pe_ttm <= 0 and eps > 0:
+        # Fallback: compute PE from cached close price
+        cached_rows = _cache.get_daily_price(code, market="US")
+        if cached_rows:
+            closes = [r.get("close", 0) for r in cached_rows if r.get("close", 0) > 0]
+            if closes:
+                pe_ttm = round(closes[-1] / eps, 2)
+    if pb <= 0 and bvps > 0:
+        cached_rows = _cache.get_daily_price(code, market="US")
+        if cached_rows:
+            closes = [r.get("close", 0) for r in cached_rows if r.get("close", 0) > 0]
+            if closes:
+                pb = round(closes[-1] / bvps, 2)
+
+    # Growth rates (AKShare returns percentage, convert to decimal)
+    revenue_growth = _get_num("OPERATE_INCOME_YOY") / 100.0
+    profit_growth = _get_num("PARENT_HOLDER_NETPROFIT_YOY") / 100.0
+
+    # ROE/ROA (AKShare returns percentage, convert to decimal)
+    roe = _get_num("ROE_AVG") / 100.0
+    roa = _get_num("ROA") / 100.0
+
+    # Margins (AKShare returns percentage, convert to decimal)
+    gross_margin = _get_num("GROSS_PROFIT_RATIO") / 100.0
+    net_margin = _get_num("NET_PROFIT_RATIO") / 100.0
+
+    # Debt / liquidity (AKShare returns percentage for ratios)
+    debt_ratio = _get_num("DEBT_ASSET_RATIO") / 100.0
+    current_ratio = _get_num("CURRENT_RATIO")
+
+    return {
+        "code": code,
+        "date": today,
+        "market_cap": 0.0,
+        "pe_ttm": pe_ttm,
+        "pe_static": pe_ttm,
+        "pb": pb,
+        "ps_ttm": 0.0,
+        "pcf_ttm": 0.0,
+        "dividend_yield": 0.0,
+        "roe": roe,
+        "roa": roa,
+        "gross_margin": gross_margin,
+        "net_margin": net_margin,
+        "revenue_growth": revenue_growth,
+        "profit_growth": profit_growth,
+        "debt_ratio": debt_ratio,
+        "current_ratio": current_ratio,
+        "eps": eps,
+        "bvps": bvps,
+    }
+
 
 def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals from available source (THS -> Sina -> OpenBB -> yfinance).
@@ -1711,25 +1903,48 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     PE/PB are computed from cached price + EPS/BVPS when available.
     For US/HK: yfinance is the primary source (AKShare US financials unreliable).
     """
-    # US/HK: yfinance first (AKShare US/HK financial endpoints are unreliable)
-    if market in ("HK", "US"):
+    # US: AKShare first (yfinance often rate-limited)
+    if market == "US":
+        ak = _try_akshare()
+        if ak is not None:
+            result = _fetch_fundamentals_us_akshare(code, ak)
+            if result:
+                _backfill_valuation_from_price(result, code, market)
+                return result
+        # Fallback: yfinance -> OpenBB
         yf = _try_yfinance()
         if yf is not None:
             result = _fetch_fundamentals_yfinance(code, market, yf)
             if result:
+                _backfill_valuation_from_price(result, code, market)
                 return result
         obb = _try_openbb()
         if obb is not None:
             result = _fetch_fundamentals_openbb(code, market, obb)
             if result:
+                _backfill_valuation_from_price(result, code, market)
                 return result
-        # Fallback: try AKShare (HK only, US already known to be unreliable)
-        if market == "HK":
-            ak = _try_akshare()
-            if ak is not None:
-                result = _fetch_fundamentals_hk_analysis(code, ak)
-                if result:
-                    return result
+
+    # HK: yfinance first (AKShare US/HK financial endpoints are unreliable)
+    if market == "HK":
+        yf = _try_yfinance()
+        if yf is not None:
+            result = _fetch_fundamentals_yfinance(code, market, yf)
+            if result:
+                _backfill_valuation_from_price(result, code, market)
+                return result
+        obb = _try_openbb()
+        if obb is not None:
+            result = _fetch_fundamentals_openbb(code, market, obb)
+            if result:
+                _backfill_valuation_from_price(result, code, market)
+                return result
+        ak = _try_akshare()
+        if ak is not None:
+            result = _fetch_fundamentals_hk_analysis(code, ak)
+            if result:
+                _backfill_valuation_from_price(result, code, market)
+                return result
 
     # A-shares: THS -> Sina path
     ak = _try_akshare()
@@ -2266,7 +2481,7 @@ def sync_symbols_data(
         flush=True,
     )
 
-    max_workers = min(cfg_get("sync_max_workers", 8), total)
+    max_workers = min(cfg_get("sync_max_workers", 2), total)
     if total > 100:
         print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
 
@@ -2602,7 +2817,7 @@ def sync_etf_data(
         flush=True,
     )
 
-    max_workers = min(cfg_get("sync_max_workers", 8), total)
+    max_workers = min(cfg_get("sync_max_workers", 2), total)
     if total > 10:
         print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
 

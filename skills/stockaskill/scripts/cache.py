@@ -52,11 +52,6 @@ _SCHEMA = [
         code TEXT, date TEXT, factor_name TEXT, factor_value REAL,
         PRIMARY KEY (code, date, factor_name)
     )""",
-    """CREATE TABLE IF NOT EXISTS sentiment (
-        code TEXT, date TEXT, source TEXT, title TEXT, url TEXT,
-        sentiment_score REAL,
-        PRIMARY KEY (code, date, source, title)
-    )""",
     """CREATE TABLE IF NOT EXISTS cache_meta (
         table_name TEXT PRIMARY KEY, last_updated TIMESTAMP,
         record_count INTEGER, status TEXT
@@ -73,10 +68,6 @@ _SCHEMA = [
     """CREATE TABLE IF NOT EXISTS fund_nav (
         code TEXT, date TEXT, nav REAL, acc_nav REAL,
         PRIMARY KEY (code, date)
-    )""",
-    """CREATE TABLE IF NOT EXISTS fund_etf_info (
-        code TEXT PRIMARY KEY, name TEXT, track_index TEXT,
-        scale REAL, updated_at TIMESTAMP
     )""",
     """CREATE TABLE IF NOT EXISTS stock_industry (
         code TEXT PRIMARY KEY, sector TEXT, industry TEXT,
@@ -507,32 +498,6 @@ class CacheManager:
                 (code, latest_date),
             )
             return latest_date, {item[0]: item[1] for item in cur.fetchall()}
-
-    # -- sentiment ----------------------------------------------------------
-
-    def upsert_sentiment(self, rows: List[Dict[str, Any]]) -> None:
-        """Upsert sentiment analysis results."""
-        with self._conn() as conn:
-            conn.executemany(
-                "INSERT INTO sentiment "
-                "(code, date, source, title, url, sentiment_score) "
-                "VALUES (:code, :date, :source, :title, :url, :sentiment_score) "
-                "ON CONFLICT(code, date, source, title) DO UPDATE SET "
-                "sentiment_score=excluded.sentiment_score",
-                rows,
-            )
-
-    def get_sentiment(self, code: str, days: int = 7) -> List[Dict[str, Any]]:
-        """Get recent sentiment data for a stock."""
-        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        with self._conn() as conn:
-            conn.row_factory = sqlite3.Row
-            cur = conn.execute(
-                "SELECT * FROM sentiment WHERE code=? AND date>=? "
-                "ORDER BY date DESC",
-                (code, cutoff),
-            )
-            return [dict(r) for r in cur.fetchall()]
 
     # -- fund data ----------------------------------------------------------
 
@@ -1008,7 +973,6 @@ class CacheManager:
             "factor_snapshot",
             "computed_factors",
             "market_scan_snapshot",
-            "sentiment",
             "fund_info",
             "fund_nav",
             "market_index",
@@ -1048,12 +1012,6 @@ class CacheManager:
                 (cutoff,),
             )
             removed["daily_price"] = cur.rowcount
-
-            cur = conn.execute(
-                "DELETE FROM sentiment WHERE date < ?",
-                (cutoff,),
-            )
-            removed["sentiment"] = cur.rowcount
 
             if db_size > max_size_mb:
                 cur = conn.execute(
