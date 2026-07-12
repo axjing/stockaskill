@@ -168,6 +168,48 @@ class CacheManager:
             return False
         return True
 
+    def compute_vwap(self, amount: float, volume: float) -> float:
+        """Compute VWAP from cached amount and volume.
+
+        VWAP = amount / volume. Returns 0 if volume is 0.
+        """
+        if volume > 0 and amount > 0:
+            return round(amount / volume, 4)
+        return 0.0
+
+    def check_data_completeness(
+        self, market: str = "A",
+    ) -> List[Dict[str, int]]:
+        """Check data completeness against the trade calendar.
+
+        Returns a list of dicts with code, actual_days, expected_days, missing_days
+        for stocks that have fewer rows than the trade calendar.
+        """
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                SELECT dp.code,
+                       COUNT(dp.date) as actual_days,
+                       (SELECT COUNT(*) FROM trade_calendar WHERE market=dp.market) as expected_days,
+                       (SELECT COUNT(*) FROM trade_calendar WHERE market=dp.market) - COUNT(dp.date) as missing_days
+                FROM daily_price dp
+                WHERE dp.market=?
+                GROUP BY dp.code
+                HAVING actual_days < expected_days
+                ORDER BY missing_days DESC
+                """,
+                (market,),
+            )
+            return [
+                {
+                    "code": row[0],
+                    "actual_days": row[1],
+                    "expected_days": row[2],
+                    "missing_days": row[3],
+                }
+                for row in cur.fetchall()
+            ]
+
     # -- stock pool ---------------------------------------------------------
 
     def upsert_stock_pool(self, rows: List[Dict[str, Any]]) -> None:

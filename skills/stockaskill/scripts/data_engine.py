@@ -1027,6 +1027,32 @@ def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
     return "", True
 
 
+def get_vwap(code: str, market: str = "A", date: str = "") -> float:
+    """Get VWAP for a stock on a given date.
+
+    VWAP = amount / volume. Uses cached data.
+    """
+    cached = _cache.get_daily_price(code, market=market)
+    if date:
+        cached = [r for r in cached if r.get("date", "") == date]
+    if not cached:
+        return 0.0
+    row = cached[0]
+    return _cache.compute_vwap(
+        float(row.get("amount", 0) or 0),
+        float(row.get("volume", 0) or 0),
+    )
+
+
+def check_data_completeness(market: str = "A") -> List[Dict[str, int]]:
+    """Check data completeness against the trade calendar.
+
+    Returns a list of dicts with code, actual_days, expected_days, missing_days
+    for stocks that have fewer rows than the trade calendar.
+    """
+    return _cache.check_data_completeness(market)
+
+
 @_api_call("stock_pool_hk")
 def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch HK pool via Sina and extract minimal metadata when available."""
