@@ -1150,6 +1150,20 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
 
 
 
+def _estimate_amount(amount: float, volume: float, close: float, market: str) -> float:
+    """Estimate amount (成交额) when missing, using volume × close.
+
+    For A-shares the data source already provides amount correctly.
+    For US/HK stocks, AKShare and yfinance don't provide amount.
+    Estimate: amount = volume × close (ignoring lot_size which varies by market).
+    """
+    if amount > 0 and volume > 0 and close > 0:
+        return amount
+    if volume > 0 and close > 0:
+        return round(volume * close, 2)
+    return amount
+
+
 def _detect_quality_flags(rows: List[Dict[str, Any]], market: str) -> List[Dict[str, Any]]:
     """Scan K-line rows for anomalies and attach quality_flags.
 
@@ -1317,7 +1331,12 @@ def _normalize_kline_df(
                 "low": low,
                 "close": close,
                 "volume": safe_float(r.get("volume", 0)),
-                "amount": safe_float(r.get("amount", 0)),
+                "amount": _estimate_amount(
+                    safe_float(r.get("amount", 0)),
+                    safe_float(r.get("volume", 0)),
+                    close,
+                    market,
+                ),
                 "market": market,
             }
         )

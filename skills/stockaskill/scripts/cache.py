@@ -78,6 +78,12 @@ _SCHEMA = [
         low REAL, close REAL, volume REAL, amount REAL,
         PRIMARY KEY (index_code, date)
     )""",
+    """CREATE TABLE IF NOT EXISTS trade_calendar (
+        market TEXT, date TEXT, is_open INTEGER DEFAULT 1,
+        PRIMARY KEY (market, date)
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_trade_calendar_market
+        ON trade_calendar(market)""",
     """CREATE TABLE IF NOT EXISTS kv_store (
         key TEXT PRIMARY KEY, value TEXT, expires REAL
     )""",
