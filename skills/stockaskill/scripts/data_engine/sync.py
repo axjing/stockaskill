@@ -1,11 +1,12 @@
-﻿"""Core data engine: sync module."""
+"""Core data engine: sync module."""
 
 import logging
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 from cache import get_cache
 from config import get as cfg_get
@@ -13,11 +14,13 @@ from utils import (
     normalize_code_for_market,
     safe_float,
 )
+
 from data_engine.config import (
     _api_call,
     _cold_start_date,
     _is_etf_market,
     _market_supports_fundamentals,
+    _try_akshare,
 )
 from data_engine.fundamentals import get_fundamentals
 from data_engine.helpers import (
@@ -29,10 +32,11 @@ from data_engine.helpers import (
     _upsert_symbol_sync_state,
 )
 from data_engine.kline import get_kline
-from data_engine.pool import get_stock_pool
+from data_engine.pool import _fetch_fund_pool_df, get_stock_pool
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
+
 
 def sync_symbol_data(
     code: str,
@@ -76,9 +80,7 @@ def sync_symbol_data(
                 _skip_history_api = True
 
     history_target = (
-        max(history_days, history_before)
-        if not full_history
-        else history_days
+        max(history_days, history_before) if not full_history else history_days
     )
     history_rows = history_before_rows
     history_error = ""
@@ -175,13 +177,12 @@ def sync_symbol_data(
         "fundamentals_after": fundamentals_after,
         "fundamentals_cache_hit": fundamentals_before,
         # Fetched = we attempted the API call (even if it failed/returned None)
-        "fundamentals_fetched": (
-            require_fundamentals and not fundamentals_before
-        ),
+        "fundamentals_fetched": (require_fundamentals and not fundamentals_before),
         "fundamentals_covered_through": fundamentals_covered_date,
         "ready": history_ready and (fundamentals_after or not require_fundamentals),
         "errors": [err for err in (history_error, fundamentals_error) if err],
     }
+
 
 def _sync_single_symbol_safe(
     code: str,
@@ -231,7 +232,9 @@ def _sync_single_symbol_safe(
             "errors": [str(exc)],
         }
 
+
 _CHECKPOINT_KEY_PREFIX = "sync_checkpoint:"
+
 
 def _save_checkpoint(scope_type: str, scope_key: str, done_codes: set) -> None:
     """Persist checkpoint to kv_store."""
@@ -241,6 +244,7 @@ def _save_checkpoint(scope_type: str, scope_key: str, done_codes: set) -> None:
         _cache.kv_set_str(key, value, ttl=86400 * 7)  # 7 天过期
     except Exception:
         pass
+
 
 def _load_checkpoint(scope_type: str, scope_key: str) -> set:
     """Load checkpoint from kv_store."""
@@ -253,6 +257,7 @@ def _load_checkpoint(scope_type: str, scope_key: str) -> set:
         pass
     return set()
 
+
 def _clear_checkpoint(scope_type: str, scope_key: str) -> None:
     """Remove checkpoint after successful completion."""
     key = f"{_CHECKPOINT_KEY_PREFIX}{scope_type}:{scope_key}"
@@ -261,6 +266,7 @@ def _clear_checkpoint(scope_type: str, scope_key: str) -> None:
             conn.execute("DELETE FROM kv_store WHERE key=?", (key,))
     except Exception:
         pass
+
 
 def sync_symbols_data(
     codes: Sequence[str],
@@ -375,9 +381,7 @@ def sync_symbols_data(
                 pct = (skipped + processed_count) * 100 // total
                 date_range = ""
                 if all_earliest and all_latest:
-                    date_range = (
-                        f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
-                    )
+                    date_range = f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
                 elapsed = time.time() - start_time
                 m, s = divmod(int(elapsed), 60)
                 time_str = f"{m}分{s}秒" if m else f"{s}秒"
@@ -433,6 +437,7 @@ def sync_symbols_data(
         "symbols": per_symbol,
     }
 
+
 def sync_watchlist_data(
     market: str = "A",
     history_days: int = 365,
@@ -467,6 +472,7 @@ def sync_watchlist_data(
     )
     return result
 
+
 def sync_portfolio_data(
     codes: Sequence[str],
     market: str = "A",
@@ -477,9 +483,7 @@ def sync_portfolio_data(
 ) -> Dict[str, Any]:
     """Synchronize a user-provided portfolio code list."""
     normalized_codes = [
-        normalize_code_for_market(code, market)
-        for code in codes
-        if str(code).strip()
+        normalize_code_for_market(code, market) for code in codes if str(code).strip()
     ]
     scope_key = ",".join(normalized_codes)
     result = sync_symbols_data(
@@ -502,6 +506,7 @@ def sync_portfolio_data(
         covered_date=result["covered_through"],
     )
     return result
+
 
 def sync_scan_universe_data(
     market: str = "A",
@@ -544,6 +549,7 @@ def sync_scan_universe_data(
         covered_date=result["covered_through"],
     )
     return result
+
 
 def _sync_single_etf_safe(
     code: str,
@@ -596,6 +602,7 @@ def _sync_single_etf_safe(
         "ready": nav_ready,
         "errors": [nav_error] if nav_error else [],
     }
+
 
 def sync_etf_data(
     codes: Sequence[str],
@@ -693,9 +700,7 @@ def sync_etf_data(
                 pct = (skipped + processed_count) * 100 // total
                 date_range = ""
                 if all_earliest and all_latest:
-                    date_range = (
-                        f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
-                    )
+                    date_range = f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
                 print(
                     f"  [{skipped + processed_count}/{total}] {pct}% | "
                     f"缓存命中={cache_hit}, NAV拉取={hist_fetch}, "
@@ -748,7 +753,9 @@ def sync_etf_data(
     )
     return result
 
+
 # -- Fund data --------------------------------------------------------------
+
 
 def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Get the ETF-oriented FUND pool.
@@ -766,9 +773,11 @@ def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
             funds = [dict(r) for r in cur.fetchall()]
     return funds
 
+
 def get_etf_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Return the current ETF pool using the ETF-oriented FUND backing store."""
     return get_fund_pool(force_refresh=force_refresh)
+
 
 def _refresh_fund_pool() -> None:
     """Fetch ETF pool via EastMoney and cache."""
@@ -797,6 +806,7 @@ def _refresh_fund_pool() -> None:
     except Exception:
         pass
 
+
 def get_fund_nav(
     code: str,
     days: int = 365,
@@ -810,13 +820,19 @@ def get_fund_nav(
     cache-first + incremental-fetch logic.
     """
     from incremental_fetcher import get_fund_nav_incremental
-    return get_fund_nav_incremental(code, days, cached_only, force_refresh, full_history)
+
+    return get_fund_nav_incremental(
+        code, days, cached_only, force_refresh, full_history
+    )
+
 
 def get_etf_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
     """Return ETF NAV/history via the current ETF-oriented FUND path."""
     return get_fund_nav(code, days)
 
+
 # -- Market index -----------------------------------------------------------
+
 
 def get_market_index(
     index_code: str = "000001",
@@ -830,7 +846,9 @@ def get_market_index(
     cache-first + incremental-fetch logic.
     """
     from incremental_fetcher import get_market_index_incremental
+
     return get_market_index_incremental(index_code, days, cached_only, force_refresh)
+
 
 @_api_call("market_index")
 def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str, Any]]:
@@ -875,31 +893,3 @@ def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str,
         return rows
     except Exception:
         return []
-
-# -- Utility ----------------------------------------------------------------
-
-def _safe_parse_date(value: str, fallback: Optional[datetime] = None) -> datetime:
-    """Parse a date string that may be 'YYYY-MM-DD' or 'YYYYMMDD'.
-
-    Returns *fallback* (default: now - 365 days) on any parse error so that
-    malformed cached dates do not crash the entire data engine.
-    """
-    if fallback is None:
-        fallback = datetime.now() - timedelta(days=365)
-    if not value:
-        return fallback
-    try:
-        return datetime.strptime(value.replace("-", ""), "%Y%m%d")
-    except (ValueError, TypeError):
-        return fallback
-
-def _date_str(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%d")
-
-def _add_days(date_str: str, days: int) -> str:
-    try:
-        clean = date_str.replace("-", "")
-        dt = datetime.strptime(clean, "%Y%m%d")
-        return _date_str(dt + timedelta(days=days))
-    except (ValueError, TypeError):
-        return _date_str(datetime.now() + timedelta(days=days))

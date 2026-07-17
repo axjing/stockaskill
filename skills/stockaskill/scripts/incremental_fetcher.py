@@ -10,19 +10,9 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from config import get as cfg_get
+from data_engine.config import _cold_start_date
+from data_engine.helpers import _date_str
 from utils import normalize_code_for_market
-
-logger = logging.getLogger(__name__)
-
-
-def _cold_start_date(market: str) -> str:
-    """Return market-specific cold start baseline date."""
-    defaults = {"A": "20000101", "HK": "19950101", "US": "19900101"}
-    return cfg_get("full_history_start_date", defaults.get(market, "20000101"))
-
-
-def _date_str(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%d")
 
 
 def _safe_parse_date(s: str) -> Optional[datetime]:
@@ -237,6 +227,7 @@ class IncrementalCacheFetcher(ABC):
 # K-line fetcher
 # ---------------------------------------------------------------------------
 
+
 class KlineFetcher(IncrementalCacheFetcher):
     """Incremental fetcher for daily K-line (OHLCV) data."""
 
@@ -248,10 +239,12 @@ class KlineFetcher(IncrementalCacheFetcher):
 
     def read_cached(self) -> List[Dict[str, Any]]:
         from cache import get_cache
+
         return get_cache().get_daily_price(self.code, market=self.market)
 
     def write_cached(self, rows: List[Dict[str, Any]]) -> None:
         from cache import get_cache
+
         if self._detect_quality:
             rows = self._detect_quality(rows, self.market)
         get_cache().upsert_daily_price(rows)
@@ -259,6 +252,7 @@ class KlineFetcher(IncrementalCacheFetcher):
     def fetch(self, start: str, end: str) -> List[Dict[str, Any]]:
         """Import the existing _fetch_kline from data_engine."""
         from data_engine import _fetch_kline
+
         return _fetch_kline(self.code, self.market, start, end)
 
     def _market(self) -> str:
@@ -274,6 +268,7 @@ class KlineFetcher(IncrementalCacheFetcher):
         if force_refresh:
             return False
         from cache import get_cache
+
         latest = get_cache().get_latest_date(self.code, market=self.market)
         if not latest:
             return False
@@ -296,6 +291,7 @@ class KlineFetcher(IncrementalCacheFetcher):
 
         # Use DB-level latest date instead of scanning all rows in Python
         from cache import get_cache
+
         latest = get_cache().get_latest_date(self.code, market=self.market)
 
         if latest:
@@ -323,6 +319,7 @@ class KlineFetcher(IncrementalCacheFetcher):
 
         # Use DB-level queries instead of scanning rows
         from cache import get_cache
+
         cache = get_cache()
         local_earliest = cache.get_earliest_date(self.code, market=self.market) or ""
         local_latest = cache.get_latest_date(self.code, market=self.market) or ""
@@ -380,6 +377,7 @@ def get_kline_incremental(
 # Fund NAV fetcher
 # ---------------------------------------------------------------------------
 
+
 class FundNavFetcher(IncrementalCacheFetcher):
     """Incremental fetcher for ETF/fund NAV history."""
 
@@ -389,15 +387,16 @@ class FundNavFetcher(IncrementalCacheFetcher):
 
     def read_cached(self) -> List[Dict[str, Any]]:
         from cache import get_cache
+
         return get_cache().get_fund_nav(self.code, self._days)
 
     def write_cached(self, rows: List[Dict[str, Any]]) -> None:
         from cache import get_cache
+
         get_cache().upsert_fund_nav(rows)
 
     def fetch(self, start: str, end: str) -> List[Dict[str, Any]]:
         """Fetch ETF/fund NAV history via AKShare fund_etf_fund_info_em."""
-        import logging
         logger = logging.getLogger(__name__)
         from data_engine import _akshare_lock, _try_akshare, safe_float
 
@@ -440,12 +439,14 @@ class FundNavFetcher(IncrementalCacheFetcher):
                     norm_date = f"{raw_clean[:4]}-{raw_clean[4:6]}-{raw_clean[6:8]}"
                 else:
                     norm_date = raw_date
-                rows.append({
-                    "code": self.code,
-                    "date": norm_date,
-                    "nav": safe_float(r.get("nav", 0)),
-                    "acc_nav": safe_float(r.get("acc_nav", 0)),
-                })
+                rows.append(
+                    {
+                        "code": self.code,
+                        "date": norm_date,
+                        "nav": safe_float(r.get("nav", 0)),
+                        "acc_nav": safe_float(r.get("acc_nav", 0)),
+                    }
+                )
             return rows
         except Exception as exc:
             logger.warning("FundNavFetcher fetch failed for %s: %s", self.code, exc)
@@ -468,6 +469,7 @@ def get_fund_nav_incremental(
 # Market index fetcher
 # ---------------------------------------------------------------------------
 
+
 class MarketIndexFetcher(IncrementalCacheFetcher):
     """Incremental fetcher for market index K-line data."""
 
@@ -477,15 +479,18 @@ class MarketIndexFetcher(IncrementalCacheFetcher):
 
     def read_cached(self) -> List[Dict[str, Any]]:
         from cache import get_cache
+
         return get_cache().get_market_index(self.index_code, self._days)
 
     def write_cached(self, rows: List[Dict[str, Any]]) -> None:
         from cache import get_cache
+
         get_cache().upsert_market_index(rows)
 
     def fetch(self, start: str, end: str) -> List[Dict[str, Any]]:
         """Import the existing _fetch_market_index from data_engine."""
         from data_engine import _fetch_market_index
+
         return _fetch_market_index(self.index_code, start, end)
 
 

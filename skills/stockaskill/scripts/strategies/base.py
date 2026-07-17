@@ -19,18 +19,14 @@ class Strategy(ABC):
     @property
     def weight(self) -> float:
         """Strategy weight in aggregation."""
-        weights = {
-            "multi_factor": 0.30,
-            "deep_value": 0.25,
-            "garp": 0.20,
-            "ma_trend": 0.15,
-            "contrarian": 0.10,
-            "alpha_momentum": 0.15,
-        }
-        return weights.get(self.name, 0.1)
+        from config import strategy_weights
+
+        return strategy_weights().get(self.name, 0.1)
 
     @abstractmethod
-    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
+    def analyze(
+        self, code: str, market: str = "A", cached_only: bool = False
+    ) -> Dict[str, Any]:
         """Analyze a stock and return a signal dict.
 
         Args:

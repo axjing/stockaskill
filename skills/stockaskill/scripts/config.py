@@ -1,8 +1,8 @@
 """Pure-Python config with dot-path access. No YAML dependency."""
 
 import copy
-import os
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -365,6 +365,18 @@ def load_config() -> Dict[str, Any]:
             user_config = json.load(f)
         _deep_merge(_cache, user_config)
     return _cache
+
+
+def strategy_weights() -> Dict[str, float]:
+    """Return the default strategy weight mapping for signal aggregation."""
+    return {
+        "multi_factor": 0.30,
+        "deep_value": 0.25,
+        "garp": 0.20,
+        "ma_trend": 0.15,
+        "contrarian": 0.10,
+        "alpha_momentum": 0.15,
+    }
 
 
 def get(key: str, default: Any = None) -> Any:

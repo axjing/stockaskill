@@ -130,6 +130,7 @@ class CacheManager:
             for sql in _SCHEMA:
                 conn.execute(sql)
             self._ensure_stock_pool_metadata_columns(conn)
+            self._ensure_daily_price_adjust_type_column(conn)
 
     @contextmanager
     def _conn(self):
@@ -164,7 +165,7 @@ class CacheManager:
             return False
         if open_ > high or open_ < low:
             return False
-        if date_str and date_str > __import__("datetime").datetime.now().strftime("%Y-%m-%d"):
+        if date_str and date_str > datetime.now().strftime("%Y-%m-%d"):
             return False
         return True
 
@@ -178,7 +179,8 @@ class CacheManager:
         return 0.0
 
     def check_data_completeness(
-        self, market: str = "A",
+        self,
+        market: str = "A",
     ) -> List[Dict[str, int]]:
         """Check data completeness against the trade calendar.
 
@@ -285,24 +287,18 @@ class CacheManager:
 
     def upsert_daily_price(self, rows: List[Dict[str, Any]]) -> None:
         """Bulk upsert daily K-line data (v2 table only)."""
-        # Ensure adjust_type column exists (additive migration)
-        with self._conn() as conn:
-            conn.execute(
-                "ALTER TABLE daily_price ADD COLUMN adjust_type TEXT DEFAULT 'qfq'"
-            )
         for row in rows:
             row.setdefault("quality_flags", "")
             row.setdefault("adjust_type", "qfq")
         # Two-phase ingest: reject malformed rows before writing to cache
-        validated = [
-            r for r in rows
-            if self._validate_kline_row(r)
-        ]
+        validated = [r for r in rows if self._validate_kline_row(r)]
         rejected = len(rows) - len(validated)
         if rejected:
             import logging
+
             logging.getLogger(__name__).warning(
-                "Rejected %d malformed K-line rows before cache ingestion", rejected,
+                "Rejected %d malformed K-line rows before cache ingestion",
+                rejected,
             )
         with self._conn() as conn:
             conn.executemany(
@@ -341,9 +337,7 @@ class CacheManager:
             cur = conn.execute(query, tuple(params))
             return [dict(r) for r in cur.fetchall()]
 
-    def get_date_ranges(
-        self, codes: List[str], market: str = "A"
-    ) -> Dict[str, tuple]:
+    def get_date_ranges(self, codes: List[str], market: str = "A") -> Dict[str, tuple]:
         """Get (earliest_date, latest_date) for many codes in one query.
 
         Args:
@@ -366,9 +360,7 @@ class CacheManager:
                 (market, *codes),
             )
             return {
-                row[0]: (row[1], row[2])
-                for row in cur.fetchall()
-                if row[1] and row[2]
+                row[0]: (row[1], row[2]) for row in cur.fetchall() if row[1] and row[2]
             }
 
     def get_latest_date(self, code: str, market: str = "A") -> str | None:
@@ -400,6 +392,28 @@ class CacheManager:
             )
             row = cur.fetchone()
             return row[0] if row else 0
+
+    def get_latest_close(self, code: str, market: str = "A") -> float | None:
+        """Get the latest close price for a stock."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT close FROM daily_price "
+                "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
+                (market, code),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
+    def get_market_cap_from_pool(self, code: str, market: str = "A") -> float | None:
+        """Get market_cap from stock_pool for a given code."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT total_market_cap FROM stock_pool "
+                "WHERE market=? AND code=? LIMIT 1",
+                (market, code),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] and row[0] > 0 else None
 
     # -- factor snapshot ----------------------------------------------------
 
@@ -652,7 +666,7 @@ class CacheManager:
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                "SELECT * FROM fund_nav WHERE code=? AND date>=? " "ORDER BY date DESC",
+                "SELECT * FROM fund_nav WHERE code=? AND date>=? ORDER BY date DESC",
                 (code, cutoff),
             )
             return [dict(r) for r in cur.fetchall()]
@@ -969,7 +983,7 @@ class CacheManager:
             )
             # Verify the insert/update succeeded
             cur2 = conn.execute(
-                "SELECT call_count FROM api_usage " "WHERE date=? AND api_name=?",
+                "SELECT call_count FROM api_usage WHERE date=? AND api_name=?",
                 (today, api_name),
             )
             row = cur2.fetchone()
@@ -1047,6 +1061,16 @@ class CacheManager:
         return f"stock_pool:{market}"
 
     @staticmethod
+    def _ensure_daily_price_adjust_type_column(conn: sqlite3.Connection) -> None:
+        """Ensure adjust_type column exists on daily_price for older cache files."""
+        cur = conn.execute("PRAGMA table_info(daily_price)")
+        existing = {row[1] for row in cur.fetchall()}
+        if "adjust_type" not in existing:
+            conn.execute(
+                "ALTER TABLE daily_price ADD COLUMN adjust_type TEXT DEFAULT 'qfq'"
+            )
+
+    @staticmethod
     def _ensure_stock_pool_metadata_columns(conn: sqlite3.Connection) -> None:
         """Add additive stock-pool metadata columns for older cache files."""
         cur = conn.execute("PRAGMA table_info(stock_pool)")
@@ -1061,8 +1085,7 @@ class CacheManager:
             )
         if "metadata_completeness" not in existing:
             conn.execute(
-                "ALTER TABLE stock_pool "
-                "ADD COLUMN metadata_completeness REAL DEFAULT 0"
+                "ALTER TABLE stock_pool ADD COLUMN metadata_completeness REAL DEFAULT 0"
             )
 
     @staticmethod
@@ -1085,11 +1108,14 @@ class CacheManager:
             "api_usage",
         ]
         with self._conn() as conn:
-            for tbl in tables:
-                try:
-                    cur = conn.execute(f"SELECT COUNT(*) FROM {tbl}")
-                    stats_dict[tbl] = cur.fetchone()[0]
-                except Exception:
+            query = " UNION ALL ".join(
+                f"SELECT '{tbl}' AS tbl, COUNT(*) AS cnt FROM {tbl}" for tbl in tables
+            )
+            try:
+                for row in conn.execute(query):
+                    stats_dict[row[0]] = row[1]
+            except Exception:
+                for tbl in tables:
                     stats_dict[tbl] = -1
         db_size = os.path.getsize(self.db_path) / (1024 * 1024)
         stats_dict["db_size_mb"] = round(db_size, 2)

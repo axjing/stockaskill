@@ -1,4 +1,4 @@
-﻿"""Core data engine: helpers module.
+"""Core data engine: helpers module.
 
 Single source for shared utilities used across kline, fundamentals, pool, and sync.
 """
@@ -8,12 +8,12 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
-
 from cache import get_cache
 from utils import safe_float
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
+
 
 def _has_fresh_snapshot(
     snapshot: Optional[Dict[str, Any]],
@@ -91,14 +91,10 @@ def _normalize_metadata_status(raw_status: Any, is_active: int) -> str:
         return "active" if is_active else "inactive"
     if "active" in status_text or "正常" in status_text:
         return "active"
-    if any(
-        marker in status_text
-        for marker in ("delist", "delisted", "退市", "摘牌")
-    ):
+    if any(marker in status_text for marker in ("delist", "delisted", "退市", "摘牌")):
         return "delisted"
     if any(
-        marker in status_text
-        for marker in ("suspend", "suspended", "halt", "停牌")
+        marker in status_text for marker in ("suspend", "suspended", "halt", "停牌")
     ):
         return "suspended"
     return status_text.replace(" ", "_")
@@ -247,6 +243,7 @@ def _aggregate_covered_through(symbols: Sequence[Dict[str, Any]]) -> str:
         default="",
     )
 
+
 def get_vwap(code: str, market: str = "A", date: str = "") -> float:
     """Get VWAP for a stock on a given date.
 
@@ -272,6 +269,7 @@ def check_data_completeness(market: str = "A") -> List[Dict[str, int]]:
     """
     return _cache.check_data_completeness(market)
 
+
 def _estimate_amount(amount: float, volume: float, close: float, market: str) -> float:
     """Estimate amount (成交额) when missing, using volume × close.
 
@@ -286,7 +284,9 @@ def _estimate_amount(amount: float, volume: float, close: float, market: str) ->
     return amount
 
 
-def _detect_quality_flags(rows: List[Dict[str, Any]], market: str) -> List[Dict[str, Any]]:
+def _detect_quality_flags(
+    rows: List[Dict[str, Any]], market: str
+) -> List[Dict[str, Any]]:
     """Scan K-line rows for anomalies and attach quality_flags.
 
     Flags (comma-separated):
@@ -345,8 +345,6 @@ def _detect_quality_flags(rows: List[Dict[str, Any]], market: str) -> List[Dict[
     return rows
 
 
-
-
 def _detect_gaps(rows: List[Dict[str, Any]], market: str = "A") -> List[str]:
     """Scan sorted (newest-first) K-line rows for date gaps.
 
@@ -374,12 +372,11 @@ def _detect_gaps(rows: List[Dict[str, Any]], market: str = "A") -> List[str]:
             day_diff = (cur - nxt).days
             # Flag only gaps > 7 days (weekend + holiday max ~5)
             if day_diff > 7:
-                gaps.append(
-                    f"{next_str}..{cur_str} ({day_diff}d gap)"
-                )
+                gaps.append(f"{next_str}..{cur_str} ({day_diff}d gap)")
         except Exception:
             continue
     return gaps
+
 
 def _backfill_missing_factors(result: Dict[str, Any], code: str, market: str) -> None:
     """Backfill missing factor values from related data sources."""
@@ -389,15 +386,9 @@ def _backfill_missing_factors(result: Dict[str, Any], code: str, market: str) ->
 
     # Backfill market_cap from stock_pool
     if not result.get("market_cap"):
-        with _cache._conn() as conn:
-            cur = conn.execute(
-                "SELECT total_market_cap FROM stock_pool "
-                "WHERE market=? AND code=? LIMIT 1",
-                (market, code),
-            )
-            row = cur.fetchone()
-            if row and row[0] and row[0] > 0:
-                result["market_cap"] = float(row[0])
+        val = _cache.get_market_cap_from_pool(code, market)
+        if val:
+            result["market_cap"] = val
 
     # Backfill roa from roe and debt_ratio if available
     # ROA = ROE * (1 - debt_ratio) is a rough approximation
@@ -408,22 +399,15 @@ def _backfill_missing_factors(result: Dict[str, Any], code: str, market: str) ->
             result["roa"] = round(roe * (1 - debt), 4)
 
 
-def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: str) -> None:
+def _backfill_valuation_from_price(
+    result: Dict[str, Any], code: str, market: str
+) -> None:
     """Compute PE / PB from cached close price and fundamental EPS / BVPS.
     Also backfill market_cap from stock_pool when upstream doesn't provide it.
     """
     eps = result.get("eps", 0.0) or 0.0
     bvps = result.get("bvps", 0.0) or 0.0
-    price = None
-    with _cache._conn() as conn:
-        cur = conn.execute(
-            "SELECT close FROM daily_price "
-            "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
-            (market, code),
-        )
-        row = cur.fetchone()
-        if row:
-            price = row[0]
+    price = _cache.get_latest_close(code, market)
     if price and eps > 0 and not result.get("pe_ttm"):
         result["pe_ttm"] = round(price / eps, 2)
     if price and bvps > 0 and not result.get("pb"):
@@ -431,15 +415,10 @@ def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: st
 
     # Backfill market_cap from stock_pool when upstream doesn't provide it
     if not result.get("market_cap"):
-        with _cache._conn() as conn:
-            cur = conn.execute(
-                "SELECT total_market_cap FROM stock_pool "
-                "WHERE market=? AND code=? LIMIT 1",
-                (market, code),
-            )
-            row = cur.fetchone()
-            if row and row[0] and row[0] > 0:
-                result["market_cap"] = float(row[0])
+        val = _cache.get_market_cap_from_pool(code, market)
+        if val:
+            result["market_cap"] = val
+
 
 def _safe_parse_date(value: str, fallback: Optional[datetime] = None) -> datetime:
     """Parse a date string that may be 'YYYY-MM-DD' or 'YYYYMMDD'.
@@ -468,4 +447,3 @@ def _add_days(date_str: str, days: int) -> str:
         return _date_str(dt + timedelta(days=days))
     except (ValueError, TypeError):
         return _date_str(datetime.now() + timedelta(days=days))
-
