@@ -1,4 +1,4 @@
-"""Core data engine: fundamentals module."""
+﻿"""Core data engine: fundamentals module."""
 
 import logging
 import sqlite3
@@ -19,29 +19,13 @@ from utils import (
 from data_engine.config import (
     _akshare_lock,
     _api_call,
-    _api_limit_exhausted,
-    _cold_start_date,
-    _has_fresh_snapshot,
-    _is_etf_market,
-    _latest_cached_date,
-    _market_supports_fundamentals,
     _report_no_data,
-    _sina_code,
     _try_akshare,
-    _try_baostock,
-    _try_efinance,
-    _try_yfinance,
+    _try_yfinance
 )
 from data_engine.helpers import (
-    _aggregate_covered_through,
     _backfill_missing_factors,
     _backfill_valuation_from_price,
-    _date_str,
-    _detect_quality_flags,
-    _estimate_amount,
-    _safe_parse_date,
-    _upsert_scope_sync_state,
-    _upsert_symbol_sync_state,
 )
 
 _cache = get_cache()
@@ -102,8 +86,6 @@ def _fetch_fundamentals_yfinance(
     except Exception:
         return None
 
-
-
 def get_fundamentals(
     code: str,
     market: str = "A",
@@ -142,68 +124,6 @@ def get_fundamentals(
     except Exception as exc:
         logger.warning("get_fundamentals fetch failed for %s: %s", code, exc)
     return cached
-
-
-def _backfill_missing_factors(result: Dict[str, Any], code: str, market: str) -> None:
-    """Backfill missing factor values from related data sources."""
-    # Backfill pe_static from pe_ttm (close approximation for A-shares)
-    if not result.get("pe_static") and result.get("pe_ttm"):
-        result["pe_static"] = result["pe_ttm"]
-
-    # Backfill market_cap from stock_pool
-    if not result.get("market_cap"):
-        with _cache._conn() as conn:
-            cur = conn.execute(
-                "SELECT total_market_cap FROM stock_pool "
-                "WHERE market=? AND code=? LIMIT 1",
-                (market, code),
-            )
-            row = cur.fetchone()
-            if row and row[0] and row[0] > 0:
-                result["market_cap"] = float(row[0])
-
-    # Backfill roa from roe and debt_ratio if available
-    # ROA = ROE * (1 - debt_ratio) is a rough approximation
-    if not result.get("roa") and result.get("roe") and result.get("debt_ratio"):
-        roe = float(result.get("roe", 0) or 0)
-        debt = float(result.get("debt_ratio", 0) or 0)
-        if roe and debt:
-            result["roa"] = round(roe * (1 - debt), 4)
-
-
-def _backfill_valuation_from_price(result: Dict[str, Any], code: str, market: str) -> None:
-    """Compute PE / PB from cached close price and fundamental EPS / BVPS.
-    Also backfill market_cap from stock_pool when upstream doesn't provide it.
-    """
-    eps = result.get("eps", 0.0) or 0.0
-    bvps = result.get("bvps", 0.0) or 0.0
-    price = None
-    with _cache._conn() as conn:
-        cur = conn.execute(
-            "SELECT close FROM daily_price "
-            "WHERE market=? AND code=? ORDER BY date DESC LIMIT 1",
-            (market, code),
-        )
-        row = cur.fetchone()
-        if row:
-            price = row[0]
-    if price and eps > 0 and not result.get("pe_ttm"):
-        result["pe_ttm"] = round(price / eps, 2)
-    if price and bvps > 0 and not result.get("pb"):
-        result["pb"] = round(price / bvps, 2)
-
-    # Backfill market_cap from stock_pool when upstream doesn't provide it
-    if not result.get("market_cap"):
-        with _cache._conn() as conn:
-            cur = conn.execute(
-                "SELECT total_market_cap FROM stock_pool "
-                "WHERE market=? AND code=? LIMIT 1",
-                (market, code),
-            )
-            row = cur.fetchone()
-            if row and row[0] and row[0] > 0:
-                result["market_cap"] = float(row[0])
-
 
 def _fetch_fundamentals_us_akshare(
     code: str, ak
@@ -295,7 +215,6 @@ def _fetch_fundamentals_us_akshare(
         "bvps": bvps,
     }
 
-
 def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals from available source (THS -> Sina -> yfinance).
 
@@ -355,7 +274,6 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     _report_no_data(code, market, "fundamentals")
     return None
 
-
 def _fetch_fundamentals_ths(code: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch A-share fundamentals via THS financial abstract (primary source).
 
@@ -404,7 +322,6 @@ def _fetch_fundamentals_ths(code: str, ak) -> Optional[Dict[str, Any]]:
     _map_ths_field(latest, "流动比率", result, "current_ratio")
     return result
 
-
 def _parse_chinese_number(text: Any) -> float:
     """Convert a Chinese-formatted number string to float.
 
@@ -441,7 +358,6 @@ def _parse_chinese_number(text: Any) -> float:
     except (ValueError, TypeError):
         return 0.0
 
-
 def _map_ths_field(row, col_name: str, target: dict, key: str) -> None:
     """Extract a field from a THS financial abstract row into a target dict.
 
@@ -451,7 +367,6 @@ def _map_ths_field(row, col_name: str, target: dict, key: str) -> None:
     if col_name not in row.index:
         return
     target[key] = _parse_chinese_number(row[col_name])
-
 
 @_api_call("fundamentals_hk")
 def _fetch_fundamentals_hk_analysis(
@@ -496,7 +411,6 @@ def _fetch_fundamentals_hk_analysis(
         }
     except Exception:
         return None
-
 
 @_api_call("fundamentals")
 def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any]]:

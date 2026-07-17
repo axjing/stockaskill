@@ -1,4 +1,4 @@
-"""Core data engine: sync module."""
+﻿"""Core data engine: sync module."""
 
 import logging
 import sqlite3
@@ -20,31 +20,22 @@ from utils import (
 from data_engine.config import (
     _akshare_lock,
     _api_call,
-    _api_limit_exhausted,
     _cold_start_date,
-    _has_fresh_snapshot,
     _is_etf_market,
-    _latest_cached_date,
     _market_supports_fundamentals,
-    _report_no_data,
-    _sina_code,
-    _try_akshare,
-    _try_baostock,
-    _try_efinance,
-    _try_yfinance,
+    _try_akshare
 )
+from data_engine.fundamentals import get_fundamentals
 from data_engine.helpers import (
     _aggregate_covered_through,
-    _backfill_missing_factors,
-    _backfill_valuation_from_price,
     _date_str,
-    _detect_quality_flags,
-    _estimate_amount,
-    _safe_parse_date,
+    _has_fresh_snapshot,
+    _latest_cached_date,
     _upsert_scope_sync_state,
     _upsert_symbol_sync_state,
 )
 from data_engine.kline import get_kline
+from data_engine.fundamentals import get_fundamentals
 from data_engine.pool import get_stock_pool
 
 _cache = get_cache()
@@ -199,7 +190,6 @@ def sync_symbol_data(
         "errors": [err for err in (history_error, fundamentals_error) if err],
     }
 
-
 def _sync_single_symbol_safe(
     code: str,
     market: str,
@@ -248,9 +238,7 @@ def _sync_single_symbol_safe(
             "errors": [str(exc)],
         }
 
-
 _CHECKPOINT_KEY_PREFIX = "sync_checkpoint:"
-
 
 def _save_checkpoint(scope_type: str, scope_key: str, done_codes: set) -> None:
     """Persist checkpoint to kv_store."""
@@ -260,7 +248,6 @@ def _save_checkpoint(scope_type: str, scope_key: str, done_codes: set) -> None:
         _cache.kv_set_str(key, value, ttl=86400 * 7)  # 7 天过期
     except Exception:
         pass
-
 
 def _load_checkpoint(scope_type: str, scope_key: str) -> set:
     """Load checkpoint from kv_store."""
@@ -273,7 +260,6 @@ def _load_checkpoint(scope_type: str, scope_key: str) -> set:
         pass
     return set()
 
-
 def _clear_checkpoint(scope_type: str, scope_key: str) -> None:
     """Remove checkpoint after successful completion."""
     key = f"{_CHECKPOINT_KEY_PREFIX}{scope_type}:{scope_key}"
@@ -282,7 +268,6 @@ def _clear_checkpoint(scope_type: str, scope_key: str) -> None:
             conn.execute("DELETE FROM kv_store WHERE key=?", (key,))
     except Exception:
         pass
-
 
 def sync_symbols_data(
     codes: Sequence[str],
@@ -455,7 +440,6 @@ def sync_symbols_data(
         "symbols": per_symbol,
     }
 
-
 def sync_watchlist_data(
     market: str = "A",
     history_days: int = 365,
@@ -489,7 +473,6 @@ def sync_watchlist_data(
         covered_date=result["covered_through"],
     )
     return result
-
 
 def sync_portfolio_data(
     codes: Sequence[str],
@@ -526,7 +509,6 @@ def sync_portfolio_data(
         covered_date=result["covered_through"],
     )
     return result
-
 
 def sync_scan_universe_data(
     market: str = "A",
@@ -569,7 +551,6 @@ def sync_scan_universe_data(
         covered_date=result["covered_through"],
     )
     return result
-
 
 def _sync_single_etf_safe(
     code: str,
@@ -622,7 +603,6 @@ def _sync_single_etf_safe(
         "ready": nav_ready,
         "errors": [nav_error] if nav_error else [],
     }
-
 
 def sync_etf_data(
     codes: Sequence[str],
@@ -775,9 +755,7 @@ def sync_etf_data(
     )
     return result
 
-
 # -- Fund data --------------------------------------------------------------
-
 
 def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Get the ETF-oriented FUND pool.
@@ -795,11 +773,9 @@ def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
             funds = [dict(r) for r in cur.fetchall()]
     return funds
 
-
 def get_etf_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Return the current ETF pool using the ETF-oriented FUND backing store."""
     return get_fund_pool(force_refresh=force_refresh)
-
 
 def _refresh_fund_pool() -> None:
     """Fetch ETF pool via EastMoney and cache."""
@@ -828,7 +804,6 @@ def _refresh_fund_pool() -> None:
     except Exception:
         pass
 
-
 def get_fund_nav(
     code: str,
     days: int = 365,
@@ -844,14 +819,11 @@ def get_fund_nav(
     from incremental_fetcher import get_fund_nav_incremental
     return get_fund_nav_incremental(code, days, cached_only, force_refresh, full_history)
 
-
 def get_etf_nav(code: str, days: int = 365) -> List[Dict[str, Any]]:
     """Return ETF NAV/history via the current ETF-oriented FUND path."""
     return get_fund_nav(code, days)
 
-
 # -- Market index -----------------------------------------------------------
-
 
 def get_market_index(
     index_code: str = "000001",
@@ -866,7 +838,6 @@ def get_market_index(
     """
     from incremental_fetcher import get_market_index_incremental
     return get_market_index_incremental(index_code, days, cached_only, force_refresh)
-
 
 @_api_call("market_index")
 def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str, Any]]:
@@ -912,9 +883,7 @@ def _fetch_market_index(index_code: str, start: str, end: str) -> List[Dict[str,
     except Exception:
         return []
 
-
 # -- Utility ----------------------------------------------------------------
-
 
 def _safe_parse_date(value: str, fallback: Optional[datetime] = None) -> datetime:
     """Parse a date string that may be 'YYYY-MM-DD' or 'YYYYMMDD'.
@@ -931,10 +900,8 @@ def _safe_parse_date(value: str, fallback: Optional[datetime] = None) -> datetim
     except (ValueError, TypeError):
         return fallback
 
-
 def _date_str(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d")
-
 
 def _add_days(date_str: str, days: int) -> str:
     try:

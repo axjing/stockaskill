@@ -1,16 +1,13 @@
-"""Core data engine: kline module."""
+﻿"""Core data engine: kline module."""
 
 import logging
-import sqlite3
 import threading
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 from cache import get_cache
-from config import get as cfg_get
 from utils import (
     _suppress_output,
     normalize_code_for_market,
@@ -19,12 +16,7 @@ from utils import (
 from data_engine.config import (
     _akshare_lock,
     _api_call,
-    _api_limit_exhausted,
-    _cold_start_date,
-    _has_fresh_snapshot,
     _is_etf_market,
-    _latest_cached_date,
-    _market_supports_fundamentals,
     _report_no_data,
     _sina_code,
     _try_akshare,
@@ -33,15 +25,8 @@ from data_engine.config import (
     _try_yfinance,
 )
 from data_engine.helpers import (
-    _aggregate_covered_through,
-    _backfill_missing_factors,
-    _backfill_valuation_from_price,
-    _date_str,
     _detect_quality_flags,
     _estimate_amount,
-    _safe_parse_date,
-    _upsert_scope_sync_state,
-    _upsert_symbol_sync_state,
 )
 
 _cache = get_cache()
@@ -161,115 +146,6 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
 
 
 
-
-def _estimate_amount(amount: float, volume: float, close: float, market: str) -> float:
-    """Estimate amount (成交额) when missing, using volume × close.
-
-    For A-shares the data source already provides amount correctly.
-    For US/HK stocks, AKShare and yfinance don't provide amount.
-    Estimate: amount = volume × close (ignoring lot_size which varies by market).
-    """
-    if amount > 0 and volume > 0 and close > 0:
-        return amount
-    if volume > 0 and close > 0:
-        return round(volume * close, 2)
-    return amount
-
-
-def _detect_quality_flags(rows: List[Dict[str, Any]], market: str) -> List[Dict[str, Any]]:
-    """Scan K-line rows for anomalies and attach quality_flags.
-
-    Flags (comma-separated):
-    - gap_up: large gap between prev close and today open (>3% for A, >5% for HK/US)
-    - gap_down: same but downward
-    - zero_vol: trading day but zero volume (suspension indicator)
-    - limit_up: hit daily price limit (A-shares only)
-    - limit_down: hit daily price limit (A-shares only)
-    - data_err: price=0 or close < open/low/high consistency issue
-    """
-    if not rows:
-        return rows
-    limit_pct = 0.095 if market == "A" else 0.20
-
-    for i, r in enumerate(rows):
-        flags = []
-        close = r.get("close", 0) or 0
-        open_ = r.get("open", 0) or 0
-        high = r.get("high", 0) or 0
-        low = r.get("low", 0) or 0
-        vol = r.get("volume", 0) or 0
-
-        # Zero volume on non-zero price day = possible suspension
-        if close > 0 and vol <= 0:
-            flags.append("zero_vol")
-
-        # Price zero = data error
-        if close <= 0:
-            flags.append("data_err")
-
-        # Gap detection (compare open vs prev close)
-        if i + 1 < len(rows):
-            prev_close = rows[i + 1].get("close", 0) or 0
-            if prev_close > 0 and open_ > 0:
-                gap = (open_ - prev_close) / prev_close
-                gap_threshold = 0.03 if market == "A" else 0.05
-                if gap > gap_threshold:
-                    flags.append("gap_up")
-                elif gap < -gap_threshold:
-                    flags.append("gap_down")
-
-        # Limit hit detection (A-shares only)
-        if market == "A" and close > 0:
-            # Estimate prior close from current close
-            if abs(close - open_) / max(close, 0.001) < 0.001:
-                # Flat day — check if at limit
-                if open_ > 0 and high > 0:
-                    prev_est = open_ / 1.1
-                    if prev_est > 0 and (close - prev_est) / prev_est > 0.09:
-                        flags.append("limit_up")
-                    elif (close - prev_est) / prev_est < -0.09:
-                        flags.append("limit_down")
-
-        r["quality_flags"] = ",".join(flags)
-
-    return rows
-
-
-
-
-def _detect_gaps(rows: List[Dict[str, Any]], market: str = "A") -> List[str]:
-    """Scan sorted (newest-first) K-line rows for date gaps.
-
-    Returns a list of date strings where a trading day is missing.
-    Uses a simple heuristic: if the gap between consecutive dates
-    exceeds the expected max gap (1-3 days for weekends/holidays),
-    flag the missing dates.
-
-    Only flags gaps > 7 calendar days to avoid false positives
-    from holidays/suspensions.
-    """
-    if len(rows) < 2:
-        return []
-    gaps = []
-    for i in range(len(rows) - 1):
-        cur_str = str(rows[i].get("date", "")).strip()
-        next_str = str(rows[i + 1].get("date", "")).strip()
-        if not cur_str or not next_str:
-            continue
-        try:
-            cur = _safe_parse_date(cur_str)
-            nxt = _safe_parse_date(next_str)
-            if cur is None or nxt is None:
-                continue
-            day_diff = (cur - nxt).days
-            # Flag only gaps > 7 days (weekend + holiday max ~5)
-            if day_diff > 7:
-                gaps.append(
-                    f"{next_str}..{cur_str} ({day_diff}d gap)"
-                )
-        except Exception:
-            continue
-    return gaps
 
 
 def _normalize_kline_df(

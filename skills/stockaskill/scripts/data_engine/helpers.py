@@ -1,40 +1,47 @@
-"""Core data engine: helpers module."""
+﻿"""Core data engine: helpers module.
+
+Single source for shared utilities used across kline, fundamentals, pool, and sync.
+"""
 
 import logging
-import sqlite3
-import threading
-import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
 from cache import get_cache
-from config import get as cfg_get
-from utils import (
-    _suppress_output,
-    normalize_code_for_market,
-    safe_float,
-)
-from data_engine.config import (
-    _akshare_lock,
-    _api_call,
-    _api_limit_exhausted,
-    _cold_start_date,
-    _has_fresh_snapshot,
-    _is_etf_market,
-    _latest_cached_date,
-    _market_supports_fundamentals,
-    _report_no_data,
-    _sina_code,
-    _try_akshare,
-    _try_baostock,
-    _try_efinance,
-    _try_yfinance,
-)
+from utils import safe_float
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
+
+def _has_fresh_snapshot(
+    snapshot: Optional[Dict[str, Any]],
+    max_age_days: int,
+) -> bool:
+    """Return True if a cached fundamentals snapshot is fresh enough."""
+    if not snapshot:
+        return False
+    date_str = str(snapshot.get("date", "")).strip()
+    try:
+        snapshot_date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return (datetime.now() - snapshot_date).days <= max_age_days
+
+
+def _latest_cached_date(
+    rows: Sequence[Dict[str, Any]],
+    field: str = "date",
+) -> str:
+    """Return the latest date field from cached rows."""
+    values = sorted(
+        str(row.get(field, "")).strip()
+        for row in rows
+        if str(row.get(field, "")).strip()
+    )
+    return values[-1] if values else ""
+
 
 def _first_present_value(row: pd.Series, candidates: Sequence[str]) -> Any:
     """Return the first non-empty value from the given candidate columns."""
@@ -114,6 +121,65 @@ def _metadata_completeness_score(
     if total_market_cap > 0:
         fields_present += 1
     return round(fields_present / 4.0, 2)
+
+
+def _normalize_cross_market_pool_row(
+    row: pd.Series,
+    source: str,
+) -> Dict[str, Any]:
+    """Extract a normalized HK/US pool row from heterogeneous upstream fields."""
+    name = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("name", "名称", "中文名称", "股票名称", "Name"),
+        )
+    )
+    raw_status = _first_present_value(row, ("status", "状态", "Status"))
+    sector = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("sector", "地区", "板块", "所属行业", "Sector"),
+        )
+    )
+    industry = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("industry", "行业", "所属行业", "Industry"),
+        )
+    )
+    list_date = _normalize_pool_text(
+        _first_present_value(
+            row,
+            ("list_date", "上市日期", "IPO日期", "ipo_date", "ListDate"),
+        )
+    )
+    total_market_cap = safe_float(
+        _first_present_value(
+            row,
+            ("total_market_cap", "总市值", "market_cap", "MarketCap"),
+        ),
+    )
+    is_active = _infer_active_status(name, raw_status)
+    return {
+        "code": _normalize_pool_text(
+            _first_present_value(row, ("code", "代码", "symbol", "Symbol"))
+        ),
+        "name": name,
+        "sector": sector,
+        "industry": industry,
+        "list_date": list_date,
+        "total_market_cap": total_market_cap,
+        "is_active": is_active,
+        "metadata_source": source,
+        "metadata_status": _normalize_metadata_status(raw_status, is_active),
+        "metadata_completeness": _metadata_completeness_score(
+            sector,
+            industry,
+            list_date,
+            total_market_cap,
+        ),
+    }
+
 
 def _upsert_symbol_sync_state(
     code: str,

@@ -1,9 +1,6 @@
 """Core data engine: pool module."""
 
 import logging
-import sqlite3
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
@@ -20,18 +17,9 @@ from utils import (
 from data_engine.config import (
     _akshare_lock,
     _api_call,
-    _api_limit_exhausted,
-    _cold_start_date,
-    _has_fresh_snapshot,
     _is_etf_market,
-    _latest_cached_date,
-    _market_supports_fundamentals,
-    _report_no_data,
-    _sina_code,
     _try_akshare,
-    _try_baostock,
-    _try_efinance,
-    _try_yfinance,
+    _try_baostock
 )
 from data_engine.helpers import (
     _aggregate_covered_through,
@@ -43,13 +31,14 @@ from data_engine.helpers import (
     _safe_parse_date,
     _upsert_scope_sync_state,
     _upsert_symbol_sync_state,
+    check_data_completeness,
+    get_vwap,
 )
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
 
 _BAOSTOCK_QUERY_TIMEOUT = 30  # seconds, per query
-
 
 def _bs_query_with_timeout(bs, method_name: str, *args, **kwargs):
     """Run a Baostock query call in a thread with a timeout.
@@ -66,7 +55,6 @@ def _bs_query_with_timeout(bs, method_name: str, *args, **kwargs):
             return future.result(timeout=_BAOSTOCK_QUERY_TIMEOUT)
         except FuturesTimeout:
             raise TimeoutError(f"Baostock {method_name} timed out after {_BAOSTOCK_QUERY_TIMEOUT}s")
-
 
 def _bs_iter_with_timeout(rs, label: str):
     """Iterate Baostock ResultSet rows with a per-row timeout."""
@@ -86,7 +74,6 @@ def _bs_iter_with_timeout(rs, label: str):
             break
         yield row
 
-
 def get_stock_pool(
     market: str = "A", force_refresh: bool = False, include_inactive: bool = False
 ) -> List[Dict[str, Any]]:
@@ -100,7 +87,6 @@ def get_stock_pool(
     if force_refresh or _cache.pool_needs_refresh(market):
         _refresh_stock_pool(market)
     return _cache.get_stock_pool(market, include_inactive=include_inactive)
-
 
 def ensure_stock_pool_candidates_ready(
     market: str,
@@ -276,7 +262,6 @@ def ensure_stock_pool_candidates_ready(
         ),
     }
 
-
 def _refresh_stock_pool(market: str) -> None:
     """Fetch full stock pool from API and cache it."""
     ak = _try_akshare()
@@ -392,8 +377,6 @@ def _refresh_stock_pool(market: str) -> None:
         # Same fallback on exception: bump TTL so we don't retry immediately.
         _cache._touch_meta(_cache._stock_pool_meta_key(market), 0)
 
-
-
 @_api_call("stock_pool_a")
 def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch A-share pool: EastMoney -> Sina -> Baostock."""
@@ -438,7 +421,6 @@ def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
     # Attempt 3: Baostock (code+name+ipoDate)
     return _fetch_a_stock_pool_baostock()
 
-
 def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
     """Fetch A-share pool from Baostock as last resort."""
     bs = _try_baostock()
@@ -477,7 +459,6 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
                 bs.logout()
         except Exception:
             pass
-
 
 def _enrich_a_pool_from_baostock(df: pd.DataFrame) -> pd.DataFrame:
     """Add industry and list_date to a Sina-fetched A-share pool via Baostock.
@@ -565,7 +546,6 @@ def _enrich_a_pool_from_baostock(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
 def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
     """Enrich pool DataFrame with industry/list_date from Baostock."""
     bs = _try_baostock()
@@ -613,7 +593,6 @@ def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:
         except Exception:
             pass
 
-
 def _fetch_a_stock_profile_metadata(code: str) -> Dict[str, str]:
     """Fetch basic company profile data for one A-share code."""
     ak = _try_akshare()
@@ -633,7 +612,6 @@ def _fetch_a_stock_profile_metadata(code: str) -> Dict[str, str]:
         "industry": str(first_row.get("所属行业", "")).strip(),
         "sector": str(first_row.get("所属市场", "")).strip(),
     }
-
 
 def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
     """Infer list date from cached/full-history K-line data."""
@@ -660,33 +638,6 @@ def _infer_list_date_from_history(code: str, market: str) -> tuple[str, bool]:
         return dates[0], True
     return "", True
 
-
-def get_vwap(code: str, market: str = "A", date: str = "") -> float:
-    """Get VWAP for a stock on a given date.
-
-    VWAP = amount / volume. Uses cached data.
-    """
-    cached = _cache.get_daily_price(code, market=market)
-    if date:
-        cached = [r for r in cached if r.get("date", "") == date]
-    if not cached:
-        return 0.0
-    row = cached[0]
-    return _cache.compute_vwap(
-        float(row.get("amount", 0) or 0),
-        float(row.get("volume", 0) or 0),
-    )
-
-
-def check_data_completeness(market: str = "A") -> List[Dict[str, int]]:
-    """Check data completeness against the trade calendar.
-
-    Returns a list of dicts with code, actual_days, expected_days, missing_days
-    for stocks that have fewer rows than the trade calendar.
-    """
-    return _cache.check_data_completeness(market)
-
-
 @_api_call("stock_pool_hk")
 def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch HK pool via Sina and extract minimal metadata when available."""
@@ -701,7 +652,6 @@ def _fetch_hk_stock_pool(ak) -> Optional[pd.DataFrame]:
     ]
     return pd.DataFrame(rows)
 
-
 @_api_call("stock_pool_us")
 def _fetch_us_stock_pool(ak) -> Optional[pd.DataFrame]:
     """Fetch US pool via Sina and extract minimal metadata when available."""
@@ -715,7 +665,6 @@ def _fetch_us_stock_pool(ak) -> Optional[pd.DataFrame]:
         for idx in range(len(df))
     ]
     return pd.DataFrame(rows)
-
 
 @_api_call("fund_pool")
 def _fetch_fund_pool_df(ak) -> Optional[pd.DataFrame]:
