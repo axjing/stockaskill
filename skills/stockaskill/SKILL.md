@@ -113,7 +113,7 @@ relative to the project root. The cache follows a **cache-first + incremental sy
 1. **Read from cache first** — Every data request checks SQLite before making any API call.
 2. **Fetch only missing gaps** — If cache has data through date X, only fetch from X to today (with 3-day overlap for corrections). Never redownload full history.
 3. **Cold start seeds full history** — First run for a symbol pulls from a safe baseline (A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01). Subsequent reads are incremental.
-4. **Multi-source fallback** — K-line: AKShare → baostock → efinance → OpenBB → yfinance. Fundamentals: THS (A-shares) / Analysis indicator (HK) → Sina → OpenBB → yfinance. Sources with repeated failures are backed off automatically.
+4. **Multi-source fallback** — K-line: baostock → AKShare/EastMoney → efinance (A 股) | AKShare → yfinance (HK/US). Fundamentals: THS (A-shares) / Analysis indicator (HK) → Sina → yfinance. Sources with repeated failures are backed off automatically.
 5. **UPSERT writes** — Latest data always wins; duplicates are overwritten.
 
 The cache contains:

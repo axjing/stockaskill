@@ -1,4 +1,4 @@
-# Quant Data Cache-First + Incremental Sync: Best Practice Specification
+﻿# Quant Data Cache-First + Incremental Sync: Best Practice Specification
 
 ## 1. Architecture Overview
 
@@ -178,7 +178,7 @@ def seed_full_history(symbol, market):
 ```
 A-shares:  AKShare (EastMoney) -> baostock -> efinance
 HK:        AKShare -> yfinance
-US:        yfinance -> AKShare -> OpenBB
+US:        yfinance -> AKShare
 ETF:       AKShare (fund_etf_hist_sina) -> efinance
 ```
 
@@ -188,7 +188,7 @@ ETF:       AKShare (fund_etf_hist_sina) -> efinance
 SOURCE_PRIORITY = {
     'A':   ['akshare', 'baostock', 'efinance'],
     'HK':  ['akshare', 'yfinance'],
-    'US':  ['yfinance', 'akshare', 'openbb'],
+    'US':  ['yfinance', 'akshare'],
     'ETF': ['akshare', 'efinance'],
 }
 
