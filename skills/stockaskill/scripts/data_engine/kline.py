@@ -3,14 +3,13 @@
 import logging
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 
 from cache import get_cache
 from utils import (
     _suppress_output,
-    normalize_code_for_market,
     safe_float,
 )
 from data_engine.config import (

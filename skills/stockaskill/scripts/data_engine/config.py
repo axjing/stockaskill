@@ -1,20 +1,15 @@
-﻿"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
+"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
 
 import logging
-import sqlite3
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Optional
 
-import pandas as pd
 from cache import get_cache
 from config import get as cfg_get
 from utils import (  # noqa: E402
     _suppress_output,
     normalize_code_for_market,
-    safe_float,
 )
 
 _akshare_lock = threading.RLock()

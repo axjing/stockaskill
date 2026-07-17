@@ -2,7 +2,7 @@
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
@@ -23,12 +23,6 @@ from data_engine.config import (
 )
 from data_engine.helpers import (
     _aggregate_covered_through,
-    _backfill_missing_factors,
-    _backfill_valuation_from_price,
-    _date_str,
-    _detect_quality_flags,
-    _estimate_amount,
-    _safe_parse_date,
     _upsert_scope_sync_state,
     _upsert_symbol_sync_state,
     check_data_completeness,

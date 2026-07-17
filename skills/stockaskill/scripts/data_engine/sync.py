@@ -1,29 +1,23 @@
 ﻿"""Core data engine: sync module."""
 
 import logging
-import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
-
-import pandas as pd
 
 from cache import get_cache
 from config import get as cfg_get
 from utils import (
-    _suppress_output,
     normalize_code_for_market,
     safe_float,
 )
 from data_engine.config import (
-    _akshare_lock,
     _api_call,
     _cold_start_date,
     _is_etf_market,
     _market_supports_fundamentals,
-    _try_akshare
 )
 from data_engine.fundamentals import get_fundamentals
 from data_engine.helpers import (
