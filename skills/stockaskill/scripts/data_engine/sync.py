@@ -29,7 +29,6 @@ from data_engine.helpers import (
     _upsert_symbol_sync_state,
 )
 from data_engine.kline import get_kline
-from data_engine.fundamentals import get_fundamentals
 from data_engine.pool import get_stock_pool
 
 _cache = get_cache()
