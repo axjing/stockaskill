@@ -1,4 +1,4 @@
-"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
+﻿"""Core data engine: AKShare (Sina primary) with caching and fallbacks."""
 
 import logging
 import sqlite3
@@ -294,7 +294,7 @@ def _aggregate_covered_through(symbols: Sequence[Dict[str, Any]]) -> str:
 def _report_no_data(code: str, market: str, data_kind: str) -> None:
     """Log a user-visible message when no data source succeeded."""
     if market in ("HK", "US"):
-        sources = "AKShare -> OpenBB -> yfinance"
+        sources = "AKShare -> yfinance"
     else:
         sources = "AKShare -> baostock -> efinance"
     logger.warning(
@@ -350,11 +350,9 @@ def _api_call(api_name: str):
                             "kline": "AKShare/EastMoney",
                             "kline_ef": "efinance",
                             "kline_bs": "Baostock",
-                            "kline_openbb": "OpenBB",
-                            "kline_yf": "yfinance",
+                                                        "kline_yf": "yfinance",
                             "fundamentals": "AKShare/Sina",
-                            "fundamentals_openbb": "OpenBB",
-                            "fundamentals_yf": "yfinance",
+                                                        "fundamentals_yf": "yfinance",
                             "market_index": "AKShare/Sina",
                             "stock_pool_a": "AKShare/EastMoney",
                             "stock_pool_hk": "AKShare/Sina",
@@ -418,27 +416,6 @@ def _try_baostock() -> Optional[Any]:
         return None
 
 
-_openbb_cache: Optional[Any] = None
-
-
-def _try_openbb() -> Optional[Any]:
-    """Import OpenBB, return obb object or None.
-
-    Cached at module level to avoid repeated extension installation.
-    """
-    global _openbb_cache
-    if _openbb_cache is not None:
-        return _openbb_cache
-    try:
-        from openbb import obb
-
-        _openbb_cache = obb
-        return obb
-    except Exception:
-        # Catch all errors, not just ImportError — OpenBB may fail on
-        # network/permission errors during provider initialization.
-        return None
-
 
 def _try_yfinance() -> Optional[Any]:
     """Import yfinance, return module or None."""
@@ -450,17 +427,6 @@ def _try_yfinance() -> Optional[Any]:
         return None
 
 
-def _openbb_symbol(code: str, market: str) -> Optional[str]:
-    """Convert code + market to OpenBB-compatible symbol.
-
-    Returns None if the market is not supported by OpenBB.
-    """
-    if market == "US":
-        return code.upper()
-    if market == "HK":
-        return f"{code}.HK"
-    if market == "A" or _is_etf_market(market):
-        return None
     return None
 
 

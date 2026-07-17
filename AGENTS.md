@@ -240,7 +240,7 @@ All OHLCV/fundamental data fetches MUST follow this pattern:
 4. **Overlap on incremental fetch** — When backfilling, start from last_cached_date - 3 trading days to catch weekend/holiday corrections and late data updates.
 5. **UPSERT semantics** — Use ON CONFLICT ... DO UPDATE for writes. Latest data always wins.
 6. **Validate before cache** — Reject malformed data (negative prices, high < low, future dates) at ingestion time.
-7. **Multi-source fallback with circuit breaker** — K-line: Try AKShare first, then baostock, then efinance, then OpenBB (HK/US only), then yfinance (HK/US only). Fundamentals: THS (A-shares) / Analysis indicator (HK) → Sina → OpenBB → yfinance. Track source health and back off on repeated failures.
+7. **Multi-source fallback with circuit breaker** — K-line: A-shares use baostock first (EastMoney often blocked), then AKShare/EastMoney, then efinance. HK/US use AKShare then yfinance. Fundamentals: THS (A-shares) / Analysis indicator (HK) → Sina → yfinance. Track source health and back off on repeated failures.
 8. **Full history preserved** — Cold start seeds from a safe baseline with market-specific defaults (A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01; see `_cold_start_date(market)`). Once seeded, all subsequent reads are incremental.
 
 Violation of this strategy (e.g., downloading all history per symbol per request) is a critical bug that causes API rate-limit exhaustion and RemoteDisconnected errors.

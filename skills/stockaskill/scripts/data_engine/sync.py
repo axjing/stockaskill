@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -25,13 +26,11 @@ from data_engine.config import (
     _is_etf_market,
     _latest_cached_date,
     _market_supports_fundamentals,
-    _openbb_symbol,
     _report_no_data,
     _sina_code,
     _try_akshare,
     _try_baostock,
     _try_efinance,
-    _try_openbb,
     _try_yfinance,
 )
 from data_engine.helpers import (
@@ -46,6 +45,7 @@ from data_engine.helpers import (
     _upsert_symbol_sync_state,
 )
 from data_engine.kline import get_kline
+from data_engine.pool import get_stock_pool
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
@@ -316,7 +316,7 @@ def sync_symbols_data(
         flush=True,
     )
 
-    max_workers = min(cfg_get("sync_max_workers", 2), total)
+    max_workers = min(cfg_get("sync_max_workers", 1), total)
     if total > 100:
         print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
 
@@ -652,7 +652,7 @@ def sync_etf_data(
         flush=True,
     )
 
-    max_workers = min(cfg_get("sync_max_workers", 2), total)
+    max_workers = min(cfg_get("sync_max_workers", 1), total)
     if total > 10:
         print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
 

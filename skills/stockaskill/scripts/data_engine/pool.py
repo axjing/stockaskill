@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -25,13 +26,11 @@ from data_engine.config import (
     _is_etf_market,
     _latest_cached_date,
     _market_supports_fundamentals,
-    _openbb_symbol,
     _report_no_data,
     _sina_code,
     _try_akshare,
     _try_baostock,
     _try_efinance,
-    _try_openbb,
     _try_yfinance,
 )
 from data_engine.helpers import (
@@ -48,6 +47,45 @@ from data_engine.helpers import (
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
+
+_BAOSTOCK_QUERY_TIMEOUT = 30  # seconds, per query
+
+
+def _bs_query_with_timeout(bs, method_name: str, *args, **kwargs):
+    """Run a Baostock query call in a thread with a timeout.
+
+    Returns the query result on success, raises TimeoutError on timeout,
+    or re-raises the original exception on failure.
+    """
+    def _do_query():
+        return getattr(bs, method_name)(*args, **kwargs)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_do_query)
+        try:
+            return future.result(timeout=_BAOSTOCK_QUERY_TIMEOUT)
+        except FuturesTimeout:
+            raise TimeoutError(f"Baostock {method_name} timed out after {_BAOSTOCK_QUERY_TIMEOUT}s")
+
+
+def _bs_iter_with_timeout(rs, label: str):
+    """Iterate Baostock ResultSet rows with a per-row timeout."""
+    while rs.error_code == "0":
+        def _next_row():
+            if rs.next():
+                return rs.get_row_data()
+            return None  # end of data
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_next_row)
+            try:
+                row = future.result(timeout=_BAOSTOCK_QUERY_TIMEOUT)
+            except FuturesTimeout:
+                raise TimeoutError(f"Baostock {label} row iteration timed out after {_BAOSTOCK_QUERY_TIMEOUT}s")
+        if row is None:
+            break
+        yield row
+
 
 def get_stock_pool(
     market: str = "A", force_refresh: bool = False, include_inactive: bool = False
@@ -387,8 +425,12 @@ def _fetch_a_stock_pool(ak) -> Optional[pd.DataFrame]:
     try:
         with _akshare_lock:
             df = ak.stock_info_a_code_name()
-        df = _enrich_a_pool_from_baostock(df)
-        print(f"Fetch A-share pool via Sina+BS ({len(df)} stocks)")
+        print(f"Sina pool OK ({len(df)} stocks), enriching via Baostock...")
+        try:
+            df = _enrich_a_pool_from_baostock(df)
+        except Exception as enrich_exc:
+            print(f"Baostock enrichment failed ({enrich_exc}), using Sina-only data.")
+        print(f"Fetch A-share pool via Sina ({len(df)} stocks)")
         return df
     except Exception:
         print("Sina pool failed, fallback to Baostock.")
@@ -404,17 +446,12 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
         print("Baostock not available for pool fetch.")
         return None
     try:
-        rs = bs.query_stock_basic()
+        rs = _bs_query_with_timeout(bs, "query_stock_basic")
         rows = []
-        while rs.error_code == "0" and rs.next():
-            row = rs.get_row_data()
+        for row in _bs_iter_with_timeout(rs, "query_stock_basic"):
             if row[4] == "1" and row[5] == "1":
                 code = row[0]
-                if code.startswith("sh."):
-                    code = code[3:]
-                elif code.startswith("sz."):
-                    code = code[3:]
-                elif code.startswith("bj."):
+                if code.startswith(("sh.", "sz.", "bj.")):
                     code = code[3:]
                 rows.append({
                     "code": code,
@@ -428,6 +465,9 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
             print(f"Fetch A-share pool via Baostock ({len(rows)} stocks)")
             return pd.DataFrame(rows)
         return None
+    except TimeoutError as exc:
+        print(f"[WARN] Baostock pool query timed out: {exc}")
+        return None
     except Exception as exc:
         print(f"Baostock pool fetch failed: {exc}")
         return None
@@ -440,7 +480,12 @@ def _fetch_a_stock_pool_baostock() -> Optional[pd.DataFrame]:
 
 
 def _enrich_a_pool_from_baostock(df: pd.DataFrame) -> pd.DataFrame:
-    """Add industry and list_date to a Sina-fetched A-share pool via Baostock."""
+    """Add industry and list_date to a Sina-fetched A-share pool via Baostock.
+
+    Each Baostock query is wrapped with a per-query timeout so the call cannot
+    hang indefinitely.  On timeout or failure the original Sina DataFrame is
+    returned with empty enrichment fields — partial data is better than no data.
+    """
     bs = _try_baostock()
     if bs is None or df is None or df.empty:
         df["industry"] = ""
@@ -449,54 +494,76 @@ def _enrich_a_pool_from_baostock(df: pd.DataFrame) -> pd.DataFrame:
         if "total_market_cap" not in df.columns:
             df["total_market_cap"] = 0.0
         return df
+    basic_map: Dict[str, str] = {}
+    industry_map: Dict[str, str] = {}
+    basic_ok = False
+    industry_ok = False
     try:
         # Build mapping from Baostock: code -> {list_date}
-        basic_map: Dict[str, str] = {}
-        rs = bs.query_stock_basic()
-        while rs.error_code == "0" and rs.next():
-            row = rs.get_row_data()
+        rs = _bs_query_with_timeout(bs, "query_stock_basic")
+        for row in _bs_iter_with_timeout(rs, "query_stock_basic"):
             code = row[0]
             if code.startswith(("sh.", "sz.", "bj.")):
                 code = code[3:]
-            if row[4] == "1":  # stock type
+            if len(row) > 4 and row[4] == "1":  # stock type
                 basic_map[code] = str(row[2]).strip()
-
-        # Build mapping from Baostock: code -> industry
-        industry_map: Dict[str, str] = {}
-        rs2 = bs.query_stock_industry()
-        while rs2.error_code == "0" and rs2.next():
-            row_data = rs2.get_row_data()
-            # Fields: updateDate, code, code_name, industry, industryClassification
-            code = row_data[1]  # code with prefix
-            if code.startswith(("sh.", "sz.", "bj.")):
-                code = code[3:]
-            ind = str(row_data[3]).strip() if len(row_data) > 3 else ""
-            if ind:
-                industry_map[code] = ind
-
-        # Apply mappings
-        df["industry"] = df["code"].map(industry_map).fillna("").astype(str)
-        df["sector"] = ""
-        df["list_date"] = df["code"].map(basic_map).fillna("").astype(str)
-        if "total_market_cap" not in df.columns:
-            df["total_market_cap"] = 0.0
-        else:
-            df["total_market_cap"] = df["total_market_cap"].fillna(0).astype(float)
-        return df
+        basic_ok = True
+    except TimeoutError as exc:
+        print(f"[WARN] Baostock query_stock_basic timed out: {exc}")
     except Exception as exc:
-        print(f"Baostock enrichment failed: {exc}")
-        df["industry"] = ""
-        df["sector"] = ""
-        df["list_date"] = ""
-        if "total_market_cap" not in df.columns:
-            df["total_market_cap"] = 0.0
-        return df
-    finally:
+        print(f"[WARN] Baostock query_stock_basic failed: {exc}")
+
+    if basic_ok:
         try:
-            with _suppress_output():
-                bs.logout()
-        except Exception:
-            pass
+            # Build mapping from Baostock: code -> industry
+            rs2 = _bs_query_with_timeout(bs, "query_stock_industry")
+            for row_data in _bs_iter_with_timeout(rs2, "query_stock_industry"):
+                # Fields: updateDate, code, code_name, industry, industryClassification
+                code = row_data[1] if len(row_data) > 1 else ""
+                if code.startswith(("sh.", "sz.", "bj.")):
+                    code = code[3:]
+                ind = str(row_data[3]).strip() if len(row_data) > 3 else ""
+                if ind:
+                    industry_map[code] = ind
+            industry_ok = True
+        except TimeoutError as exc:
+            print(f"[WARN] Baostock query_stock_industry timed out: {exc}")
+        except Exception as exc:
+            print(f"[WARN] Baostock query_stock_industry failed: {exc}")
+
+    if not basic_ok and not industry_ok:
+        print("[WARN] Both Baostock queries failed, using Sina-only data.")
+    else:
+        got = []
+        if basic_ok:
+            got.append("list_date")
+        if industry_ok:
+            got.append("industry")
+        print(f"Baostock enriched: {', '.join(got)}.")
+
+    # Apply whatever we managed to get
+    if basic_map:
+        df["list_date"] = df["code"].map(basic_map).fillna("").astype(str)
+    elif "list_date" not in df.columns:
+        df["list_date"] = ""
+    if industry_map:
+        df["industry"] = df["code"].map(industry_map).fillna("").astype(str)
+    elif "industry" not in df.columns:
+        df["industry"] = ""
+    if "sector" not in df.columns:
+        df["sector"] = ""
+    if "total_market_cap" not in df.columns:
+        df["total_market_cap"] = 0.0
+    else:
+        df["total_market_cap"] = df["total_market_cap"].fillna(0).astype(float)
+
+    try:
+        with _suppress_output():
+            bs.logout()
+    except Exception:
+        pass
+
+    return df
 
 
 def _backfill_pool_metadata_from_bs(df: pd.DataFrame) -> pd.DataFrame:

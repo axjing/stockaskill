@@ -25,13 +25,11 @@ from data_engine.config import (
     _is_etf_market,
     _latest_cached_date,
     _market_supports_fundamentals,
-    _openbb_symbol,
     _report_no_data,
     _sina_code,
     _try_akshare,
     _try_baostock,
     _try_efinance,
-    _try_openbb,
     _try_yfinance,
 )
 from data_engine.helpers import (
@@ -48,51 +46,6 @@ from data_engine.helpers import (
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
-
-def _fetch_fundamentals_openbb(
-    code: str,
-    market: str,
-    obb,
-) -> Optional[Dict[str, Any]]:
-    """Fetch fundamentals from OpenBB (HK/US markets)."""
-    symbol = _openbb_symbol(code, market)
-    if symbol is None:
-        return None
-    try:
-        df = obb.equity.valuation.metrics(
-            symbol=symbol,
-            provider="yfinance",
-        ).to_df()
-        if df is None or df.empty:
-            return None
-        row = df.iloc[0]
-        today = datetime.now().strftime("%Y-%m-%d")
-        return {
-            "code": code,
-            "date": today,
-            "market_cap": safe_float(row.get("marketCap", row.get("market_cap", 0))),
-            "pe_ttm": safe_float(row.get("trailingPE", row.get("pe_ratio", 0))),
-            "pe_static": safe_float(row.get("trailingPE", row.get("pe_ratio", 0))),
-            "pb": safe_float(row.get("priceToBook", row.get("price_to_book", 0))),
-            "ps_ttm": safe_float(row.get("priceToSalesTrailing12Months", 0)),
-            "pcf_ttm": safe_float(row.get("priceToCashflow", 0)),
-            "dividend_yield": safe_float(row.get("dividendYield", 0)) * 100
-                if safe_float(row.get("dividendYield", 0)) <= 1
-                else safe_float(row.get("dividendYield", 0)),
-            "roe": safe_float(row.get("returnOnEquity", 0)),
-            "roa": safe_float(row.get("returnOnAssets", 0)),
-            "gross_margin": safe_float(row.get("grossMargins", 0)),
-            "net_margin": safe_float(row.get("profitMargins", 0)),
-            "revenue_growth": safe_float(row.get("revenueGrowth", 0)),
-            "profit_growth": safe_float(row.get("earningsGrowth", 0)),
-            "debt_ratio": safe_float(row.get("debtToEquity", 0)),
-            "current_ratio": safe_float(row.get("currentRatio", 0)),
-            "eps": safe_float(row.get("trailingEps", 0)),
-            "bvps": 0.0,
-        }
-    except Exception:
-        return None
-
 
 @_api_call("fundamentals_yf")
 def _fetch_fundamentals_yfinance(
@@ -344,7 +297,7 @@ def _fetch_fundamentals_us_akshare(
 
 
 def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
-    """Fetch fundamentals from available source (THS -> Sina -> OpenBB -> yfinance).
+    """Fetch fundamentals from available source (THS -> Sina -> yfinance).
 
     For A-shares: THS provides detailed financials (ROE, margins, growth).
     PE/PB are computed from cached price + EPS/BVPS when available.
@@ -358,16 +311,10 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
             if result:
                 _backfill_valuation_from_price(result, code, market)
                 return result
-        # Fallback: yfinance -> OpenBB
+        # Fallback: yfinance
         yf = _try_yfinance()
         if yf is not None:
             result = _fetch_fundamentals_yfinance(code, market, yf)
-            if result:
-                _backfill_valuation_from_price(result, code, market)
-                return result
-        obb = _try_openbb()
-        if obb is not None:
-            result = _fetch_fundamentals_openbb(code, market, obb)
             if result:
                 _backfill_valuation_from_price(result, code, market)
                 return result
@@ -377,12 +324,6 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
         yf = _try_yfinance()
         if yf is not None:
             result = _fetch_fundamentals_yfinance(code, market, yf)
-            if result:
-                _backfill_valuation_from_price(result, code, market)
-                return result
-        obb = _try_openbb()
-        if obb is not None:
-            result = _fetch_fundamentals_openbb(code, market, obb)
             if result:
                 _backfill_valuation_from_price(result, code, market)
                 return result

@@ -25,13 +25,11 @@ from data_engine.config import (
     _is_etf_market,
     _latest_cached_date,
     _market_supports_fundamentals,
-    _openbb_symbol,
     _report_no_data,
     _sina_code,
     _try_akshare,
     _try_baostock,
     _try_efinance,
-    _try_openbb,
     _try_yfinance,
 )
 from data_engine.helpers import (
@@ -48,6 +46,15 @@ from data_engine.helpers import (
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
+
+# Circuit breaker: after N consecutive AKShare EastMoney failures for A-share
+# kline, skip AKShare/efinance for the remainder of the session.
+# Both use push2his.eastmoney.com which can block connections at the network
+# level (RemoteDisconnected). Baostock is used as the primary source instead.
+_akshare_kline_failed = False
+_AKSHARE_FAIL_THRESHOLD = 3
+_akshare_fail_count = 0
+_akshare_fail_lock = threading.Lock()
 
 def get_kline(
     code: str,
@@ -75,7 +82,63 @@ def get_kline(
 
 
 def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str, Any]]:
-    """Fetch K-line with true fallback: AKShare -> baostock -> efinance -> yfinance -> OpenBB."""
+    """Fetch K-line with source-order fallback.
+
+    For A-shares: baostock -> AKShare/EastMoney.
+    Baostock is tried first because EastMoney (used by both AKShare and efinance)
+    is frequently blocked at the network level (RemoteDisconnected).
+    """
+    global _akshare_kline_failed, _akshare_fail_count
+
+    # -- A-shares: baostock first (EastMoney often blocked) -----------------
+    if market == "A":
+        bs = _try_baostock()
+        if bs is not None:
+            try:
+                result = _fetch_kline_bs(code, market, start, end, bs)
+                if result:
+                    return result
+            except Exception as exc:
+                logger.debug("Baostock kline failed for %s: %s, trying fallback", code, exc)
+
+        # Try AKShare/EastMoney only if circuit breaker hasn't tripped
+        if not _akshare_kline_failed:
+            ak = _try_akshare()
+            if ak is not None:
+                try:
+                    result = _fetch_kline_sina(code, market, start, end, ak)
+                    if result:
+                        with _akshare_fail_lock:
+                            _akshare_fail_count = 0
+                        return result
+                except Exception as exc:
+                    logger.debug("AKShare kline failed for %s: %s", code, exc)
+                    with _akshare_fail_lock:
+                        _akshare_fail_count += 1
+                        if _akshare_fail_count >= _AKSHARE_FAIL_THRESHOLD:
+                            _akshare_kline_failed = True
+                            print(
+                                f"[WARN] EastMoney blocked after {_akshare_fail_count} consecutive "
+                                f"failures. Skipping AKShare/efinance for remaining A-share kline fetches.",
+                                flush=True,
+                            )
+
+        # efinance also uses EastMoney -- skip if circuit breaker tripped
+        if not _akshare_kline_failed:
+            ef = _try_efinance()
+            if ef is not None:
+                try:
+                    result = _fetch_kline_ef(code, market, start, end, ef)
+                    if result:
+                        return result
+                except Exception as exc:
+                    logger.debug("efinance kline failed for %s: %s", code, exc)
+
+        # No more A-share fallbacks
+        _report_no_data(code, market, "K-line")
+        return []
+
+    # -- HK/US: AKShare -> yfinance -----------------------------------------
     ak = _try_akshare()
     if ak is not None:
         try:
@@ -83,24 +146,8 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
             if result:
                 return result
         except Exception as exc:
-            logger.debug("AKShare kline failed for %s: %s, trying fallback", code, exc)
-    bs = _try_baostock()
-    if bs is not None:
-        try:
-            result = _fetch_kline_bs(code, market, start, end, bs)
-            if result:
-                return result
-        except Exception as exc:
-            logger.debug("Baostock kline failed for %s: %s, trying fallback", code, exc)
-    ef = _try_efinance()
-    if ef is not None:
-        try:
-            result = _fetch_kline_ef(code, market, start, end, ef)
-            if result:
-                return result
-        except Exception as exc:
-            logger.debug("efinance kline failed for %s: %s", code, exc)
-    # yfinance before OpenBB for HK/US — lighter and more stable
+            logger.debug("AKShare kline failed for %s (%s): %s, trying fallback", code, market, exc)
+    
     yf = _try_yfinance()
     if yf is not None and market in ("HK", "US"):
         try:
@@ -109,14 +156,6 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                 return result
         except Exception as exc:
             logger.debug("yfinance kline failed for %s: %s", code, exc)
-    obb = _try_openbb()
-    if obb is not None and market in ("HK", "US"):
-        try:
-            result = _fetch_kline_openbb(code, market, start, end, obb)
-            if result:
-                return result
-        except Exception as exc:
-            logger.debug("OpenBB kline failed for %s: %s", code, exc)
     _report_no_data(code, market, "K-line")
     return []
 
@@ -346,13 +385,14 @@ def _fetch_kline_sina(
         # Fallback: Sina daily returns all history, filter after download.
         # Only pull when cache is empty to avoid full download on every retry.
         sina_sym = _sina_code(code, market)
-        cached_fallback = _cache.get_daily_price(code, market)
-        if cached_fallback:
-            # Cache exists but had a fetch error — use what we have.
-            return []
         try:
             with _akshare_lock:
-                df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="qfq")
+                df = ak.stock_zh_a_daily(
+                    symbol=sina_sym,
+                    start_date=clean_start,
+                    end_date=clean_end,
+                    adjust="qfq",
+                )
         except Exception:
             df = None
         if df is not None and not df.empty and "date" in df.columns:
@@ -403,7 +443,14 @@ def _fetch_kline_ef(
     """Fetch K-line from efinance (A-shares only)."""
     if market != "A":
         return []
-    df = ef.stock.get_quote_history(code, klt=101)
+    clean_start = start.replace("-", "")
+    clean_end = end.replace("-", "")
+    df = ef.stock.get_quote_history(
+        code,
+        klt=101,
+        beg=clean_start,
+        end=clean_end,
+    )
     if df is None or df.empty:
         return []
     date_col = "\u65e5\u671f"
@@ -455,106 +502,30 @@ def _fetch_kline_bs(
         start_date=start,
         end_date=end,
         frequency="d",
-        adjustflag="1",  # qfq (forward-adjusted) to match AKShare primary source
+        adjustflag="2",  # qfq (forward-adjusted) to match AKShare primary source
     )
-    try:
-        if rs.error_code != "0":
-            return []
-        rows = []
-        while rs.error_code == "0" and rs.next():
-            r = rs.get_row_data()
-            rows.append(
-                {
-                    "code": code,
-                    "date": r[0],
-                    "open": safe_float(r[1]),
-                    "high": safe_float(r[2]),
-                    "low": safe_float(r[3]),
-                    "close": safe_float(r[4]),
-                    "volume": safe_float(r[5]),
-                    "amount": safe_float(r[6]),
-                    "market": market,
-                }
-            )
-        return rows
-    finally:
-        try:
-            with _suppress_output():
-                bs.logout()
-        except Exception:
-            pass
+    if rs.error_code != "0":
+        return []
+    rows = []
+    while rs.error_code == "0" and rs.next():
+        r = rs.get_row_data()
+        rows.append(
+            {
+                "code": code,
+                "date": r[0],
+                "open": safe_float(r[1]),
+                "high": safe_float(r[2]),
+                "low": safe_float(r[3]),
+                "close": safe_float(r[4]),
+                "volume": safe_float(r[5]),
+                "amount": safe_float(r[6]),
+                "market": market,
+            }
+        )
+    return rows
 
 
 # -- Fundamentals -----------------------------------------------------------
-
-
-# -- OpenBB K-line ----------------------------------------------------------
-
-
-@_api_call("kline_openbb")
-def _fetch_kline_openbb(
-    code: str,
-    market: str,
-    start: str,
-    end: str,
-    obb,
-) -> List[Dict[str, Any]]:
-    """Fetch K-line from OpenBB (HK/US markets)."""
-    symbol = _openbb_symbol(code, market)
-    if symbol is None:
-        return []
-    try:
-        df = obb.equity.price.historical(
-            symbol=symbol,
-            start_date=start,
-            end_date=end,
-            provider="yfinance",
-        ).to_df()
-        if df is None or df.empty:
-            return []
-        df = df.reset_index()
-        if "date" not in df.columns:
-            date_candidates = [c for c in df.columns if "date" in c.lower()]
-            if date_candidates:
-                df = df.rename(columns={date_candidates[0]: "date"})
-            else:
-                return []
-        df["date"] = df["date"].astype(str).str.replace("T.*", "", regex=True)
-        rows = []
-        today = datetime.now().strftime("%Y-%m-%d")
-        for _, r in df.iterrows():
-            close = safe_float(r.get("close", 0))
-            high = safe_float(r.get("high", 0))
-            low = safe_float(r.get("low", 0))
-            open_ = safe_float(r.get("open", 0))
-            date_str = str(r.get("date", ""))
-
-            # Reject rows with invalid prices
-            if close <= 0 or open_ <= 0 or high <= 0 or low <= 0:
-                continue
-            # Reject rows with impossible OHLC relationships
-            if high < low or close > high or close < low or open_ > high or open_ < low:
-                continue
-            # Reject rows with future dates
-            if date_str > today:
-                continue
-
-            rows.append(
-                {
-                    "code": code,
-                    "date": date_str,
-                    "open": open_,
-                    "high": high,
-                    "low": low,
-                    "close": close,
-                    "volume": safe_float(r.get("volume", 0)),
-                    "amount": safe_float(r.get("amount", 0)),
-                    "market": market,
-                }
-            )
-        return rows
-    except Exception:
-        return []
 
 
 def _yfinance_symbol(code: str, market: str) -> str:

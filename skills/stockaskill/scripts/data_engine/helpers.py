@@ -25,13 +25,11 @@ from data_engine.config import (
     _is_etf_market,
     _latest_cached_date,
     _market_supports_fundamentals,
-    _openbb_symbol,
     _report_no_data,
     _sina_code,
     _try_akshare,
     _try_baostock,
     _try_efinance,
-    _try_openbb,
     _try_yfinance,
 )
 
