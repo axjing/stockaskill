@@ -1,7 +1,6 @@
 """Core data engine: sync module."""
 
 import logging
-import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -235,114 +234,6 @@ def _sync_single_symbol_safe(
 
 _CHECKPOINT_KEY_PREFIX = "sync_checkpoint:"
 
-
-def _run_sync_batch(
-    codes: Sequence[str],
-    sync_fn: Any,
-    scope_type: str,
-    scope_key: str,
-    history_label: str,
-    max_workers: int,
-    progress_label: str,
-    total: int,
-) -> tuple:
-    """Shared sync orchestration: checkpoint, concurrent exec, progress, sort.
-
-    Args:
-        codes: Pending codes to synchronize.
-        sync_fn: Function(code) -> result dict.
-        scope_type: Checkpoint scope type.
-        scope_key: Checkpoint scope key.
-        history_label: Human-readable history target.
-        max_workers: ThreadPoolExecutor max_workers.
-        progress_label: Label for fetched count (e.g. 'K线拉取').
-        total: Total codes (including skipped).
-
-    Returns:
-        (per_symbol, done_codes, start_time, total_rows,
-         cache_hit, hist_fetch, all_earliest, all_latest, skipped)
-    """
-    start_time = time.time()
-    done_codes = _load_checkpoint(scope_type, scope_key)
-    pending = [c for c in codes if c not in done_codes]
-    skipped = total - len(pending)
-    print(
-        f"  同步范围: {history_label}"
-        f"{' (断点续传: 已跳过 ' + str(skipped) + ' 只' if skipped else ''}",
-        flush=True,
-    )
-    if len(pending) > 10:
-        print(f"  并发数: {max_workers}, 剩余 {len(pending)} 只待同步", flush=True)
-
-    results_lock = threading.Lock()
-    per_symbol: List[Dict[str, Any]] = []
-    hist_fetch = 0
-    cache_hit = 0
-    total_rows = 0
-    all_earliest: List[str] = []
-    all_latest: List[str] = []
-    processed_count = 0
-
-    def _wrap_accumulate(result: Dict[str, Any]) -> None:
-        nonlocal hist_fetch, cache_hit, total_rows, processed_count
-        with results_lock:
-            per_symbol.append(result)
-            if result.get("history_fetched"):
-                hist_fetch += 1
-            if result.get("history_cache_hit"):
-                cache_hit += 1
-            total_rows += result.get("history_after", 0) or 0
-            covered = str(result.get("history_covered_through", "")).strip()
-            if covered:
-                all_latest.append(covered)
-            processed_count += 1
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_code = {
-            executor.submit(sync_fn, code): code for code in pending
-        }
-        completed_this_run = set()
-        for future in as_completed(future_to_code):
-            code = future_to_code[future]
-            try:
-                result = future.result()
-                if result:
-                    _wrap_accumulate(result)
-                    completed_this_run.add(code)
-            except Exception:
-                completed_this_run.add(code)
-
-            batch = max(10, total // 10)
-            if processed_count % batch == 0 or processed_count == len(pending):
-                pct = (skipped + processed_count) * 100 // total
-                date_range = ""
-                if all_earliest and all_latest:
-                    date_range = f" | 日期范围: {min(all_earliest)} ~ {max(all_latest)}"
-                elapsed = time.time() - start_time
-                m, s = divmod(int(elapsed), 60)
-                time_str = f"{m}分{s}秒" if m else f"{s}秒"
-                print(
-                    f"  [{skipped + processed_count}/{total}] {pct}% | "
-                    f"已用时={time_str} | "
-                    f"缓存命中={cache_hit}, {progress_label}={hist_fetch}, "
-                    f"累计行数={total_rows:,}{date_range}",
-                    flush=True,
-                )
-                done_codes.update(completed_this_run)
-                _save_checkpoint(scope_type, scope_key, done_codes)
-                completed_this_run = set()
-
-    if completed_this_run:
-        done_codes.update(completed_this_run)
-        _save_checkpoint(scope_type, scope_key, done_codes)
-
-    if len(done_codes) >= total:
-        _clear_checkpoint(scope_type, scope_key)
-
-    return (
-        per_symbol, done_codes, start_time, total_rows,
-        cache_hit, hist_fetch, all_earliest, all_latest, skipped,
-    )
 
 def _save_checkpoint(scope_type: str, scope_key: str, done_codes: set) -> None:
     """Persist checkpoint to kv_store."""
@@ -875,10 +766,7 @@ def get_fund_pool(force_refresh: bool = False) -> List[Dict[str, Any]]:
         _refresh_fund_pool()
     funds = _cache.get_stock_pool("FUND")
     if not funds:
-        with _cache._conn() as conn:
-            conn.row_factory = sqlite3.Row
-            cur = conn.execute("SELECT * FROM fund_info")
-            funds = [dict(r) for r in cur.fetchall()]
+        funds = _cache.get_all_fund_info()
     return funds
 
 

@@ -299,14 +299,11 @@ def _detect_quality_flags(
     """
     if not rows:
         return rows
-    limit_pct = 0.095 if market == "A" else 0.20
-
     for i, r in enumerate(rows):
         flags = []
         close = r.get("close", 0) or 0
         open_ = r.get("open", 0) or 0
         high = r.get("high", 0) or 0
-        low = r.get("low", 0) or 0
         vol = r.get("volume", 0) or 0
 
         # Zero volume on non-zero price day = possible suspension

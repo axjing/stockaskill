@@ -1,31 +1,31 @@
-﻿"""Core data engine: fundamentals module."""
+"""Core data engine: fundamentals module."""
 
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import pandas as pd
-
 from cache import get_cache
-from config import get as cfg_get
 from utils import (
     normalize_code_for_market,
     safe_float,
 )
+
 from data_engine.config import (
     _akshare_lock,
     _api_call,
     _report_no_data,
     _try_akshare,
-    _try_yfinance
+    _try_yfinance,
 )
 from data_engine.helpers import (
     _backfill_missing_factors,
     _backfill_valuation_from_price,
 )
+from data_engine.kline import _yfinance_symbol
 
 _cache = get_cache()
 logger = logging.getLogger(__name__)
+
 
 @_api_call("fundamentals_yf")
 def _fetch_fundamentals_yfinance(
@@ -65,11 +65,11 @@ def _fetch_fundamentals_yfinance(
             "pcf_ttm": safe_float(info.get("priceToCashflow", 0)),
             "dividend_yield": _div_yield,
             "roe": safe_float(info.get("returnOnEquity", 0)) / 100.0
-                if safe_float(info.get("returnOnEquity", 0)) > 1
-                else safe_float(info.get("returnOnEquity", 0)),
+            if safe_float(info.get("returnOnEquity", 0)) > 1
+            else safe_float(info.get("returnOnEquity", 0)),
             "roa": safe_float(info.get("returnOnAssets", 0)) / 100.0
-                if safe_float(info.get("returnOnAssets", 0)) > 1
-                else safe_float(info.get("returnOnAssets", 0)),
+            if safe_float(info.get("returnOnAssets", 0)) > 1
+            else safe_float(info.get("returnOnAssets", 0)),
             "gross_margin": safe_float(info.get("grossMargins", 0)),
             "net_margin": safe_float(info.get("profitMargins", 0)),
             "revenue_growth": safe_float(info.get("revenueGrowth", 0)),
@@ -81,6 +81,7 @@ def _fetch_fundamentals_yfinance(
         }
     except Exception:
         return None
+
 
 def get_fundamentals(
     code: str,
@@ -121,9 +122,8 @@ def get_fundamentals(
         logger.warning("get_fundamentals fetch failed for %s: %s", code, exc)
     return cached
 
-def _fetch_fundamentals_us_akshare(
-    code: str, ak
-) -> Optional[Dict[str, Any]]:
+
+def _fetch_fundamentals_us_akshare(code: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch US stock fundamentals via AKShare stock_financial_us_analysis_indicator_em.
 
     Returns a dict with the same schema as other fundamental fetchers.
@@ -211,6 +211,7 @@ def _fetch_fundamentals_us_akshare(
         "bvps": bvps,
     }
 
+
 def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
     """Fetch fundamentals from available source (THS -> Sina -> yfinance).
 
@@ -258,8 +259,15 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
         if ths_result is not None:
             result = ths_result
             if sina_result is not None:
-                for vk in ("market_cap", "pe_ttm", "pe_static", "pb",
-                           "ps_ttm", "pcf_ttm", "dividend_yield"):
+                for vk in (
+                    "market_cap",
+                    "pe_ttm",
+                    "pe_static",
+                    "pb",
+                    "ps_ttm",
+                    "pcf_ttm",
+                    "dividend_yield",
+                ):
                     if sina_result.get(vk) and not result.get(vk):
                         result[vk] = sina_result[vk]
         else:
@@ -269,6 +277,7 @@ def _fetch_fundamentals(code: str, market: str) -> Optional[Dict[str, Any]]:
         return result
     _report_no_data(code, market, "fundamentals")
     return None
+
 
 def _fetch_fundamentals_ths(code: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch A-share fundamentals via THS financial abstract (primary source).
@@ -318,6 +327,7 @@ def _fetch_fundamentals_ths(code: str, ak) -> Optional[Dict[str, Any]]:
     _map_ths_field(latest, "流动比率", result, "current_ratio")
     return result
 
+
 def _parse_chinese_number(text: Any) -> float:
     """Convert a Chinese-formatted number string to float.
 
@@ -354,6 +364,7 @@ def _parse_chinese_number(text: Any) -> float:
     except (ValueError, TypeError):
         return 0.0
 
+
 def _map_ths_field(row, col_name: str, target: dict, key: str) -> None:
     """Extract a field from a THS financial abstract row into a target dict.
 
@@ -364,10 +375,9 @@ def _map_ths_field(row, col_name: str, target: dict, key: str) -> None:
         return
     target[key] = _parse_chinese_number(row[col_name])
 
+
 @_api_call("fundamentals_hk")
-def _fetch_fundamentals_hk_analysis(
-    code: str, ak
-) -> Optional[Dict[str, Any]]:
+def _fetch_fundamentals_hk_analysis(code: str, ak) -> Optional[Dict[str, Any]]:
     """Fetch HK fundamentals via stock_financial_hk_analysis_indicator_em.
 
     The older stock_financial_hk_report_em endpoint currently returns an HTML
@@ -407,6 +417,7 @@ def _fetch_fundamentals_hk_analysis(
         }
     except Exception:
         return None
+
 
 @_api_call("fundamentals")
 def _fetch_fundamentals_ak(code: str, market: str, ak) -> Optional[Dict[str, Any]]:

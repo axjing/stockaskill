@@ -415,6 +415,17 @@ class CacheManager:
             row = cur.fetchone()
             return row[0] if row and row[0] and row[0] > 0 else None
 
+    def get_all_fund_info(self) -> List[Dict[str, Any]]:
+        """Return all rows from fund_info table.
+
+        Returns:
+            List of dicts representing all fund_info rows.
+        """
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute("SELECT * FROM fund_info")
+            return [dict(r) for r in cur.fetchall()]
+
     # -- factor snapshot ----------------------------------------------------
 
     def upsert_factor_snapshot(self, rows: List[Dict[str, Any]]) -> None:

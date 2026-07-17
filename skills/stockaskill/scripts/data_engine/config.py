@@ -62,7 +62,12 @@ def _report_no_data(code: str, market: str, data_kind: str) -> None:
     logger.warning(
         "No %s data for %s (%s). All sources exhausted (%s). "
         "Retry with 'sync %s --market %s' when network is available.",
-        data_kind, code, market, sources, code, market,
+        data_kind,
+        code,
+        market,
+        sources,
+        code,
+        market,
     )
 
 
@@ -77,25 +82,27 @@ def _api_call(api_name: str):
     and prints a warning before re-raising. Callers should catch the exception
     and fall back to cached data.
     """
+    # Cache config values at decorator definition time (never change at runtime).
+    _retry_max = cfg_get("retry_max", 3)
+    _retry_base = cfg_get("retry_base", 2)
+    _interval = cfg_get("request_interval", [0.5, 2.0])
+    _mul = cfg_get("retry_backoff_multiplier", 2)
+    _cap = cfg_get("retry_max_delay", 30)
+    _daily_api_limit = cfg_get("daily_api_limit", 500)
 
     def decorator(func):
         def wrapper(*args, **kwargs):
             global _api_limit_exhausted
-            retry_max = cfg_get("retry_max", 3)
-            retry_base = cfg_get("retry_base", 2)
-            interval = cfg_get("request_interval", [0.5, 2.0])
-            mul = cfg_get("retry_backoff_multiplier", 2)
-            cap = cfg_get("retry_max_delay", 30)
             last_exc: Exception | None = None
-            for attempt in range(retry_max):
+            for attempt in range(_retry_max):
                 try:
                     # Check and record API usage against daily limit
                     if not _cache.record_api_call(api_name):
                         raise RuntimeError(
-                            f"Daily API limit ({cfg_get('daily_api_limit', 500)}) "
+                            f"Daily API limit ({_daily_api_limit}) "
                             f"exceeded for {api_name}"
                         )
-                    time.sleep(interval[0])
+                    time.sleep(_interval[0])
                     result = func(*args, **kwargs)
                     return result
                 except Exception as exc:
@@ -106,7 +113,7 @@ def _api_call(api_name: str):
                         token in err_str
                         for token in ("429", "too many", "rate limit", "throttl")
                     )
-                    if is_rate_limited and attempt == retry_max - 1:
+                    if is_rate_limited and attempt == _retry_max - 1:
                         _api_limit_exhausted = True
                         source_name = {
                             "kline": "AKShare/EastMoney",
@@ -126,9 +133,9 @@ def _api_call(api_name: str):
                             f"Falling back to alternative data source.",
                             flush=True,
                         )
-                    if attempt == retry_max - 1:
+                    if attempt == _retry_max - 1:
                         raise
-                    delay = min(retry_base**attempt * mul, cap)
+                    delay = min(_retry_base**attempt * _mul, _cap)
                     time.sleep(delay)
             # Should never reach here (last attempt always raises)
             raise last_exc  # type: ignore[misc]
@@ -176,7 +183,6 @@ def _try_baostock() -> Optional[Any]:
         return bs
     except Exception:
         return None
-
 
 
 def _try_yfinance() -> Optional[Any]:

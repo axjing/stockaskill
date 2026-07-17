@@ -9,76 +9,43 @@ Split from monolithic data_engine.py into focused submodules:
 - helpers: shared validation, estimation, quality flags
 """
 
-# Re-export public API — all imports that previously used
-# `from data_engine import get_stock_pool` still work.
+# Re-export public API so all imports that previously used
+# from data_engine import get_stock_pool still work.
 
-# Re-export safe_float from utils (needed by callers)
 from utils import safe_float
 
+# For backward compatibility with tests that mock data_engine._cache
 from data_engine.config import (
+    _akshare_lock,
     _api_call,
     _api_limit_exhausted,
-    _akshare_lock,
+    _cache,  # noqa: F401
     _cold_start_date,
     _is_etf_market,
     _market_supports_fundamentals,
     _report_no_data,
-    _sina_code,
     _try_akshare,
-    _try_baostock,
-    _try_efinance,
-    _try_yfinance,
     get_cache,
     is_api_limit_exhausted,
 )
+from data_engine.fundamentals import (
+    _fetch_fundamentals,
+    get_fundamentals,
+)
 from data_engine.helpers import (
     _add_days,
-    _has_fresh_snapshot,
-    _latest_cached_date,
-    _aggregate_covered_through,
-    _backfill_missing_factors,
-    _backfill_valuation_from_price,
-    _date_str,
     _detect_quality_flags,
-    _estimate_amount,
-    _safe_parse_date,
+    _latest_cached_date,
     check_data_completeness,
     get_vwap,
 )
-from data_engine.pool import (
-    _backfill_pool_metadata_from_bs,
-    _enrich_a_pool_from_baostock,
-    _fetch_a_stock_pool,
-    _fetch_a_stock_pool_baostock,
-    _fetch_a_stock_profile_metadata,
-    _fetch_fund_pool_df,
-    _fetch_hk_stock_pool,
-    _fetch_us_stock_pool,
-    _infer_list_date_from_history,
-    _refresh_stock_pool,
-    ensure_stock_pool_candidates_ready,
-    get_stock_pool,
-)
 from data_engine.kline import (
     _fetch_kline,
-    _fetch_kline_bs,
-    _fetch_kline_ef,
-    _fetch_kline_sina,
-    _fetch_kline_yfinance,
-    _normalize_kline_df,
-    _yfinance_symbol,
     get_kline,
 )
-from data_engine.fundamentals import (
-    _fetch_fundamentals,
-    _fetch_fundamentals_ak,
-    _fetch_fundamentals_hk_analysis,
-    _fetch_fundamentals_ths,
-    _fetch_fundamentals_us_akshare,
-    _fetch_fundamentals_yfinance,
-    _map_ths_field,
-    _parse_chinese_number,
-    get_fundamentals,
+from data_engine.pool import (
+    ensure_stock_pool_candidates_ready,
+    get_stock_pool,
 )
 from data_engine.sync import (
     _fetch_market_index,
@@ -94,9 +61,6 @@ from data_engine.sync import (
     sync_symbols_data,
     sync_watchlist_data,
 )
-
-# For backward compatibility with tests that mock data_engine._cache
-from data_engine.config import _cache  # noqa: F401
 
 __all__ = [
     # Public API
@@ -131,4 +95,8 @@ __all__ = [
     "_report_no_data",
     "safe_float",
     "_add_days",
+    "get_cache",
+    "_fetch_market_index",
+    "sync_symbols_data",
+    "_try_akshare",
 ]

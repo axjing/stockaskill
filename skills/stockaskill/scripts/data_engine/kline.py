@@ -1,17 +1,16 @@
-﻿"""Core data engine: kline module."""
+"""Core data engine: kline module."""
 
 import logging
 import threading
 from datetime import datetime
 from typing import Any, Dict, List
 
-import pandas as pd
-
 from cache import get_cache
 from utils import (
     _suppress_output,
     safe_float,
 )
+
 from data_engine.config import (
     _akshare_lock,
     _api_call,
@@ -40,6 +39,7 @@ _AKSHARE_FAIL_THRESHOLD = 3
 _akshare_fail_count = 0
 _akshare_fail_lock = threading.Lock()
 
+
 def get_kline(
     code: str,
     market: str = "A",
@@ -54,6 +54,7 @@ def get_kline(
     cache-first + incremental-fetch logic.
     """
     from incremental_fetcher import get_kline_incremental
+
     return get_kline_incremental(
         code=code,
         market=market,
@@ -83,7 +84,9 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                 if result:
                     return result
             except Exception as exc:
-                logger.debug("Baostock kline failed for %s: %s, trying fallback", code, exc)
+                logger.debug(
+                    "Baostock kline failed for %s: %s, trying fallback", code, exc
+                )
 
         # Try AKShare/EastMoney only if circuit breaker hasn't tripped
         if not _akshare_kline_failed:
@@ -130,8 +133,13 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
             if result:
                 return result
         except Exception as exc:
-            logger.debug("AKShare kline failed for %s (%s): %s, trying fallback", code, market, exc)
-    
+            logger.debug(
+                "AKShare kline failed for %s (%s): %s, trying fallback",
+                code,
+                market,
+                exc,
+            )
+
     yf = _try_yfinance()
     if yf is not None and market in ("HK", "US"):
         try:
@@ -142,9 +150,6 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
             logger.debug("yfinance kline failed for %s: %s", code, exc)
     _report_no_data(code, market, "K-line")
     return []
-
-
-
 
 
 def _normalize_kline_df(
