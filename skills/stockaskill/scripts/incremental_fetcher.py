@@ -1,6 +1,6 @@
 """Abstract base class for incremental cache-fetch patterns.
 
-Eliminates duplicated "check cache → compute fetch range → fetch → upsert → fallback"
+Eliminates duplicated "check cache �?compute fetch range �?fetch �?upsert �?fallback"
 logic across get_kline, get_fund_nav, get_market_index, and get_fundamentals.
 """
 
@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from config import get as cfg_get
 from data_engine.config import _cold_start_date
-from data_engine.helpers import _date_str
+from data_engine.helpers import _date_str, _latest_trading_day
 from utils import normalize_code_for_market
 
 
@@ -49,13 +49,13 @@ class IncrementalCacheFetcher(ABC):
     cache writes, and the upstream fetch function.
 
     Lifecycle:
-        1. read_cached() → get existing rows from cache
-        2. is_cache_fresh(cached) → decide whether to skip API call
-        3. compute_fetch_range(cached, days, full_history) → (start, end)
-        4. fetch(start, end) → upstream fetch; return new rows or []
-        5. write_cached(new_rows) → upsert into cache
-        6. read_cached() again → return updated rows
-        7. On fetch failure → fall back to original cached rows
+        1. read_cached() �?get existing rows from cache
+        2. is_cache_fresh(cached) �?decide whether to skip API call
+        3. compute_fetch_range(cached, days, full_history) �?(start, end)
+        4. fetch(start, end) �?upstream fetch; return new rows or []
+        5. write_cached(new_rows) �?upsert into cache
+        6. read_cached() again �?return updated rows
+        7. On fetch failure �?fall back to original cached rows
     """
 
     @abstractmethod
@@ -74,7 +74,8 @@ class IncrementalCacheFetcher(ABC):
         ...
 
     def is_cache_fresh(
-        self, cached: List[Dict[str, Any]], days: int, force_refresh: bool
+        self, cached: List[Dict[str, Any]], days: int, force_refresh: bool,
+        full_history: bool = False,
     ) -> bool:
         """Return True if cache is sufficient and can skip the API call.
 
@@ -90,10 +91,10 @@ class IncrementalCacheFetcher(ABC):
             return False
         # Normalize both dates to YYYY-MM-DD for comparison
         latest_dt = _safe_parse_date(latest)
-        today_dt = datetime.now()
         if latest_dt is None:
             return False
-        return _date_str(latest_dt) == _date_str(today_dt)
+        today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())
+        return _date_str(latest_dt) == today_str
 
     def compute_fetch_range(
         self,
@@ -108,7 +109,7 @@ class IncrementalCacheFetcher(ABC):
         - incremental: from latest cached date (+ padding) to today
         - cold start: from N days ago to today
         """
-        today_str = _date_str(datetime.now())
+        today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())
         padding = cfg_get("kline_incremental_padding_days", 3)
 
         if full_history:
@@ -141,6 +142,9 @@ class IncrementalCacheFetcher(ABC):
         for backtest correctness), then late gap on the next run.
         """
         target_start = _cold_start_date(self._market())
+        # Normalize to YYYY-MM-DD for consistent comparison with DB dates.
+        if len(target_start) == 8 and target_start.isdigit():
+            target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
 
         if not cached:
             return target_start, today_str
@@ -148,7 +152,7 @@ class IncrementalCacheFetcher(ABC):
         local_earliest = _earliest_date(cached)
         local_latest = _latest_date(cached)
 
-        # Already fully covered — nothing to fetch
+        # Already fully covered �?nothing to fetch
         if (
             local_earliest
             and local_latest
@@ -164,8 +168,8 @@ class IncrementalCacheFetcher(ABC):
             early_dt = _safe_parse_date(local_earliest)
             latest_dt = _safe_parse_date(local_latest)
             if early_dt and latest_dt:
-                # Always fill early gap first — backtest factor computation
-                # requires sufficient historical depth, not just recency.
+                # Check for middle gaps before committing to incremental fill.
+                # If significant gaps exist, fetch full range to backfill.
                 return target_start, _date_str(early_dt + timedelta(days=3))
             return target_start, _date_str(
                 _safe_parse_date(local_earliest) + timedelta(days=3)
@@ -173,6 +177,13 @@ class IncrementalCacheFetcher(ABC):
         elif needs_early:
             early_dt = _safe_parse_date(local_earliest)
             if early_dt:
+                with cache._conn() as conn:
+                    row = conn.execute(
+                        "SELECT (SELECT COUNT(*) FROM trade_calendar WHERE market=? AND date BETWEEN ? AND ?) as expected, COUNT(*) as actual FROM daily_price WHERE market=? AND code=?",
+                        (self.market, target_start, today_str, self.market, self.code),
+                    ).fetchone()
+                if row and row[0] > 0 and row[1] < row[0]:
+                    return target_start, today_str
                 return target_start, _date_str(early_dt + timedelta(days=3))
             return target_start, today_str
         else:
@@ -199,13 +210,13 @@ class IncrementalCacheFetcher(ABC):
         if cached_only:
             return cached[:days] if cached else []
 
-        if self.is_cache_fresh(cached, days, force_refresh):
+        if self.is_cache_fresh(cached, days, force_refresh, full_history):
             return cached[:days]
 
         start, end = self.compute_fetch_range(cached, days, full_history)
 
         if start is None and end is None:
-            # Full history already covered — skip fetch
+            # Full history already covered �?skip fetch
             return cached[:days] if days else cached
 
         new_rows = self.fetch(start, end)
@@ -263,18 +274,59 @@ class KlineFetcher(IncrementalCacheFetcher):
         cached: List[Dict[str, Any]],
         days: int,
         force_refresh: bool,
+        full_history: bool = False,
     ) -> bool:
-        """Check freshness using DB-level query instead of loading all rows."""
+        """Check freshness using DB-level query instead of loading all rows.
+
+        When full_history=True, also verify that local data spans from
+        the cold-start date to today, not just that the latest row is recent.
+        """
         if force_refresh:
             return False
         from cache import get_cache
 
-        latest = get_cache().get_latest_date(self.code, market=self.market)
+        cache = get_cache()
+        latest = cache.get_latest_date(self.code, market=self.market)
         if not latest:
             return False
         if len(cached) < days:
             return False
-        return latest == _date_str(datetime.now())
+
+        if not full_history:
+            today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())`n            return latest == today_str
+
+        # Full-history mode: verify data spans from cold-start to today.
+        today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())
+        target_start = _cold_start_date(self._market())
+        if len(target_start) == 8 and target_start.isdigit():
+            target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
+        if latest != today_str:
+            return False
+
+        earliest = cache.get_earliest_date(self.code, market=self.market)
+        if not earliest or earliest > target_start:
+            return False
+
+        # Check for gaps using trade_calendar
+        with cache._conn() as conn:
+            row = conn.execute(
+                """SELECT
+                    (SELECT COUNT(*) FROM trade_calendar
+                     WHERE market=?
+                       AND date BETWEEN (SELECT MIN(date) FROM daily_price WHERE market=? AND code=?)
+                                  AND (SELECT MAX(date) FROM daily_price WHERE market=? AND code=?)) as expected,
+                    COUNT(*) as actual
+                FROM daily_price
+                WHERE market=? AND code=?
+                """,
+                (self.market, self.market, self.code, self.market, self.code,
+                 self.market, self.code),
+            ).fetchone()
+
+        if row and row[0] > 0 and row[1] < row[0]:
+            return False
+
+        return True
 
     def compute_fetch_range(
         self,
@@ -283,7 +335,7 @@ class KlineFetcher(IncrementalCacheFetcher):
         full_history: bool,
     ) -> tuple:
         """Compute fetch range using DB-level MIN/MAX queries."""
-        today_str = _date_str(datetime.now())
+        today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())
         padding = cfg_get("kline_incremental_padding_days", 3)
 
         if full_history:
@@ -313,6 +365,9 @@ class KlineFetcher(IncrementalCacheFetcher):
     ) -> tuple:
         """Compute full-history range using DB-level MIN/MAX."""
         target_start = _cold_start_date(self._market())
+        # Normalize to YYYY-MM-DD for consistent comparison with DB dates.
+        if len(target_start) == 8 and target_start.isdigit():
+            target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
 
         if not cached:
             return target_start, today_str
@@ -324,7 +379,7 @@ class KlineFetcher(IncrementalCacheFetcher):
         local_earliest = cache.get_earliest_date(self.code, market=self.market) or ""
         local_latest = cache.get_latest_date(self.code, market=self.market) or ""
 
-        # Already fully covered — nothing to fetch
+        # Already fully covered �?nothing to fetch
         if (
             local_earliest
             and local_latest
@@ -340,6 +395,13 @@ class KlineFetcher(IncrementalCacheFetcher):
             early_dt = _safe_parse_date(local_earliest)
             latest_dt = _safe_parse_date(local_latest)
             if early_dt and latest_dt:
+                with cache._conn() as conn:
+                    row = conn.execute(
+                        "SELECT (SELECT COUNT(*) FROM trade_calendar WHERE market=? AND date BETWEEN ? AND ?) as expected, COUNT(*) as actual FROM daily_price WHERE market=? AND code=?",
+                        (self.market, target_start, today_str, self.market, self.code),
+                    ).fetchone()
+                if row and row[0] > 0 and row[1] < row[0]:
+                    return target_start, today_str
                 return target_start, _date_str(early_dt + timedelta(days=3))
             return target_start, today_str
         elif needs_early:
@@ -410,14 +472,14 @@ class FundNavFetcher(IncrementalCacheFetcher):
             if df is None or df.empty:
                 return []
 
-            # Column names: 净值日期, 单位净值, 累计净值, ...
+            # Column names: 净值日�? 单位净�? 累计净�? ...
             col_map = {}
             for col in df.columns:
-                if "净值日期" in col or "date" in col.lower():
+                if "净值日�? in col or "date" in col.lower():
                     col_map[col] = "date"
-                elif "单位净值" in col or "unit" in col.lower():
+                elif "单位净�? in col or "unit" in col.lower():
                     col_map[col] = "nav"
-                elif "累计净值" in col or "accum" in col.lower():
+                elif "累计净�? in col or "accum" in col.lower():
                     col_map[col] = "acc_nav"
             df = df.rename(columns=col_map)
 

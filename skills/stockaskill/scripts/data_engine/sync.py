@@ -24,6 +24,7 @@ from data_engine.config import (
 from data_engine.fundamentals import get_fundamentals
 from data_engine.helpers import (
     _aggregate_covered_through,
+    _latest_trading_day,
     _date_str,
     _has_fresh_snapshot,
     _latest_cached_date,
@@ -72,9 +73,15 @@ def sync_symbol_data(
         )
         if _dates:
             target_start = _cold_start_date(market)
+            # Normalize to YYYY-MM-DD for consistent comparison with DB dates.
+            if len(target_start) == 8 and target_start.isdigit():
+                target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
             local_earliest = _dates[0]
             local_latest = _dates[-1]
             today_str = _date_str(datetime.now())
+            # Use latest trading day instead of calendar date to avoid
+            # false miss on weekends/holidays.
+            today_str = _latest_trading_day(market) or today_str
             if local_earliest <= target_start and local_latest == today_str:
                 _skip_history_api = True
 

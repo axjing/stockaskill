@@ -43,7 +43,7 @@ def _cold_start_date(market: str) -> str:
 
     Matches SKILL.md: A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01.
     """
-    defaults = {"A": "20000101", "HK": "19950101", "US": "19900101"}
+    defaults = {"A": "2000-01-01", "HK": "1995-01-01", "US": "1990-01-01"}
     return cfg_get("full_history_start_date", defaults.get(market, "20000101"))
 
 

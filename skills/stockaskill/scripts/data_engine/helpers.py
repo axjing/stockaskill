@@ -444,3 +444,26 @@ def _add_days(date_str: str, days: int) -> str:
         return _date_str(dt + timedelta(days=days))
     except (ValueError, TypeError):
         return _date_str(datetime.now() + timedelta(days=days))
+
+
+
+def _latest_trading_day(market: str = "A") -> str | None:
+    """Return the latest open trading day for a market from trade_calendar.
+
+    Falls back to None when trade_calendar has no data yet.
+    """
+    from cache import get_cache
+
+    cache = get_cache()
+    try:
+        with cache._conn() as conn:
+            row = conn.execute(
+                "SELECT MAX(date) FROM trade_calendar WHERE market=? AND is_open=1",
+                (market,),
+            ).fetchone()
+            if row and row[0]:
+                return row[0]
+    except Exception:
+        pass
+    return None
+

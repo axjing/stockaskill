@@ -370,6 +370,11 @@ def _fetch_kline_bs(
     """Fetch K-line from baostock (A-shares only)."""
     if market != "A":
         return []
+    # Baostock requires YYYY-MM-DD; normalize from YYYYMMDD if needed
+    if len(start) == 8 and start.isdigit():
+        start = f"{start[:4]}-{start[4:6]}-{start[6:8]}"
+    if len(end) == 8 and end.isdigit():
+        end = f"{end[:4]}-{end[4:6]}-{end[6:8]}"
     if code.startswith("92"):
         prefix = "bj"
     elif code.startswith(("6", "9")):

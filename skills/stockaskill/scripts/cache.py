@@ -36,8 +36,10 @@ _SCHEMA = [
         quality_flags TEXT DEFAULT '',
         PRIMARY KEY (market, code, date)
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_daily_price_lookup
-        ON daily_price(market, code, date)""",
+    """CREATE INDEX IF NOT EXISTS idx_daily_price_market_date
+        ON daily_price(market, date)""",
+    """CREATE INDEX IF NOT EXISTS idx_daily_price_date
+        ON daily_price(date)""",
     """CREATE TABLE IF NOT EXISTS factor_snapshot (
         market TEXT, code TEXT, date TEXT, market_cap REAL, pe_ttm REAL,
         pe_static REAL, pb REAL, ps_ttm REAL, pcf_ttm REAL,
@@ -46,8 +48,6 @@ _SCHEMA = [
         debt_ratio REAL, current_ratio REAL, eps REAL, bvps REAL,
         PRIMARY KEY (market, code, date)
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_factor_snapshot_lookup
-        ON factor_snapshot(market, code, date)""",
     """CREATE TABLE IF NOT EXISTS computed_factors (
         code TEXT, date TEXT, factor_name TEXT, factor_value REAL,
         PRIMARY KEY (code, date, factor_name)
@@ -110,8 +110,6 @@ _SCHEMA = [
         last_error TEXT, status TEXT,
         PRIMARY KEY (scope_type, scope_key, market, code, data_kind)
     )""",
-    """CREATE INDEX IF NOT EXISTS idx_sync_state_lookup
-        ON sync_state(scope_type, scope_key, market, code)""",
 ]
 
 
@@ -182,26 +180,32 @@ class CacheManager:
         self,
         market: str = "A",
     ) -> List[Dict[str, int]]:
-        """Check data completeness against the trade calendar.
+        """Check data completeness by detecting gaps in daily_price dates.
 
-        Returns a list of dicts with code, actual_days, expected_days, missing_days
-        for stocks that have fewer rows than the trade calendar.
+        Returns a list of dicts with code, actual_days, expected_days,
+        missing_days for stocks that have fewer rows than expected,
+        where expected = trading days between local min and max date.
         """
         with self._conn() as conn:
             cur = conn.execute(
-                """
-                SELECT dp.code,
-                       COUNT(dp.date) as actual_days,
-                       (SELECT COUNT(*) FROM trade_calendar WHERE market=dp.market) as expected_days,
-                       (SELECT COUNT(*) FROM trade_calendar WHERE market=dp.market) - COUNT(dp.date) as missing_days
-                FROM daily_price dp
-                WHERE dp.market=?
-                GROUP BY dp.code
-                HAVING actual_days < expected_days
-                ORDER BY missing_days DESC
-                """,
-                (market,),
-            )
+                """SELECT dp.code,
+                          COUNT(dp.date) as actual_days,
+                          (SELECT COUNT(*) FROM trade_calendar
+                           WHERE market=dp.market
+                             AND date BETWEEN (SELECT MIN(date) FROM daily_price WHERE market=dp.market AND code=dp.code)
+                                            AND (SELECT MAX(date) FROM daily_price WHERE market=dp.market AND code=dp.code)
+                          ) as expected_days,
+                          (SELECT COUNT(*) FROM trade_calendar
+                           WHERE market=dp.market
+                             AND date BETWEEN (SELECT MIN(date) FROM daily_price WHERE market=dp.market AND code=dp.code)
+                                            AND (SELECT MAX(date) FROM daily_price WHERE market=dp.market AND code=dp.code)
+                          ) - COUNT(dp.date) as missing_days
+                   FROM daily_price dp
+                   WHERE dp.market=?
+                   GROUP BY dp.code
+                   HAVING actual_days < expected_days
+                   ORDER BY missing_days DESC""",
+                (market,))
             return [
                 {
                     "code": row[0],
@@ -1147,19 +1151,23 @@ class CacheManager:
         db_size = os.path.getsize(self.db_path) / (1024 * 1024)
 
         with self._conn() as conn:
-            cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime(
-                "%Y-%m-%d"
-            )
-            cur = conn.execute(
-                "DELETE FROM daily_price WHERE date < ?",
-                (cutoff,),
-            )
-            removed["daily_price"] = cur.rowcount
+            # Do NOT delete daily_price rows — full history must be preserved
+            # per AGENTS.md "Data Strategy: Cache-First + Incremental Sync".
+            removed["daily_price"] = 0
 
             if db_size > max_size_mb:
+                # Clean up stale factor snapshots only (keep latest per code)
                 cur = conn.execute(
-                    "DELETE FROM factor_snapshot WHERE date < ?",
-                    (cutoff,),
+                    """DELETE FROM factor_snapshot
+                       WHERE (market, code, date) IN (
+                           SELECT fs.market, fs.code, fs.date
+                           FROM factor_snapshot fs
+                           INNER JOIN (
+                               SELECT market, code, MAX(date) as latest_date
+                               FROM factor_snapshot GROUP BY market, code
+                           ) latest ON fs.market = latest.market AND fs.code = latest.code
+                           WHERE fs.date < latest.latest_date
+                       )"""
                 )
                 removed["factor_snapshot"] = cur.rowcount
 
