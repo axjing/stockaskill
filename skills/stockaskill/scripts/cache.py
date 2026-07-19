@@ -40,8 +40,6 @@ _SCHEMA = [
         ON daily_price(market, date)""",
     """CREATE INDEX IF NOT EXISTS idx_daily_price_date
         ON daily_price(date)""",
-    """CREATE INDEX IF NOT EXISTS idx_daily_price_market_code_date
-        ON daily_price(market, code, date)""",
     """CREATE TABLE IF NOT EXISTS factor_snapshot (
         market TEXT, code TEXT, date TEXT, market_cap REAL, pe_ttm REAL,
         pe_static REAL, pb REAL, ps_ttm REAL, pcf_ttm REAL,
