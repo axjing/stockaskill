@@ -1,6 +1,6 @@
 """Abstract base class for incremental cache-fetch patterns.
 
-Eliminates duplicated "check cache �?compute fetch range �?fetch �?upsert �?fallback"
+Eliminates duplicated "check cache â?compute fetch range â?fetch â?upsert â?fallback"
 logic across get_kline, get_fund_nav, get_market_index, and get_fundamentals.
 """
 
@@ -49,13 +49,13 @@ class IncrementalCacheFetcher(ABC):
     cache writes, and the upstream fetch function.
 
     Lifecycle:
-        1. read_cached() �?get existing rows from cache
-        2. is_cache_fresh(cached) �?decide whether to skip API call
-        3. compute_fetch_range(cached, days, full_history) �?(start, end)
-        4. fetch(start, end) �?upstream fetch; return new rows or []
-        5. write_cached(new_rows) �?upsert into cache
-        6. read_cached() again �?return updated rows
-        7. On fetch failure �?fall back to original cached rows
+        1. read_cached() â?get existing rows from cache
+        2. is_cache_fresh(cached) â?decide whether to skip API call
+        3. compute_fetch_range(cached, days, full_history) â?(start, end)
+        4. fetch(start, end) â?upstream fetch; return new rows or []
+        5. write_cached(new_rows) â?upsert into cache
+        6. read_cached() again â?return updated rows
+        7. On fetch failure â?fall back to original cached rows
     """
 
     @abstractmethod
@@ -145,6 +145,11 @@ class IncrementalCacheFetcher(ABC):
         # Normalize to YYYY-MM-DD for consistent comparison with DB dates.
         if len(target_start) == 8 and target_start.isdigit():
             target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
+        # Allow 14-day padding for cold start to account for weekends/holidays
+        # at the beginning of the cold start year.
+        _cold_start_end = _date_str(
+            _safe_parse_date(target_start) + timedelta(days=14)
+        )
 
         if not cached:
             return target_start, today_str
@@ -152,16 +157,16 @@ class IncrementalCacheFetcher(ABC):
         local_earliest = _earliest_date(cached)
         local_latest = _latest_date(cached)
 
-        # Already fully covered �?nothing to fetch
+        # Already fully covered â?nothing to fetch
         if (
             local_earliest
             and local_latest
-            and local_earliest <= target_start
+            and local_earliest <= _cold_start_end
             and local_latest == today_str
         ):
             return None, None  # signals caller to skip fetch
 
-        needs_early = local_earliest > target_start if local_earliest else True
+        needs_early = local_earliest > _cold_start_end if local_earliest else True
         needs_latest = local_latest < today_str if local_latest else True
 
         if needs_early and needs_latest:
@@ -216,7 +221,7 @@ class IncrementalCacheFetcher(ABC):
         start, end = self.compute_fetch_range(cached, days, full_history)
 
         if start is None and end is None:
-            # Full history already covered �?skip fetch
+            # Full history already covered â?skip fetch
             return cached[:days] if days else cached
 
         new_rows = self.fetch(start, end)
@@ -293,18 +298,23 @@ class KlineFetcher(IncrementalCacheFetcher):
             return False
 
         if not full_history:
-            today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())`n            return latest == today_str
+            today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())
+            return latest == today_str
 
         # Full-history mode: verify data spans from cold-start to today.
         today_str = _latest_trading_day(self._market()) or _date_str(datetime.now())
         target_start = _cold_start_date(self._market())
         if len(target_start) == 8 and target_start.isdigit():
             target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
+        # Allow 14-day padding for cold start to account for weekends/holidays.
+        _cold_start_end = _date_str(
+            _safe_parse_date(target_start) + timedelta(days=14)
+        )
         if latest != today_str:
             return False
 
         earliest = cache.get_earliest_date(self.code, market=self.market)
-        if not earliest or earliest > target_start:
+        if not earliest or earliest > _cold_start_end:
             return False
 
         # Check for gaps using trade_calendar
@@ -368,6 +378,10 @@ class KlineFetcher(IncrementalCacheFetcher):
         # Normalize to YYYY-MM-DD for consistent comparison with DB dates.
         if len(target_start) == 8 and target_start.isdigit():
             target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
+        # Allow 14-day padding for cold start to account for weekends/holidays.
+        _cold_start_end = _date_str(
+            _safe_parse_date(target_start) + timedelta(days=14)
+        )
 
         if not cached:
             return target_start, today_str
@@ -379,16 +393,16 @@ class KlineFetcher(IncrementalCacheFetcher):
         local_earliest = cache.get_earliest_date(self.code, market=self.market) or ""
         local_latest = cache.get_latest_date(self.code, market=self.market) or ""
 
-        # Already fully covered �?nothing to fetch
+        # Already fully covered â?nothing to fetch
         if (
             local_earliest
             and local_latest
-            and local_earliest <= target_start
+            and local_earliest <= _cold_start_end
             and local_latest == today_str
         ):
             return None, None
 
-        needs_early = local_earliest > target_start if local_earliest else True
+        needs_early = local_earliest > _cold_start_end if local_earliest else True
         needs_latest = local_latest < today_str if local_latest else True
 
         if needs_early and needs_latest:
@@ -472,14 +486,14 @@ class FundNavFetcher(IncrementalCacheFetcher):
             if df is None or df.empty:
                 return []
 
-            # Column names: 净值日�? 单位净�? 累计净�? ...
+            # Column names: åå¼æ¥æ, åä½åå¼, ç´¯è®¡åå¼, ...
             col_map = {}
             for col in df.columns:
-                if "净值日�? in col or "date" in col.lower():
+                if "åå¼æ¥æ" in col or "date" in col.lower():
                     col_map[col] = "date"
-                elif "单位净�? in col or "unit" in col.lower():
+                elif "åä½åå¼" in col or "unit" in col.lower():
                     col_map[col] = "nav"
-                elif "累计净�? in col or "accum" in col.lower():
+                elif "ç´¯è®¡åå¼" in col or "accum" in col.lower():
                     col_map[col] = "acc_nav"
             df = df.rename(columns=col_map)
 
