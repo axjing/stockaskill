@@ -192,6 +192,8 @@ openclaw skills install @axjing/stockaskill --global
 最近几批优化后, 本地缓存还新增了以下可见能力:
 
 - 显式有界同步: `sync symbol/watchlist/portfolio/scan-universe/etf`
+- 数据质量检查与分层修复: `sync check` / `sync repair` (含 backoff 退避与 `data_quality_log` 审计)
+- 每日因子快照: `sync snapshot` (scan-universe 同步完成后按 `factor_snapshot_enabled` 自动构建)
 - 显式数据诊断: `status data ...`
 - HK/US 元数据质量信号: `metadata_source` / `metadata_status` / `metadata_completeness`
 - HK/US 低质量元数据在 realtime scan 中会被轻量降权, 但不会被粗暴硬过滤
@@ -272,7 +274,7 @@ openclaw skills install @axjing/stockaskill --global
 
 本项目的数据获取遵循**缓存优先、增量同步**原则：
 
-- **SQLite 是唯一数据源**：所有读取操作先查本地 quant_cache.db，远端 API 仅作为同步手段，不作为查询层。
+- **本地缓存是唯一数据源**：所有读取操作先查本地 quant_cache.db（默认 SQLite），远端 API 仅作为同步手段，不作为查询层。配置 `db_engine: "duckdb"` 可切换为列式存储 DuckDB（同构表结构，接口不变）。
 - **增量补全，不全量重拉**：检查缓存最新日期，只拉取缺失区间（带 3 天重叠以修正节假日/延迟数据）。首次运行全量种子，之后永远只补缺失。
 - **日期范围 API 优先**：使用 `ak.stock_zh_a_hist`(symbol, start_date, end_date) 等支持区间的接口。禁止使用 `ak.stock_zh_a_daily`() 等无视日期、全量下载历史数据的 API 作为主路径。
 - **多源容错 + 熔断**：K 线: baostock → AKShare/EastMoney → efinance (A 股) | AKShare → yfinance (HK/US)。基本面: THS (A 股) / Analysis indicator (HK/US) → Sina → yfinance。连续失败的源自动进入退避状态，避免浪费 API 配额。
@@ -292,6 +294,10 @@ openclaw skills install @axjing/stockaskill --global
 | `sync_state` | scope 级同步状态 / 覆盖日期 / 错误信息 | `sync` / `status data` 使用 |
 | `cache_meta` | 缓存元信息 (防重复) | 自动维护 |
 | `api_usage` | API 调用计数 (限速) | 自动记录 |
+| `financial_report` | 报告期财务 (DuckDB 引擎下从 factor_snapshot 迁移填充) | 随基本面同步 |
+| `factor_daily_snapshot` | 每日预计算因子快照 (DuckDB 引擎, 选股可用) | scan-universe 同步后按 `factor_snapshot_enabled` 构建 |
+| `data_quality_log` | 数据质量检查 / 修复审计流水 (check_run + 严重度 + 状态) | `sync check` / `sync repair` 记录 |
+| `data_quality_backoff` | 修复失败退避记录 (consecutive_failures + backoff_until) | 修复失败自动写入, 成功清除 |
 
 ### API 调用策略
 
@@ -330,6 +336,16 @@ HK/US 池子会缓存以下额外字段:
 ## 配置参数
 
 直接在 `skills/stockaskill/scripts/config.py` 中修改 `_DEFAULTS` 字典。
+
+新增的关键配置项:
+
+| 配置键 | 默认值 | 说明 |
+|:-------|:-------|:-----|
+| `db_engine` | `"sqlite"` | 存储引擎, 可切为 `"duckdb"` 列存 |
+| `duckdb_path` | `.cache/quant_cache.duckdb` | DuckDB 文件路径 |
+| `factor_snapshot_enabled` | `True` | scan-universe 同步完成后是否自动构建每日因子快照 |
+| `data_quality_check_enabled` | `True` | 是否启用数据质量检查流程 |
+| `data_quality` | 见 `config.py` | 检查 / 修复阈值 (min_history_days, 告警间隔, backoff_hours, quota 等) |
 
 ## 与框架集成
 
@@ -501,6 +517,9 @@ python skills/stockaskill/scripts/run.py fetch pool                       # 刷�
 python skills/stockaskill/scripts/run.py sync scan-universe --market A --full-history --limit 3000  # 全量有界同步
 python skills/stockaskill/scripts/run.py sync symbol 600519 --market A    # 单标的有界同步
 python skills/stockaskill/scripts/run.py sync etf --codes 510300,159915   # ETF有界同步
+python skills/stockaskill/scripts/run.py sync check --market A --codes 600519  # 数据质量检查
+python skills/stockaskill/scripts/run.py sync repair --market A --codes 600519 --data-kinds fundamentals  # 分层修复
+python skills/stockaskill/scripts/run.py sync snapshot --market A --limit 200  # 每日因子快照
 python skills/stockaskill/scripts/run.py status data watchlist --market US # 数据状态诊断
 python skills/stockaskill/scripts/run.py workflow list                    # 查看内置工作流
 python skills/stockaskill/scripts/run.py workflow run market-regime-daily --market A
@@ -510,6 +529,8 @@ python skills/stockaskill/scripts/run.py theme-scan AI 算力 --market A    # �
 python skills/stockaskill/scripts/run.py scorecard diagnose 600519 --market A
 python skills/stockaskill/scripts/run.py cache stats                      # 缓存统计
 python skills/stockaskill/scripts/run.py cache cleanup --days 30          # 清理旧缓存
+python skills/stockaskill/scripts/run.py cache engine                     # 当前存储引擎
+python skills/stockaskill/scripts/run.py cache migrate                    # SQLite -> DuckDB 一次性迁移
 ```
 
 ### 高阶研究工作流

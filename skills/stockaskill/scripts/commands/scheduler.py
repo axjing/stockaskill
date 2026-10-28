@@ -36,7 +36,7 @@ def cmd_scheduler(args: argparse.Namespace) -> None:
 
 
 def cmd_cache(args: argparse.Namespace) -> None:
-    """Cache management: stats, cleanup."""
+    """Cache management: stats, cleanup, migrate, engine."""
     action = args.action
     cache = get_cache()
 
@@ -58,6 +58,24 @@ def cmd_cache(args: argparse.Namespace) -> None:
         for tbl, cnt in removed.items():
             if cnt:
                 print(f"  {tbl}: {cnt} rows removed")
+    elif action == "engine":
+        engine = cfg_get("db_engine", "sqlite")
+        print(f"Active storage engine: {engine}")
+        print(f"Cache path: {cache.db_path}")
+    elif action == "migrate":
+        from data_engine.migrate import migrate_sqlite_to_duckdb
+
+        sqlite_path = getattr(args, "sqlite_path", None)
+        duckdb_path = getattr(args, "duckdb_path", None)
+        print("Migrating SQLite cache -> DuckDB cache (this may take a while)...")
+        results = migrate_sqlite_to_duckdb(
+            sqlite_path=sqlite_path,
+            duckdb_path=duckdb_path,
+        )
+        total = sum(results.values())
+        print(f"Migrated {total} rows:")
+        for tbl, cnt in sorted(results.items()):
+            print(f"  {tbl}: {cnt}")
     else:
         print(f"Unknown cache action: {action}")
 

@@ -406,6 +406,73 @@ def _add_sync(sub: argparse._SubParsersAction, func: Callable) -> None:
     _sync_common(p_scan)
     p_scan.set_defaults(func=func)
 
+    p_check = sync_sub.add_parser(
+        "check",
+        help="Check local data quality for a bounded scope",
+    )
+    p_check.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
+    p_check.add_argument(
+        "--codes",
+        default="",
+        help="Comma-separated symbol codes (empty = market pool scope)",
+    )
+    p_check.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Max codes to check (0 = whole pool, or data_quality.check_max_codes)",
+    )
+    _sync_common(p_check)
+    p_check.set_defaults(func=func)
+
+    p_repair = sync_sub.add_parser(
+        "repair",
+        help="Tiered repair of data-quality issues for a bounded scope",
+    )
+    p_repair.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
+    p_repair.add_argument(
+        "--codes",
+        default="",
+        help="Comma-separated symbol codes (empty = market pool scope)",
+    )
+    p_repair.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Max codes to repair (default = data_quality.repair_batch_codes)",
+    )
+    p_repair.add_argument(
+        "--data-kinds",
+        default="history,fundamentals",
+        help="Comma-separated data kinds to repair (history, fundamentals)",
+    )
+    _sync_common(p_repair)
+    p_repair.set_defaults(func=func)
+
+    p_snapshot = sync_sub.add_parser(
+        "snapshot",
+        help="Build a precomputed daily factor snapshot for a bounded scope",
+    )
+    p_snapshot.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p_snapshot.add_argument(
+        "--codes",
+        default="",
+        help="Comma-separated symbol codes (empty = market pool scope)",
+    )
+    p_snapshot.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Max codes from the pool to include (0 = whole pool)",
+    )
+    p_snapshot.add_argument(
+        "--date",
+        default="",
+        help="As-of trade date for the snapshot (default = today)",
+    )
+    _sync_common(p_snapshot)
+    p_snapshot.set_defaults(func=func)
+
 
 def _add_status(sub: argparse._SubParsersAction, func: Callable) -> None:
     p = sub.add_parser("status", help="Show data sync status")
@@ -516,6 +583,21 @@ def _add_cache(sub: argparse._SubParsersAction, func: Callable) -> None:
     p_clean = cache_sub.add_parser("cleanup", help="Clean old cache entries")
     p_clean.add_argument("--days", type=int, default=30, help="Max age in days")
     p_clean.set_defaults(func=func)
+    p_migrate = cache_sub.add_parser(
+        "migrate",
+        help="Copy the SQLite cache into the DuckDB cache (one-time)",
+    )
+    p_migrate.add_argument(
+        "--sqlite-path", default=None, help="Source quant_cache.db path"
+    )
+    p_migrate.add_argument(
+        "--duckdb-path", default=None, help="Destination DuckDB file path"
+    )
+    p_migrate.set_defaults(func=func)
+    p_engine = cache_sub.add_parser(
+        "engine", help="Show the active storage engine"
+    )
+    p_engine.set_defaults(func=func)
 
 
 def _add_risk_alert(sub: argparse._SubParsersAction, func: Callable) -> None:

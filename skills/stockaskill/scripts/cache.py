@@ -110,6 +110,58 @@ _SCHEMA = [
         last_error TEXT, status TEXT,
         PRIMARY KEY (scope_type, scope_key, market, code, data_kind)
     )""",
+    """CREATE TABLE IF NOT EXISTS financial_report (
+        market TEXT, code TEXT, report_date TEXT, publish_date TEXT DEFAULT '',
+        market_cap REAL DEFAULT 0, pe_ttm REAL DEFAULT 0, pe_static REAL DEFAULT 0,
+        pb REAL DEFAULT 0, ps_ttm REAL DEFAULT 0, pcf_ttm REAL DEFAULT 0,
+        dividend_yield REAL DEFAULT 0, roe REAL DEFAULT 0, roa REAL DEFAULT 0,
+        gross_margin REAL DEFAULT 0, net_margin REAL DEFAULT 0,
+        revenue_growth REAL DEFAULT 0, profit_growth REAL DEFAULT 0,
+        debt_ratio REAL DEFAULT 0, current_ratio REAL DEFAULT 0,
+        eps REAL DEFAULT 0, bvps REAL DEFAULT 0,
+        PRIMARY KEY (code, market, report_date)
+    )""",
+    """CREATE TABLE IF NOT EXISTS factor_daily_snapshot (
+        trade_date TEXT, code TEXT, market TEXT,
+        industry TEXT DEFAULT '', sector TEXT DEFAULT '',
+        name TEXT DEFAULT '', is_active INTEGER DEFAULT 1,
+        list_date TEXT DEFAULT '',
+        pe_ttm REAL DEFAULT 0, pb REAL DEFAULT 0,
+        roe REAL DEFAULT 0, gross_margin REAL DEFAULT 0,
+        profit_growth REAL DEFAULT 0, revenue_growth REAL DEFAULT 0,
+        ret_6m REAL DEFAULT 0, ma_alignment REAL DEFAULT 0,
+        vol_12m REAL DEFAULT 0, max_drop_12m REAL DEFAULT 0,
+        log_mcap REAL DEFAULT 0, market_cap REAL DEFAULT 0,
+        pe_pct REAL DEFAULT 0, pb_pct REAL DEFAULT 0,
+        roe_pct REAL DEFAULT 0, gross_margin_pct REAL DEFAULT 0,
+        growth_pct REAL DEFAULT 0, momentum_pct REAL DEFAULT 0,
+        low_vol_pct REAL DEFAULT 0, size_pct REAL DEFAULT 0,
+        value_score REAL DEFAULT 0, quality_score REAL DEFAULT 0,
+        growth_score REAL DEFAULT 0, momentum_score REAL DEFAULT 0,
+        low_vol_score REAL DEFAULT 0, size_score REAL DEFAULT 0,
+        composite_score REAL DEFAULT 0, f_score INTEGER DEFAULT 0,
+        has_fundamentals INTEGER DEFAULT 0, has_history INTEGER DEFAULT 0,
+        is_st INTEGER DEFAULT 0, is_new_listing INTEGER DEFAULT 0,
+        created_at TIMESTAMP,
+        PRIMARY KEY (trade_date, code, market)
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_factor_daily_snapshot_lookup
+        ON factor_daily_snapshot(trade_date, market, composite_score)""",
+    """CREATE TABLE IF NOT EXISTS data_quality_log (
+        id INTEGER PRIMARY KEY,
+        check_run TEXT DEFAULT '', code TEXT, market TEXT, data_kind TEXT,
+        checked_at TIMESTAMP, severity TEXT DEFAULT 'light',
+        issue_types TEXT DEFAULT '', start_date TEXT DEFAULT '',
+        end_date TEXT DEFAULT '', missing_days INTEGER DEFAULT 0,
+        action TEXT DEFAULT '', repaired INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'ok', error_message TEXT DEFAULT '',
+        retry_after TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS data_quality_backoff (
+        code TEXT, market TEXT, data_kind TEXT,
+        backoff_until TIMESTAMP, consecutive_failures INTEGER DEFAULT 0,
+        PRIMARY KEY (code, market, data_kind)
+    )""",
 ]
 
 
@@ -377,6 +429,27 @@ class CacheManager:
             row = cur.fetchone()
             return row[0] if row and row[0] else None
 
+    def get_latest_daily_price_date(self, market: str = "A") -> str | None:
+        """Get the latest cached date across a market's K-line rows."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT MAX(date) FROM daily_price WHERE market=?",
+                (market,),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
+    def get_latest_trade_calendar_date(self, market: str = "A") -> str | None:
+        """Get the latest open trading day from the cached trade calendar."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT MAX(date) FROM trade_calendar "
+                "WHERE market=? AND is_open=1",
+                (market,),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
     def get_earliest_date(self, code: str, market: str = "A") -> str | None:
         """Get the earliest cached date for a stock (v2 table)."""
         with self._conn() as conn:
@@ -529,6 +602,55 @@ class CacheManager:
         except ValueError:
             return True
         return (datetime.now() - snapshot_date).days > max_age_days
+
+    # -- report-period financials -------------------------------------------
+
+    def upsert_financial_report(self, rows: List[Dict[str, Any]]) -> None:
+        """Upsert report-period financial rows (keyed by code/report_date)."""
+        if not rows:
+            return
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT INTO financial_report ("
+                "market, code, report_date, publish_date, market_cap, pe_ttm, "
+                "pe_static, pb, ps_ttm, pcf_ttm, dividend_yield, roe, roa, "
+                "gross_margin, net_margin, revenue_growth, profit_growth, "
+                "debt_ratio, current_ratio, eps, bvps"
+                ") VALUES ("
+                ":market, :code, :report_date, :publish_date, :market_cap, "
+                ":pe_ttm, :pe_static, :pb, :ps_ttm, :pcf_ttm, :dividend_yield, "
+                ":roe, :roa, :gross_margin, :net_margin, :revenue_growth, "
+                ":profit_growth, :debt_ratio, :current_ratio, :eps, :bvps"
+                ") ON CONFLICT(code, market, report_date) DO UPDATE SET "
+                "publish_date=excluded.publish_date, "
+                "market_cap=excluded.market_cap, pe_ttm=excluded.pe_ttm, "
+                "pe_static=excluded.pe_static, pb=excluded.pb, "
+                "ps_ttm=excluded.ps_ttm, pcf_ttm=excluded.pcf_ttm, "
+                "dividend_yield=excluded.dividend_yield, roe=excluded.roe, "
+                "roa=excluded.roa, gross_margin=excluded.gross_margin, "
+                "net_margin=excluded.net_margin, "
+                "revenue_growth=excluded.revenue_growth, "
+                "profit_growth=excluded.profit_growth, "
+                "debt_ratio=excluded.debt_ratio, "
+                "current_ratio=excluded.current_ratio, "
+                "eps=excluded.eps, bvps=excluded.bvps",
+                rows,
+            )
+
+    def get_financial_report(
+        self,
+        code: str,
+        market: str = "A",
+    ) -> List[Dict[str, Any]]:
+        """Return report-period financial rows for a code, newest first."""
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT * FROM financial_report "
+                "WHERE code=? AND market=? ORDER BY report_date DESC",
+                (code, market),
+            )
+            return [dict(r) for r in cur.fetchall()]
 
     # -- sync state ---------------------------------------------------------
 
@@ -884,6 +1006,217 @@ class CacheManager:
             return True
         return (time.time() - updated) > ttl
 
+    # -- daily factor snapshot ---------------------------------------------
+
+    def upsert_factor_daily_snapshot(self, rows: List[Dict[str, Any]]) -> None:
+        """Bulk upsert precomputed daily factor snapshot rows."""
+        if not rows:
+            return
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT INTO factor_daily_snapshot ("
+                "trade_date, code, market, industry, sector, name, is_active, "
+                "list_date, pe_ttm, pb, roe, gross_margin, profit_growth, "
+                "revenue_growth, ret_6m, ma_alignment, vol_12m, max_drop_12m, "
+                "log_mcap, market_cap, pe_pct, pb_pct, roe_pct, "
+                "gross_margin_pct, growth_pct, momentum_pct, low_vol_pct, "
+                "size_pct, value_score, quality_score, growth_score, "
+                "momentum_score, low_vol_score, size_score, composite_score, "
+                "f_score, has_fundamentals, has_history, is_st, "
+                "is_new_listing, created_at"
+                ") VALUES ("
+                ":trade_date, :code, :market, :industry, :sector, :name, "
+                ":is_active, :list_date, :pe_ttm, :pb, :roe, :gross_margin, "
+                ":profit_growth, :revenue_growth, :ret_6m, :ma_alignment, "
+                ":vol_12m, :max_drop_12m, :log_mcap, :market_cap, :pe_pct, "
+                ":pb_pct, :roe_pct, :gross_margin_pct, :growth_pct, "
+                ":momentum_pct, :low_vol_pct, :size_pct, :value_score, "
+                ":quality_score, :growth_score, :momentum_score, "
+                ":low_vol_score, :size_score, :composite_score, :f_score, "
+                ":has_fundamentals, :has_history, :is_st, :is_new_listing, "
+                ":created_at"
+                ") ON CONFLICT(trade_date, code, market) DO UPDATE SET "
+                "industry=excluded.industry, sector=excluded.sector, "
+                "name=excluded.name, is_active=excluded.is_active, "
+                "list_date=excluded.list_date, "
+                "pe_ttm=excluded.pe_ttm, pb=excluded.pb, "
+                "roe=excluded.roe, gross_margin=excluded.gross_margin, "
+                "profit_growth=excluded.profit_growth, "
+                "revenue_growth=excluded.revenue_growth, "
+                "ret_6m=excluded.ret_6m, ma_alignment=excluded.ma_alignment, "
+                "vol_12m=excluded.vol_12m, max_drop_12m=excluded.max_drop_12m, "
+                "log_mcap=excluded.log_mcap, market_cap=excluded.market_cap, "
+                "pe_pct=excluded.pe_pct, pb_pct=excluded.pb_pct, "
+                "roe_pct=excluded.roe_pct, "
+                "gross_margin_pct=excluded.gross_margin_pct, "
+                "growth_pct=excluded.growth_pct, "
+                "momentum_pct=excluded.momentum_pct, "
+                "low_vol_pct=excluded.low_vol_pct, "
+                "size_pct=excluded.size_pct, "
+                "value_score=excluded.value_score, "
+                "quality_score=excluded.quality_score, "
+                "growth_score=excluded.growth_score, "
+                "momentum_score=excluded.momentum_score, "
+                "low_vol_score=excluded.low_vol_score, "
+                "size_score=excluded.size_score, "
+                "composite_score=excluded.composite_score, "
+                "f_score=excluded.f_score, "
+                "has_fundamentals=excluded.has_fundamentals, "
+                "has_history=excluded.has_history, "
+                "is_st=excluded.is_st, "
+                "is_new_listing=excluded.is_new_listing, "
+                "created_at=excluded.created_at",
+                rows,
+            )
+
+    def get_factor_daily_snapshot(
+        self,
+        trade_date: str,
+        market: str = "A",
+        limit: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Get factor snapshot rows for a trade date, best scored first."""
+        query = ["SELECT * FROM factor_daily_snapshot"]
+        params: List[Any] = []
+        conditions = []
+        if trade_date:
+            conditions.append("trade_date=?")
+            params.append(trade_date)
+        if market:
+            conditions.append("market=?")
+            params.append(market)
+        if conditions:
+            query.append("WHERE " + " AND ".join(conditions))
+        query.append("ORDER BY composite_score DESC")
+        if limit > 0:
+            query.append("LIMIT ?")
+            params.append(limit)
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(" ".join(query), tuple(params))
+            return [dict(r) for r in cur.fetchall()]
+
+    def get_latest_factor_daily_trade_date(self, market: str = "A") -> str | None:
+        """Get the latest trade date with a precomputed factor snapshot."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT MAX(trade_date) FROM factor_daily_snapshot WHERE market=?",
+                (market,),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
+    # -- data quality check/repair -----------------------------------------
+
+    def next_data_quality_log_id(self) -> int:
+        """Return the next audit log id (explicit ids are cross-engine safe)."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM data_quality_log"
+            ).fetchone()
+            return int(row[0] if row and row[0] else 1)
+
+    def append_data_quality_log(self, entries: List[Dict[str, Any]]) -> None:
+        """Insert data-quality audit rows (each entry must carry its own id)."""
+        if not entries:
+            return
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT INTO data_quality_log ("
+                "id, check_run, code, market, data_kind, checked_at, severity, "
+                "issue_types, start_date, end_date, missing_days, action, "
+                "repaired, status, error_message, retry_after"
+                ") VALUES ("
+                ":id, :check_run, :code, :market, :data_kind, :checked_at, "
+                ":severity, :issue_types, :start_date, :end_date, :missing_days, "
+                ":action, :repaired, :status, :error_message, :retry_after"
+                ")",
+                entries,
+            )
+
+    def get_data_quality_log(
+        self,
+        code: str = "",
+        market: str = "",
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Return data-quality audit rows, newest first."""
+        query = ["SELECT * FROM data_quality_log"]
+        params: List[Any] = []
+        conditions = []
+        if code:
+            conditions.append("code=?")
+            params.append(code)
+        if market:
+            conditions.append("market=?")
+            params.append(market)
+        if conditions:
+            query.append("WHERE " + " AND ".join(conditions))
+        query.append("ORDER BY id DESC")
+        query.append("LIMIT ?")
+        params.append(limit)
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(" ".join(query), tuple(params))
+            return [dict(r) for r in cur.fetchall()]
+
+    def get_data_quality_backoff(
+        self,
+        code: str,
+        market: str,
+        data_kind: str = "history",
+    ) -> Dict[str, Any] | None:
+        """Return the backoff row for a symbol/data kind, if any."""
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT * FROM data_quality_backoff "
+                "WHERE code=? AND market=? AND data_kind=?",
+                (code, market, data_kind),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def set_data_quality_backoff(
+        self,
+        code: str,
+        market: str,
+        data_kind: str,
+        backoff_until: str,
+        consecutive_failures: int,
+    ) -> None:
+        """Upsert the backoff row for a symbol/data kind."""
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO data_quality_backoff ("
+                "code, market, data_kind, backoff_until, consecutive_failures"
+                ") VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(code, market, data_kind) DO UPDATE SET "
+                "backoff_until=excluded.backoff_until, "
+                "consecutive_failures=excluded.consecutive_failures",
+                (
+                    code,
+                    market,
+                    data_kind,
+                    backoff_until,
+                    consecutive_failures,
+                ),
+            )
+
+    def clear_data_quality_backoff(
+        self,
+        code: str,
+        market: str,
+        data_kind: str = "history",
+    ) -> None:
+        """Remove the backoff row for a symbol/data kind."""
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM data_quality_backoff "
+                "WHERE code=? AND market=? AND data_kind=?",
+                (code, market, data_kind),
+            )
+
     # -- industry mapping ---------------------------------------------------
 
     def upsert_industry(self, rows: List[Dict[str, Any]]) -> None:
@@ -1068,6 +1401,7 @@ class CacheManager:
                 (table,),
             )
             row = cur.fetchone()
+
             return row[0] if row else None
 
     @staticmethod
@@ -1115,11 +1449,15 @@ class CacheManager:
             "stock_pool",
             "daily_price",
             "factor_snapshot",
+            "financial_report",
+            "factor_daily_snapshot",
             "computed_factors",
             "market_scan_snapshot",
             "fund_info",
             "fund_nav",
             "market_index",
+            "data_quality_log",
+            "data_quality_backoff",
             "api_usage",
         ]
         with self._conn() as conn:
@@ -1165,7 +1503,8 @@ class CacheManager:
                            INNER JOIN (
                                SELECT market, code, MAX(date) as latest_date
                                FROM factor_snapshot GROUP BY market, code
-                           ) latest ON fs.market = latest.market AND fs.code = latest.code
+                           ) latest ON fs.market = latest.market
+                                    AND fs.code = latest.code
                            WHERE fs.date < latest.latest_date
                        )"""
                 )
@@ -1190,8 +1529,18 @@ class CacheManager:
 _cache: CacheManager | None = None
 
 
-def get_cache() -> CacheManager:
+def get_cache():
+    """Return the configured cache manager singleton.
+
+    Routes to the SQLite ``CacheManager`` by default or to the DuckDB-backed
+    drop-in when ``config.db_engine == \"duckdb\"``.
+    """
     global _cache
     if _cache is None:
-        _cache = CacheManager()
+        if cfg_get("db_engine", "sqlite") == "duckdb":
+            from data_engine.duckdb_cache import DuckDBCacheManager
+
+            _cache = DuckDBCacheManager()
+        else:
+            _cache = CacheManager()
     return _cache

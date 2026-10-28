@@ -177,6 +177,85 @@ def cmd_sync(args: argparse.Namespace) -> None:
             "market": market,
             "limit": limit,
         }
+        if bool(cfg_get("factor_snapshot_enabled", True)) and market != "FUND":
+            print("Building daily factor snapshot from local cache...", flush=True)
+            from data_engine.daily_snapshot import build_factor_daily_snapshot
+
+            snapshot = build_factor_daily_snapshot(market=market, limit=limit)
+            _print_snapshot_summary(snapshot)
+    elif sync_type == "check":
+        check_codes = [
+            c.strip()
+            for c in getattr(args, "codes", "").split(",")
+            if c.strip()
+        ]
+        if not check_codes:
+            print(f"Checking data quality (market={market})...", flush=True)
+        else:
+            print(
+                f"Checking data quality (market={market}, codes={len(check_codes)})...",
+                flush=True,
+            )
+        from data_engine.data_quality import run_data_quality_check
+
+        result = run_data_quality_check(
+            market=market,
+            codes=check_codes or None,
+            limit=getattr(args, "limit", 0) or 0,
+        )
+        _print_quality_summary(result)
+        report_name = f"quality_check_{market}"
+        metadata = {"command": "sync", "type": sync_type, "market": market}
+    elif sync_type == "repair":
+        repair_codes = [
+            c.strip()
+            for c in getattr(args, "codes", "").split(",")
+            if c.strip()
+        ]
+        data_kinds = [
+            k.strip()
+            for k in getattr(args, "data_kinds", "history,fundamentals").split(",")
+            if k.strip()
+        ]
+        if not repair_codes:
+            kinds_text = ",".join(data_kinds)
+            print(
+                f"Repairing data quality (market={market}, kinds={kinds_text})...",
+                flush=True,
+            )
+        else:
+            print(
+                f"Repairing data quality (market={market}, codes={len(repair_codes)}, "
+                f"kinds={','.join(data_kinds)})...",
+                flush=True,
+            )
+        from data_engine.data_quality import run_data_quality_repair
+
+        result = run_data_quality_repair(
+            market=market,
+            codes=repair_codes or None,
+            limit=getattr(args, "limit", 0) or 0,
+            data_kinds=data_kinds,
+        )
+        _print_repair_summary(result)
+        report_name = f"quality_repair_{market}"
+        metadata = {"command": "sync", "type": sync_type, "market": market}
+    elif sync_type == "snapshot":
+        snapshot_codes = [
+            c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()
+        ]
+        print(f"Building daily factor snapshot (market={market})...", flush=True)
+        from data_engine.daily_snapshot import build_factor_daily_snapshot
+
+        result = build_factor_daily_snapshot(
+            market=market,
+            codes=snapshot_codes or None,
+            as_of_date=getattr(args, "date", "") or "",
+            limit=getattr(args, "limit", 0) or 0,
+        )
+        _print_snapshot_summary(result)
+        report_name = f"factor_snapshot_{market}"
+        metadata = {"command": "sync", "type": sync_type, "market": market}
     else:
         print(f"Unknown sync type: {sync_type}")
         return
@@ -271,6 +350,83 @@ def _format_elapsed(seconds: float) -> str:
     if m:
         return f"{m}分{s}秒"
     return f"{s}秒"
+
+
+
+def _print_snapshot_summary(result: dict) -> None:
+    """Print a concise factor snapshot build summary."""
+    print(
+        "  Factor snapshot: "
+        f"market={result.get('market', '?')}, "
+        f"as_of={result.get('trade_date', '?')}, "
+        f"requested={result.get('requested', 0)}, "
+        f"written={result.get('written', 0)}, "
+        f"coverage={result.get('coverage_ratio', 0):.1%}"
+    )
+    print(
+        f"    ST={result.get('st_count', 0)}, "
+        f"新股={result.get('new_listing_count', 0)}, "
+        f"跳过北交所={result.get('skipped_bj', 0)}, "
+        f"无数据跳过={result.get('skipped_empty', 0)}"
+    )
+
+
+
+def _print_quality_summary(result: dict) -> None:
+    """Print a concise data-quality check summary."""
+    checked = result.get("checked", 0)
+    print(
+        f"  Data quality check: market={result.get('market', '?')}, "
+        f"check_run={result.get('check_run', '?')}, "
+        f"checked={checked}/{result.get('requested', 0)}, "
+        f"expected_latest={result.get('expected_latest_date', '?')}"
+    )
+    print(
+        f"    ok={result.get('ok_count', 0)}, "
+        f"light={result.get('light_count', 0)}, "
+        f"heavy={result.get('heavy_count', 0)}"
+    )
+    for symbol in result.get("symbols", []):
+        if symbol.get("severity") == "ok":
+            continue
+        severity = symbol["severity"]
+        issues = ", ".join(symbol.get("issues", []))
+        print(
+            f"    [{severity}] {symbol['code']}: {issues}"
+        )
+
+
+
+def _print_repair_summary(result: dict) -> None:
+    """Print a concise data-quality repair summary."""
+    print(
+        f"  Data quality repair: market={result.get('market', '?')}, "
+        f"check_run={result.get('check_run', '?')}, "
+        f"requested={result.get('requested', 0)}"
+    )
+    print(
+        f"    repaired={result.get('repaired_count', 0)}, "
+        f"failed={result.get('failed_count', 0)}, "
+        f"backoff_skipped={result.get('skipped_backoff', 0)}, "
+        f"clean_skipped={result.get('skipped_clean', 0)}, "
+        f"quota_skipped={result.get('skipped_quota', 0)}, "
+        f"quota_remaining={result.get('quota_remaining', 0)}"
+    )
+    for detail in result.get("details", []):
+        if detail.get("status") == "backoff":
+            kinds = ", ".join(detail.get("kinds", []))
+            print(f"    [backoff] {detail['code']}: {kinds}")
+        elif detail.get("status") == "repaired":
+            print(
+                f"    [repaired] {detail['code']}: "
+                f"{detail.get('before_severity', '?')} -> "
+                f"{detail.get('after_severity', '?')}"
+            )
+        else:
+            errors = "; ".join(detail.get("errors", []))
+            print(
+                f"    [failed] {detail['code']}: {errors or 'still degraded'}"
+            )
 
 
 

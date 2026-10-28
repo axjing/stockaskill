@@ -107,8 +107,10 @@ When the user doesn't specify a value, use the CLI default:
 
 ## Local cache and data strategy
 
-All market data is stored in a local SQLite database at <skill-root>/.cache/quant_cache.db
-relative to the project root. The cache follows a **cache-first + incremental sync** strategy:
+All market data is stored in a local cache database at <skill-root>/.cache/quant_cache.db
+(default SQLite). Set `db_engine: "duckdb"` in config to switch to a column-store
+DuckDB file `quant_cache.duckdb` — same tables, drop-in interface; run
+`cache migrate` once before switching. The cache follows a **cache-first + incremental sync** strategy:
 
 1. **Read from cache first** — Every data request checks SQLite before making any API call.
 2. **Fetch only missing gaps** — If cache has data through date X, only fetch from X to today (with 3-day overlap for corrections). Never redownload full history.
@@ -129,6 +131,10 @@ The cache contains:
 | market_index | Index K-line history |
 | `api_usage` | Daily API call tracking |
 | sync_state | Per-symbol sync status and covered dates |
+| `financial_report` | Report-period financials |
+| `factor_daily_snapshot` | Precomputed daily factor snapshot (built after K-line sync) |
+| `data_quality_log` | Data-quality check/repair audit trail |
+| `data_quality_backoff` | Repair failure backoff (per symbol + data kind) |
 
 The cache is created automatically on first data fetch or sync. Safe to delete
 and re-warm via `fetch pool` or sync symbol <code>.
@@ -287,6 +293,9 @@ Bounded sync and diagnostics:
     uv run python "$SKILL/scripts/run.py" sync portfolio --codes <code1,...> --market <A|HK|US>
     uv run python "$SKILL/scripts/run.py" sync etf --codes <etf1,etf2,...>
     uv run python "$SKILL/scripts/run.py" sync scan-universe --market <A|HK|US> --limit <N>
+    uv run python "$SKILL/scripts/run.py" sync check --market <A|HK|US> [--codes <c1,...>]
+    uv run python "$SKILL/scripts/run.py" sync repair --market <A|HK|US> [--codes <c1,...>] [--data-kinds history,fundamentals]
+    uv run python "$SKILL/scripts/run.py" sync snapshot --market <A|HK|US> [--codes <c1,...>] [--limit <N>]
     uv run python "$SKILL/scripts/run.py" status data symbol <code> --market <A|HK|US>
     uv run python "$SKILL/scripts/run.py" status data watchlist --market <A|HK|US>
     uv run python "$SKILL/scripts/run.py" status data etf --codes <etf1,etf2,...>
@@ -302,6 +311,8 @@ Operational commands:
     uv run python "$SKILL/scripts/run.py" scheduler --run-now  # analyze all watchlist
     uv run python "$SKILL/scripts/run.py" cache stats          # cache stats
     uv run python "$SKILL/scripts/run.py" cache cleanup --days 30  # purge old entries
+    uv run python "$SKILL/scripts/run.py" cache engine         # show active engine
+    uv run python "$SKILL/scripts/run.py" cache migrate        # SQLite -> DuckDB (one-time)
 
 ## Output guidelines
 
@@ -344,10 +355,11 @@ Use Chinese for A-share content unless the user writes in English. Use English f
 | Code not found | Pool not fetched for that market | `uv run python "$SKILL/scripts/run.py" fetch pool` |
 | Backtest fails | Too much history missing on a cold cache | rerun after bounded warmup completes, or prefetch pools first |
 | HK/US candidates look noisy | Cross-market metadata incomplete | check `status data` metadata summary before trusting rankings |
+| Stale/gappy symbol history | Data-quality gap detected | `sync check --codes <code>` then `sync repair --codes <code>`; heavy issues back off automatically |
 
 ## Key principles
 
-1. **Local-first, fetch on miss** — SQLite quant_cache.db before any AKShare API call. Incrementally backfill only missing date ranges. Never download full history on a warm cache. Reuse cached data whenever it is sufficient and fresh.
+1. **Local-first, fetch on miss** — quant_cache.db (or the DuckDB cache when enabled) before any AKShare API call. Incrementally backfill only missing date ranges. Never download full history on a warm cache. Reuse cached data whenever it is sufficient and fresh.
 2. **Multi-factor, multi-strategy** - Weighted vote across 6 strategies from 7 factor dimensions.
 3. **Task-scoped warmup** - `analyze`/`scan`/`backtest` fetch only the minimal missing pool, history, fundamentals, or index data.
 4. **Market-aware caching** - A/HK/US/FUND pools and TTL metadata are tracked independently.

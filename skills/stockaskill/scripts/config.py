@@ -49,6 +49,30 @@ _DEFAULTS: Dict[str, Any] = {
         "scan_snapshot": 86400,
     },
     "daily_api_limit": 500,
+    # Storage engine: 'sqlite' (default, stable) or 'duckdb' (high-performance OLAP).
+    # All upper-layer interfaces route through get_cache() and switch transparently.
+    "db_engine": "sqlite",
+    "duckdb_path": ".cache/quant_cache.duckdb",
+    # Precompute daily factor snapshots after each K-line sync; the selection
+    # engine reads from factor_daily_snapshot when DuckDB is enabled.
+    "factor_snapshot_enabled": True,
+    # Run historical data quality check + tiered repair (sync check / sync repair).
+    "data_quality_check_enabled": True,
+    "data_quality": {
+        "min_history_days": 240,
+        "kline_gap_light_days": 5,
+        "kline_gap_heavy_days": 30,
+        "financial_gap_light_periods": 1,
+        "financial_gap_heavy_periods": 2,
+        "max_daily_ret_pct": 11.0,
+        "repair_padding_days": 3,
+        "repair_segment_days": 10,
+        "repair_batch_codes": 10,
+        "repair_api_quota_ratio": 0.3,
+        "repair_backoff_hours": 24,
+        "snapshot_coverage_min_pct": 0.9,
+        "check_max_codes": 0,
+    },
     "scan_max_candidates": 0,  # 0 = full market scan, no limit
     "data_readiness": {
         "analysis_history_days": 365,
