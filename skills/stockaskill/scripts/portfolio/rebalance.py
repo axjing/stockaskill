@@ -73,9 +73,18 @@ class Rebalancer:
         total_value = sum(
             p.shares * p.current_price for p in portfolio.positions
         )
-        if total_value <= 0:
-            return False
         equal_weight = 1.0 / len(portfolio.positions)
+        if total_value <= 0:
+            for pos in portfolio.positions:
+                expected = (
+                    target_weights.get(pos.code, equal_weight)
+                    if target_weights
+                    else equal_weight
+                )
+                deviation = abs(pos.weight - expected)
+                if deviation > self.threshold:
+                    return True
+            return False
         for pos in portfolio.positions:
             expected = (
                 target_weights.get(pos.code, equal_weight)

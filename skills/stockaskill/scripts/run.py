@@ -23,12 +23,22 @@ Usage:
 import sys
 from pathlib import Path
 
-# Force UTF-8 output for CJK support on Windows
-if sys.platform == "win32":
-    import io
 
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+# Force UTF-8 output for CJK support on Windows CLI
+def _setup_windows_encoding() -> None:
+    if sys.platform == "win32":
+        import io
+
+        stdout_enc = getattr(sys.stdout, "encoding", "").lower()
+        if hasattr(sys.stdout, "buffer") and stdout_enc != "utf-8":
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer, encoding="utf-8", errors="replace"
+            )
+        stderr_enc = getattr(sys.stderr, "encoding", "").lower()
+        if hasattr(sys.stderr, "buffer") and stderr_enc != "utf-8":
+            sys.stderr = io.TextIOWrapper(
+                sys.stderr.buffer, encoding="utf-8", errors="replace"
+            )
 
 _scripts_root = str(Path(__file__).resolve().parent)
 if _scripts_root not in sys.path:
@@ -90,6 +100,7 @@ from commands import (  # noqa: E402
 
 def main() -> None:
     """Run the CLI argument parser and dispatch to the appropriate handler."""
+    _setup_windows_encoding()
     parser = build_parser(
         cmd_route=cmd_route,
         cmd_workflow=cmd_workflow,

@@ -46,7 +46,9 @@ class TestGetKline:
             {"date": "2025-01-02", "close": 60.0, "open": 59.0,
              "high": 61.0, "low": 58.5, "volume": 1e7, "amount": 6e8},
         ] * 365
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch("data_engine._fetch_kline", return_value=[]):
             mock_cache.get_daily_price.return_value = kline_data
             mock_cache.record_api_call.return_value = True
 
@@ -55,7 +57,9 @@ class TestGetKline:
             assert len(result) == 60
 
     def test_get_kline_empty_cache(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch("data_engine._fetch_kline", return_value=[]):
             mock_cache.get_daily_price.return_value = []
             mock_cache.get_latest_date.return_value = None
             mock_cache.record_api_call.return_value = True
@@ -68,10 +72,12 @@ class TestGetKline:
 class TestGetFundamentals:
     def test_get_fundamentals_cached(self):
         mock_snapshot = {
-            "code": "601318", "date": "2025-01-01",
+            "code": "601318", "date": datetime.now().strftime("%Y-%m-%d"),
             "pe_ttm": 8.5, "pb": 0.95,
         }
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.fundamentals._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ):
             mock_cache.get_latest_factor_snapshot.return_value = mock_snapshot
             mock_cache.record_api_call.return_value = True
 
@@ -80,8 +86,10 @@ class TestGetFundamentals:
             assert result["pe_ttm"] == 8.5
 
     def test_get_fundamentals_no_data(self):
-        with patch("data_engine._cache") as mock_cache, patch(
-            "data_engine._fetch_fundamentals", return_value=None
+        with patch("data_engine.fundamentals._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch(
+            "data_engine.fundamentals._fetch_fundamentals", return_value=None
         ):
             mock_cache.get_latest_factor_snapshot.return_value = None
             mock_cache.record_api_call.return_value = True
@@ -93,7 +101,9 @@ class TestGetFundamentals:
 
 class TestGetMarketIndex:
     def test_get_market_index_cached(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch("data_engine.sync._fetch_market_index", return_value=[]):
             mock_cache.get_market_index.return_value = [
                 {"index_code": "000001", "date": "2025-01-02", "close": 3000},
             ]
@@ -105,7 +115,9 @@ class TestGetMarketIndex:
             assert result[0]["close"] == 3000
 
     def test_get_market_index_empty(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch("data_engine.sync._fetch_market_index", return_value=[]):
             mock_cache.get_market_index.return_value = []
             mock_cache.record_api_call.return_value = True
 
@@ -116,8 +128,11 @@ class TestGetMarketIndex:
 
 class TestGetFundPool:
     def test_get_fund_pool_empty(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.sync._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch("data_engine.sync._refresh_fund_pool"):
             mock_cache.get_stock_pool.return_value = []
+            mock_cache.get_all_fund_info.return_value = []
             mock_cache.record_api_call.return_value = True
 
             from data_engine import get_fund_pool
@@ -127,7 +142,9 @@ class TestGetFundPool:
 
 class TestGetStockPool:
     def test_get_stock_pool_with_data(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.pool._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ):
             mock_cache.pool_needs_refresh.return_value = False
             mock_cache.get_stock_pool.return_value = [
                 {"code": "601318", "name": "PingAn", "market": "A"},
@@ -138,7 +155,9 @@ class TestGetStockPool:
             assert len(result) == 1
 
     def test_get_stock_pool_refresh(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.pool._cache") as mock_cache, patch(
+            "cache.get_cache", return_value=mock_cache
+        ), patch("data_engine.pool._refresh_stock_pool"):
             mock_cache.pool_needs_refresh.return_value = True
             mock_cache.get_stock_pool.return_value = [
                 {"code": "601318", "name": "PingAn", "market": "A"},
@@ -165,13 +184,16 @@ class TestEnsureStockPoolCandidatesReady:
                 "updated_at": "2025-01-01 00:00:00",
             }
         ]
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.pool._cache") as mock_cache:
             mock_cache.get_stock_pool.return_value = rows
             mock_cache.get_daily_price.return_value = [
                 {"date": "2025-01-02"},
                 {"date": "2007-03-01"},
             ]
-            with patch("data_engine._fetch_a_stock_profile_metadata", return_value={}):
+            with patch(
+                "data_engine.pool._fetch_a_stock_profile_metadata",
+                return_value={},
+            ):
                 from data_engine import ensure_stock_pool_candidates_ready
 
                 result = ensure_stock_pool_candidates_ready("A", ["601318"])
@@ -194,7 +216,7 @@ class TestEnsureStockPoolCandidatesReady:
                 "updated_at": "2025-01-01 00:00:00",
             }
         ]
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.pool._cache") as mock_cache:
             mock_cache.get_stock_pool.return_value = rows
             from data_engine import ensure_stock_pool_candidates_ready
 
@@ -271,7 +293,7 @@ class TestCrossMarketPoolNormalization:
         assert result.iloc[1]["is_active"] == 0
 
     def test_ensure_stock_pool_candidates_ready_summarizes_non_a_metadata(self):
-        with patch("data_engine._cache") as mock_cache:
+        with patch("data_engine.pool._cache") as mock_cache:
             mock_cache.get_stock_pool.return_value = [
                 {
                     "code": "AAPL",
@@ -300,8 +322,10 @@ class TestCrossMarketPoolNormalization:
 
 class TestSyncEtfData:
     def test_sync_etf_data_uses_fund_nav_cache_and_scope_state(self):
-        with patch("data_engine._cache") as mock_cache, patch(
-            "data_engine.get_fund_nav"
+        with patch("data_engine.sync._cache") as mock_cache, patch(
+            "data_engine.helpers._cache", mock_cache
+        ), patch(
+            "data_engine.sync.get_fund_nav"
         ) as mock_get_fund_nav:
             mock_cache.get_fund_nav.side_effect = [
                 [],
@@ -317,12 +341,12 @@ class TestSyncEtfData:
         assert result["ready"] == 1
         assert result["history_fetched_count"] == 1
         assert result["covered_through"] == "2026-07-01"
-        mock_get_fund_nav.assert_called_once_with("510300", 365)
+        mock_get_fund_nav.assert_called_once_with("510300", 365, full_history=False)
         upsert_rows = mock_cache.upsert_sync_state.call_args_list[0].args[0]
         assert upsert_rows[0]["data_kind"] == "nav"
 
     def test_get_etf_nav_alias_delegates_to_fund_nav(self):
-        with patch("data_engine.get_fund_nav") as mock_get_fund_nav:
+        with patch("data_engine.sync.get_fund_nav") as mock_get_fund_nav:
             mock_get_fund_nav.return_value = [{"date": "2026-07-01", "nav": 4.0}]
 
             from data_engine import get_etf_nav

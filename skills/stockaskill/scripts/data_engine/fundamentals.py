@@ -4,7 +4,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from cache import get_cache
 from utils import (
     normalize_code_for_market,
     safe_float,
@@ -13,6 +12,7 @@ from utils import (
 from data_engine.config import (
     _akshare_lock,
     _api_call,
+    _cache,
     _report_no_data,
     _try_akshare,
     _try_yfinance,
@@ -23,7 +23,6 @@ from data_engine.helpers import (
 )
 from data_engine.kline import _yfinance_symbol
 
-_cache = get_cache()
 logger = logging.getLogger(__name__)
 
 

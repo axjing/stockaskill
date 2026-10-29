@@ -15,7 +15,6 @@ Target: 18% CAGR, <20% MaxDD.
 # ///
 
 import argparse
-import sqlite3
 from collections import defaultdict
 from datetime import datetime
 from typing import TypedDict
@@ -90,7 +89,7 @@ def run_backtest():
     print("=" * 60)
 
     c = get_cache()
-    conn = sqlite3.connect(str(c.db_path))
+    conn = c.get_raw_connection()
 
     cur = conn.execute("""
         SELECT d.code, d.date, d.close, COALESCE(s.name, '') as name
@@ -166,7 +165,7 @@ def run_backtest():
     _INDEX_CSI300 = "000300"
     index_kline = {}
     try:
-        conn2 = sqlite3.connect(str(c.db_path))
+        conn2 = c.get_raw_connection()
         cur2 = conn2.execute(
             "SELECT date, close FROM market_index "
             "WHERE index_code = ? ORDER BY date",

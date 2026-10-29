@@ -37,6 +37,10 @@ class DuckDBCacheManager:
         self.engine = get_engine(db_path)
         self.db_path = self.engine.db_path
 
+    def get_raw_connection(self) -> Any:
+        """Return a connection or cursor-like object for direct SQL execution."""
+        return self.engine._conn().cursor()
+
     # -- stock pool ---------------------------------------------------------
 
     def upsert_stock_pool(self, rows: List[Dict[str, Any]]) -> None:

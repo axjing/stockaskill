@@ -5,7 +5,6 @@ import threading
 from datetime import datetime
 from typing import Any, Dict, List
 
-from cache import get_cache
 from utils import (
     _suppress_output,
     safe_float,
@@ -27,7 +26,6 @@ from data_engine.helpers import (
     _estimate_amount,
 )
 
-_cache = get_cache()
 logger = logging.getLogger(__name__)
 
 # Circuit breaker: after N consecutive AKShare EastMoney failures for A-share
@@ -105,8 +103,10 @@ def _fetch_kline(code: str, market: str, start: str, end: str) -> List[Dict[str,
                         if _akshare_fail_count >= _AKSHARE_FAIL_THRESHOLD:
                             _akshare_kline_failed = True
                             print(
-                                f"[WARN] EastMoney blocked after {_akshare_fail_count} consecutive "
-                                f"failures. Skipping AKShare/efinance for remaining A-share kline fetches.",
+                                f"[WARN] EastMoney blocked after "
+                                f"{_akshare_fail_count} consecutive failures. "
+                                f"Skipping AKShare/efinance for remaining "
+                                f"A-share kline fetches.",
                                 flush=True,
                             )
 

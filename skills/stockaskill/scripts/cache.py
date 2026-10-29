@@ -192,6 +192,10 @@ class CacheManager:
         finally:
             conn.close()
 
+    def get_raw_connection(self) -> Any:
+        """Return a connection or cursor-like object for direct SQL execution."""
+        return sqlite3.connect(str(self.db_path), timeout=30.0)
+
     @staticmethod
     def _validate_kline_row(row: dict) -> bool:
         """Validate a K-line row before writing to cache.

@@ -9,7 +9,6 @@
 # ]
 # ///
 
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -77,9 +76,12 @@ def main() -> None:
         print("  ERROR: empty stock pool")
         return
 
-    conn = sqlite3.connect(str(_cache.db_path))
+    conn = _cache.get_raw_connection()
     existing = set(
-        r[0] for r in conn.execute("SELECT DISTINCT code FROM daily_price WHERE market = 'A'").fetchall()
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT code FROM daily_price WHERE market = 'A'"
+        ).fetchall()
     )
     conn.close()
     print(f"  Pool: {len(pool)} stocks, existing w/ data: {len(existing)}")
@@ -125,13 +127,14 @@ def main() -> None:
         f"\nDone: {success} ok, {fail} failed, {fetched} total rows in {elapsed:.0f}s"
     )
 
-    conn2 = sqlite3.connect(str(_cache.db_path))
+    conn2 = _cache.get_raw_connection()
     total_with_data = conn2.execute(
         "SELECT COUNT(DISTINCT code) FROM daily_price WHERE market = 'A'"
     ).fetchone()[0]
     total_full = conn2.execute(
         "SELECT COUNT(*) FROM ("
-        "SELECT code FROM daily_price WHERE market = 'A' GROUP BY code HAVING COUNT(*) >= 1500)"
+        "SELECT code FROM daily_price WHERE market = 'A' "
+        "GROUP BY code HAVING COUNT(*) >= 1500) t"
     ).fetchone()[0]
     conn2.close()
     print(f"  Stocks with any daily_price data: {total_with_data}")

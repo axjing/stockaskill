@@ -1,6 +1,5 @@
 """Alpha Momentum backtest engine: 2018-2026 simulation (v2 cache only)."""
 
-import sqlite3
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
@@ -82,7 +81,7 @@ class AlphaMomentumBacktest:
         """
         ensure_backtest_ready(self.market)
         cache = get_cache()
-        conn = sqlite3.connect(str(cache.db_path))
+        conn = cache.get_raw_connection()
 
         codes, st_codes = self._load_eligible_codes(conn)
         codes = sorted(c for c in codes if c not in st_codes)
@@ -123,7 +122,7 @@ class AlphaMomentumBacktest:
     # -- Loading helpers -----------------------------------------------------
 
     def _load_eligible_codes(
-        self, conn: sqlite3.Connection
+        self, conn: Any
     ) -> Tuple[List[str], set[str]]:
         """Get codes with sufficient data history and identify ST stocks.
 
@@ -159,7 +158,7 @@ class AlphaMomentumBacktest:
         return all_codes, st_codes
 
     def _load_fundamentals_as_of(
-        self, codes: List[str], as_of_date: str, conn: sqlite3.Connection
+        self, codes: List[str], as_of_date: str, conn: Any
     ) -> Dict[str, Dict[str, Any]]:
         """Load fundamentals for all codes as of a specific date.
 
@@ -169,7 +168,7 @@ class AlphaMomentumBacktest:
         Args:
             codes: List of stock codes.
             as_of_date: Maximum date (YYYY-MM-DD).
-            conn: SQLite connection.
+            conn: Database connection.
 
         Returns:
             Dict mapping code to fundamentals dict (EPS-positive only).
@@ -218,7 +217,7 @@ class AlphaMomentumBacktest:
                     }
         return fc
 
-    def _load_dates(self, conn: sqlite3.Connection) -> List[str]:
+    def _load_dates(self, conn: Any) -> List[str]:
         """Get all unique trading dates from config start_date onwards."""
         start = cfg_get("alpha_momentum.start_date", "2018-01-01")
         cur = conn.execute(
@@ -271,14 +270,14 @@ class AlphaMomentumBacktest:
 
     def _load_window_data(
         self,
-        conn: sqlite3.Connection,
+        conn: Any,
         start: str,
         end: str,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Load kline (code, date, close) for a date range (v2 table).
 
         Args:
-            conn: SQLite connection.
+            conn: Database connection.
             start: Inclusive start date (YYYY-MM-DD).
             end: Inclusive end date (YYYY-MM-DD).
 
@@ -308,7 +307,7 @@ class AlphaMomentumBacktest:
         prev_positions: Dict[str, int],
         prev_cash: float,
         prev_nav: List[float],
-        conn: sqlite3.Connection,
+        conn: Any,
     ) -> Tuple[Dict[str, int], float, List[float]]:
         """Process all rebalance dates within a single data window.
 
@@ -319,7 +318,7 @@ class AlphaMomentumBacktest:
             prev_positions: Positions carried from previous window.
             prev_cash: Cash carried from previous window.
             prev_nav: NAV history accumulated so far.
-            conn: SQLite connection for point-in-time fundamental queries.
+            conn: Database connection for point-in-time fundamental queries.
 
         Returns:
             (positions, cash, nav) after processing this window.

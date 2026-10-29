@@ -24,6 +24,7 @@ from data_engine.config import (
     _is_etf_market,
     _market_supports_fundamentals,
     _report_no_data,
+    _sina_code,
     _try_akshare,
     get_cache,
     is_api_limit_exhausted,
@@ -34,6 +35,7 @@ from data_engine.fundamentals import (
 )
 from data_engine.helpers import (
     _add_days,
+    _date_str,
     _detect_quality_flags,
     _latest_cached_date,
     check_data_completeness,
@@ -44,6 +46,10 @@ from data_engine.kline import (
     get_kline,
 )
 from data_engine.pool import (
+    _fetch_a_stock_profile_metadata,
+    _fetch_hk_stock_pool,
+    _fetch_us_stock_pool,
+    _refresh_stock_pool,
     ensure_stock_pool_candidates_ready,
     get_stock_pool,
 )
@@ -99,4 +105,10 @@ __all__ = [
     "_fetch_market_index",
     "sync_symbols_data",
     "_try_akshare",
+    "_sina_code",
+    "_date_str",
+    "_fetch_a_stock_profile_metadata",
+    "_fetch_hk_stock_pool",
+    "_fetch_us_stock_pool",
+    "_refresh_stock_pool",
 ]

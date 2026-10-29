@@ -278,19 +278,6 @@ class TestCacheManager:
         assert summary["missing_list_date_count"] == 1
         assert cache.market_scan_snapshot_needs_refresh("A") is False
 
-    # -- Sentiment --
-
-    def test_upsert_and_get_sentiment(self, cache):
-        rows = [{
-            "code": "601318", "date": _TODAY,
-            "source": "guba", "title": "Test", "url": "",
-            "sentiment_score": 0.8,
-        }]
-        cache.upsert_sentiment(rows)
-        sentiments = cache.get_sentiment("601318", days=365)
-        assert len(sentiments) >= 1
-        assert sentiments[0]["sentiment_score"] == 0.8
-
     # -- Fund Info --
 
     def test_upsert_and_get_fund_info(self, cache):

@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
-from cache import get_cache
 from config import get as cfg_get
 from utils import (
     _suppress_output,
@@ -18,13 +17,12 @@ from utils import (
 from data_engine.config import (
     _akshare_lock,
     _api_call,
+    _cache,
     _is_etf_market,
     _try_akshare,
     _try_baostock,
 )
 from data_engine.kline import get_kline
-
-_cache = get_cache()
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +76,8 @@ def _bs_iter_with_timeout(rs, label: str):
 
             except FuturesTimeout:
                 raise TimeoutError(
-                    f"Baostock {label} row iteration timed out after {_BAOSTOCK_QUERY_TIMEOUT}s"
+                    f"Baostock {label} row iteration timed out after "
+                    f"{_BAOSTOCK_QUERY_TIMEOUT}s"
                 )
 
         if row is None:
@@ -866,22 +865,68 @@ def _normalize_cross_market_pool_row(
     Returns:
         Dict with normalized column names matching the stock_pool schema.
     """
+    code = str(row.get("code") or row.get("symbol") or row.get("代码") or "").strip()
+    name = str(
+        row.get("name")
+        or row.get("stock_name")
+        or row.get("ticker")
+        or row.get("名称")
+        or row.get("中文名称")
+        or ""
+    ).strip()
+    mcap = safe_float(
+        row.get("market_cap")
+        or row.get("total_market_cap")
+        or row.get("总市值")
+        or 0
+    )
+    industry = str(
+        row.get("industry")
+        or row.get("所属行业")
+        or row.get("行业")
+        or ""
+    ).strip()
+    sector = str(
+        row.get("sector")
+        or row.get("所属市场")
+        or row.get("地区")
+        or ""
+    ).strip()
+    list_date = str(row.get("list_date") or row.get("上市日期") or "").strip()
+
+    status_raw = str(row.get("status") or row.get("状态") or "Active").strip().lower()
+    if status_raw in ("正常", "active"):
+        status = "active"
+        is_active = 1
+    elif status_raw in ("delisted", "退市"):
+        status = "delisted"
+        is_active = 0
+    elif status_raw in ("suspended", "停牌"):
+        status = "suspended"
+        is_active = 0
+    else:
+        status = status_raw
+        is_active = (
+            0
+            if any(k in status_raw for k in ("delist", "suspend", "退市", "停牌"))
+            else 1
+        )
+
+    fields = [bool(name), bool(industry or sector), bool(list_date), mcap > 0]
+    completeness = round(sum(fields) / len(fields), 2)
+
     return {
         "market": "HK" if "_hk_" in source else "US",
-        "code": str(row.get("code", row.get("symbol", ""))).strip(),
-        "name": str(
-            row.get("name", row.get("stock_name", row.get("ticker", "")))
-        ).strip(),
-        "total_market_cap": safe_float(
-            row.get("market_cap", row.get("total_market_cap", 0))
-        ),
-        "sector": "",
-        "industry": "",
-        "list_date": "",
-        "is_active": 1,
+        "code": code,
+        "name": name,
+        "total_market_cap": mcap,
+        "sector": sector,
+        "industry": industry,
+        "list_date": list_date,
+        "is_active": is_active,
         "metadata_source": source,
-        "metadata_status": "minimal",
-        "metadata_completeness": 0.3,
+        "metadata_status": status,
+        "metadata_completeness": completeness,
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 

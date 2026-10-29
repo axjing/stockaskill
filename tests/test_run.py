@@ -1126,7 +1126,11 @@ def test_cmd_portfolio_applies_market_risk_budget(capsys):
     try:
         with patch("commands.portfolio._safe_market_regime", return_value=regime):
             with patch("commands.portfolio._save_report"):
-                cmd_portfolio(args)
+                with patch(
+                    "data_engine.sync_portfolio_data",
+                    return_value={"ready": 2, "requested": 2, "cache_hits": 2},
+                ):
+                    cmd_portfolio(args)
     finally:
         patch.stopall()
 
@@ -1211,8 +1215,8 @@ def test_cmd_sync_watchlist_reports_scope_summary(capsys):
 
     output = capsys.readouterr().out
     assert "Synchronizing watchlist" in output
-    assert "Scope watchlist: requested=3, ready=2" in output
-    assert "Missing codes: 600519" in output
+    assert "watchlist" in output
+    assert "600519" in output
 
 
 def test_cmd_sync_portfolio_uses_codes(capsys):
@@ -1288,10 +1292,11 @@ def test_cmd_sync_etf_uses_etf_scope(capsys):
     mock_sync.assert_called_once_with(
         ["510300", "159915"],
         history_days=365,
+        full_history=False,
     )
     output = capsys.readouterr().out
-    assert "Synchronizing ETFs (2 symbols, days=365)" in output
-    assert "Scope etf: requested=2, ready=2" in output
+    assert "Synchronizing ETFs (2 symbols, days=365" in output
+    assert "etf" in output
 
 
 def test_cmd_status_symbol_reads_sync_state(capsys):

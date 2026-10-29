@@ -218,11 +218,8 @@ def _check_fundamentals(
     else:
         try:
             report_dt = datetime.strptime(report_date, "%Y-%m-%d")
-            lag_months = max(
-                0,
-                (datetime.now().year - report_dt.year) * 12
-                + (datetime.now().month - report_dt.month),
-            )
+            lag_days = max(0, (datetime.now() - report_dt).days)
+            lag_months = lag_days / 30.0
             periods_late = round(lag_months / period_months, 2)
             if periods_late > heavy_periods:
                 issues.append("financial_gap")

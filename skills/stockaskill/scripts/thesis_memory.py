@@ -1,6 +1,7 @@
 """Local-first thesis memory and postmortem persistence."""
 
 import json
+import uuid
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -47,7 +48,7 @@ def build_thesis_record(
         .replace("T", "_")
         .replace("Z", "")
     )
-    thesis_id = f"{market}_{code}_{compact_created_at}"
+    thesis_id = f"{market}_{code}_{compact_created_at}_{uuid.uuid4().hex[:6]}"
     decision = report.get("final_decision", {}) or {}
     confidence = report.get("confidence", {}) or {}
     signal = str(decision.get("signal", "HOLD")).strip() or "HOLD"

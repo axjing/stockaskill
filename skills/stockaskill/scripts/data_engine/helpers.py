@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
-from cache import get_cache
 from utils import safe_float
 
-_cache = get_cache()
+from data_engine.config import _cache
+
 logger = logging.getLogger(__name__)
 
 
