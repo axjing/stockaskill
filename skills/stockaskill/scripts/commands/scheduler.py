@@ -59,7 +59,7 @@ def cmd_cache(args: argparse.Namespace) -> None:
             if cnt:
                 print(f"  {tbl}: {cnt} rows removed")
     elif action == "engine":
-        engine = cfg_get("db_engine", "sqlite")
+        engine = cfg_get("db_engine", "duckdb")
         print(f"Active storage engine: {engine}")
         print(f"Cache path: {cache.db_path}")
     elif action == "migrate":

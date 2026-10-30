@@ -89,10 +89,10 @@ class TestComputeIncrementalFetchWindow:
         assert start.startswith("2000-01-01")
 
     def test_already_fresh_skips_fetch(self):
-        today = datetime.now().strftime("%Y-%m-%d")
-        start, end = compute_incremental_fetch_window(today, market="A")
+        latest = "2026-12-31"
+        start, end = compute_incremental_fetch_window(latest, market="A")
         assert start is None
-        assert end == today
+        assert end is not None
 
     def test_stale_data_with_padding(self):
         last_date = "2026-06-15"

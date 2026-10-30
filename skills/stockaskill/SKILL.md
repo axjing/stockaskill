@@ -11,7 +11,7 @@ metadata:
 
 # Smart Stock Selector
 
-Multi-market stock selection with AKShare + SQLite caching. Covers A-shares, HK, US, and ETF-first fund workflows.
+Multi-market stock selection with AKShare + DuckDB columnar caching. Covers A-shares, HK, US, and ETF-first fund workflows.
 
 ## Core promise
 
@@ -112,12 +112,10 @@ When the user doesn't specify a value, use the CLI default:
 
 ## Local cache and data strategy
 
-All market data is stored in a local cache database at <skill-root>/.cache/quant_cache.db
-(default SQLite). Set `db_engine: "duckdb"` in config to switch to a column-store
-DuckDB file `quant_cache.duckdb` — same tables, drop-in interface; run
-`cache migrate` once before switching. The cache follows a **cache-first + incremental sync** strategy:
+All market data is stored in a local DuckDB cache database at <skill-root>/.cache/quant_cache.duckdb
+(high-performance columnar store). The cache follows a **cache-first + incremental sync** strategy:
 
-1. **Read from cache first** — Every data request checks SQLite before making any API call.
+1. **Read from cache first** — Every data request checks DuckDB before making any API call.
 2. **Fetch only missing gaps** — If cache has data through date X, only fetch from X to today (with 3-day overlap for corrections). Never redownload full history.
 3. **Cold start seeds full history** — First run for a symbol pulls from a safe baseline (A: 2000-01-01, HK: 1995-01-01, US: 1990-01-01). Subsequent reads are incremental.
 4. **Multi-source fallback** — K-line: baostock → AKShare/EastMoney → efinance (A 股) | AKShare → yfinance (HK/US). Fundamentals: THS (A-shares) / Analysis indicator (HK) → Sina → yfinance. Sources with repeated failures are backed off automatically.

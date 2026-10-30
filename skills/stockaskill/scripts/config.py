@@ -49,12 +49,11 @@ _DEFAULTS: Dict[str, Any] = {
         "scan_snapshot": 86400,
     },
     "daily_api_limit": 500,
-    # Storage engine: 'sqlite' (default, stable) or 'duckdb' (high-performance OLAP).
-    # All upper-layer interfaces route through get_cache() and switch transparently.
+    # Storage engine: DuckDB (high-performance OLAP columnar store).
     "db_engine": "duckdb",
     "duckdb_path": ".cache/quant_cache.duckdb",
-    # Precompute daily factor snapshots after each K-line sync; the selection
-    # engine reads from factor_daily_snapshot when DuckDB is enabled.
+    # Precompute daily factor snapshots after each K-line sync.
+    # The selection engine reads from factor_daily_snapshot in DuckDB.
     "factor_snapshot_enabled": True,
     # Run historical data quality check + tiered repair (sync check / sync repair).
     "data_quality_check_enabled": True,
