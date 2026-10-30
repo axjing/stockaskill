@@ -16,7 +16,54 @@ from commands._common import (
 
 def cmd_portfolio(args: argparse.Namespace) -> None:
     """Build an investment portfolio."""
-    codes = [c.strip() for c in args.codes.split(",") if c.strip()]
+    output_dir, fmt = _cmd_output(args)
+    market = getattr(args, "market", "A") or "A"
+
+    if getattr(args, "optimize", False):
+        target_cagr = getattr(args, "target_cagr", 0.08)
+        max_drawdown = getattr(args, "max_drawdown", 0.05)
+        top_k = getattr(args, "top_k", 5)
+        years = getattr(args, "years", 3)
+        print(
+            f"Optimizing portfolio (target CAGR>={target_cagr * 100:.1f}%, "
+            f"MaxDD<={max_drawdown * 100:.1f}%, top_k={top_k}, market={market})...",
+            flush=True,
+        )
+        from portfolio.target_optimizer import TargetPortfolioOptimizer
+
+        optimizer = TargetPortfolioOptimizer()
+        result = optimizer.optimize(
+            target_cagr=target_cagr,
+            max_drawdown_limit=max_drawdown,
+            top_k=top_k,
+            market=market,
+            lookback_years=years,
+        )
+        perf = result.get("performance", {})
+        status_text = "YES" if perf.get("target_met") else "NO (Closest Frontier)"
+        print(f"  Target Met: {status_text}")
+        print(f"  Verified CAGR: {perf.get('cagr', 0) * 100:.2f}%")
+        print(f"  Max Drawdown: {perf.get('max_drawdown', 0) * 100:.2f}%")
+        print(f"  Sharpe Ratio: {perf.get('sharpe', 0):.2f}")
+        alloc = result.get("allocation", {})
+        print(f"  Cash Reserve: {alloc.get('cash_reserve_ratio', 0) * 100:.1f}%")
+        print("  Holdings:")
+        for h in alloc.get("holdings", []):
+            print(
+                f"    - {h['code']} ({h.get('name', '')}): "
+                f"weight={h['target_weight'] * 100:.1f}%, price={h.get('latest_price')}"
+            )
+        report_name = f"portfolio_optimize_{market}"
+        _save_report(
+            report_name,
+            fmt,
+            output_dir,
+            data=result,
+            metadata={"command": "portfolio", "subcommand": "optimize"},
+        )
+        return
+
+    codes = [c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()]
     capital = args.capital or 1000000
     market = getattr(args, "market", "A") or "A"
     output_dir, fmt = _cmd_output(args)
@@ -81,7 +128,6 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
         )
     except Exception as exc:
         print(f"Portfolio build failed: {exc}", file=sys.stderr)
-
 
 
 def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
@@ -165,6 +211,3 @@ def cmd_portfolio_enhanced(args: argparse.Namespace) -> None:
         )
     except Exception as exc:
         _cmd_error(f"Enhanced portfolio build failed: {exc}")
-
-
-

@@ -297,9 +297,58 @@ def _add_refresh_scan(sub: argparse._SubParsersAction, func: Callable) -> None:
 
 def _add_portfolio(sub: argparse._SubParsersAction, func: Callable) -> None:
     p = sub.add_parser("portfolio", help="Build investment portfolio")
-    p.add_argument("--codes", required=True, help="Comma-separated stock codes")
+    p.add_argument("--codes", default="", help="Comma-separated stock codes")
     p.add_argument("--capital", type=float, default=1000000)
     p.add_argument("--market", default="A")
+    p.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Optimize portfolio for target CAGR and drawdown constraints",
+    )
+    p.add_argument(
+        "--target-cagr",
+        type=float,
+        default=0.08,
+        help="Target annualized return (default 0.08 = 8%%)",
+    )
+    p.add_argument(
+        "--max-drawdown",
+        type=float,
+        default=0.05,
+        help="Target max drawdown limit (default 0.05 = 5%%)",
+    )
+    p.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Number of portfolio assets (default 5)",
+    )
+    p.add_argument(
+        "--years",
+        type=int,
+        default=3,
+        help="Backtest lookback years (default 3)",
+    )
+    _common_output_args(p)
+    p.set_defaults(func=func)
+
+
+def _add_screen(sub: argparse._SubParsersAction, func: Callable) -> None:
+    p = sub.add_parser(
+        "screen", help="Sub-second multi-factor stock screening via DuckDB"
+    )
+    p.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p.add_argument(
+        "--preset",
+        choices=["momentum_enhanced", "low_vol", "deep_value"],
+        default="momentum_enhanced",
+        help="Quantitative screening preset",
+    )
+    p.add_argument("--top", type=int, default=10, help="Number of results")
+    p.add_argument(
+        "--min-mcap", type=float, default=0, help="Minimum market cap filter"
+    )
+    p.add_argument("--sector", default=None, help="Sector filter")
     _common_output_args(p)
     p.set_defaults(func=func)
 
@@ -487,6 +536,42 @@ def _add_sync(sub: argparse._SubParsersAction, func: Callable) -> None:
     _sync_common(p_snapshot)
     p_snapshot.set_defaults(func=func)
 
+    p_update = sync_sub.add_parser(
+        "update",
+        help="Dynamically update K-line data (local-first, incremental, validated)",
+    )
+    p_update.add_argument(
+        "code",
+        nargs="?",
+        default="",
+        help="Optional symbol code. If omitted, uses --scope",
+    )
+    p_update.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
+    p_update.add_argument(
+        "--scope",
+        choices=["symbol", "watchlist", "portfolio", "pool"],
+        default="symbol",
+        help="Scope of update when code is omitted",
+    )
+    p_update.add_argument(
+        "--codes",
+        default="",
+        help="Comma-separated codes when scope is portfolio",
+    )
+    p_update.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Limit number of symbols to update (0 = all in scope)",
+    )
+    p_update.add_argument(
+        "--skip-snapshot",
+        action="store_true",
+        help="Skip rebuilding factor daily snapshot after update",
+    )
+    _sync_common(p_update)
+    p_update.set_defaults(func=func)
+
 
 def _add_status(sub: argparse._SubParsersAction, func: Callable) -> None:
     p = sub.add_parser("status", help="Show data sync status")
@@ -673,6 +758,7 @@ def build_parser(
     cmd_diagnose,
     cmd_deep_diagnose,
     cmd_scan,
+    cmd_screen,
     cmd_refresh_scan,
     cmd_portfolio,
     cmd_market_regime,
@@ -705,6 +791,7 @@ def build_parser(
     _add_diagnose(sub, cmd_diagnose)
     _add_deep_diagnose(sub, cmd_deep_diagnose)
     _add_scan(sub, cmd_scan)
+    _add_screen(sub, cmd_screen)
     _add_refresh_scan(sub, cmd_refresh_scan)
     _add_portfolio(sub, cmd_portfolio)
     _add_market_regime(sub, cmd_market_regime)

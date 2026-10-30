@@ -13,6 +13,7 @@ from commands.route import cmd_route, cmd_workflow
 from commands.scan import cmd_alpha, cmd_refresh_scan, cmd_scan
 from commands.scheduler import cmd_cache, cmd_scheduler, cmd_track
 from commands.scorecard import cmd_scorecard
+from commands.screen import cmd_screen
 from commands.sync import cmd_fetch, cmd_status, cmd_sync
 from commands.theme import cmd_theme_scan
 from commands.thesis import cmd_thesis
@@ -32,6 +33,7 @@ __all__ = [
     "cmd_deep_diagnose",
     # Scan
     "cmd_scan",
+    "cmd_screen",
     "cmd_refresh_scan",
     "cmd_alpha",
     # Portfolio

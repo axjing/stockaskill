@@ -67,6 +67,14 @@ from data_engine.sync import (
     sync_symbols_data,
     sync_watchlist_data,
 )
+from data_engine.sync_update import (
+    compute_incremental_fetch_window,
+    get_market_watermark,
+    get_symbol_watermark,
+    update_symbol_incremental,
+    update_symbols_batch,
+    validate_ohlc_record,
+)
 
 __all__ = [
     # Public API

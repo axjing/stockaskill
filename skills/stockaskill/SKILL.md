@@ -6,7 +6,7 @@ license: Apache-2.0
 compatibility: Python >= 3.10; Linux, macOS, Windows
 metadata:
   category: quantitative-finance
-  version: 1.5.0
+  version: 1.6.0
 ---
 
 # Smart Stock Selector
@@ -35,7 +35,9 @@ Activate on any of these user intents:
 |---|---|
 | Code like 600519, AAPL, 0700.HK, 510300 | Single stock analysis or diagnosis |
 | Chinese name like 贵州茅台 | Resolve from pool, then analyze |
-| Find top stocks in [market] | Market scan |
+| Find top stocks in [market], 选股, 动量筛选, 低波防御, 深度价值 | Vectorized cross-sectional screening via DuckDB (`screen`) |
+| 目标组合, 收益回撤优化, 组合优化, 年化8%最大回撤5% | Target-constrained portfolio optimization (`portfolio --optimize`) |
+| 动态更新, 增量更新, 数据保鲜, 推进交易日 | Dynamic incremental sync with validation (`sync update`) |
 | Ranking, alpha, momentum | Alpha momentum scan |
 | Portfolio, 组合, allocation | Portfolio construction |
 | Backtest, 回测, validation | Historical backtest |
@@ -92,6 +94,10 @@ Map user intent to CLI parameters:
 | "分析特斯拉" or "分析 TSLA" | `analyze TSLA --market US` |
 | "分析腾讯" or "分析 0700" | `analyze 0700 --market HK` |
 | "分析贵州茅台" | Resolve name→code from pool, then `analyze <code> --market A` |
+| "选股 动量增强" or "选股 前10" | `screen --market A --preset momentum_enhanced --top 10` |
+| "低波选股" or "防御选股" | `screen --market A --preset low_vol --top 10` |
+| "选出组合 年化8% 最大回撤5%" | `portfolio --optimize --target-cagr 0.08 --max-drawdown 0.05 --top-k 5 --market A` |
+| "增量更新 600519" | `sync update 600519 --market A` |
 | "扫描港股前10" | `scan HK --top 10` |
 | "美股动量排名" | `alpha US --top <N>` |
 | "组合 600519,000858 资金50万" | `portfolio --codes 600519,000858 --capital 500000 --market A` |

@@ -56,7 +56,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         print(f"Unknown fetch type: {fetch_type}")
 
 
-
 def cmd_sync(args: argparse.Namespace) -> None:
     """Synchronize bounded local data for a specific scope."""
     sync_type = args.type
@@ -88,13 +87,9 @@ def cmd_sync(args: argparse.Namespace) -> None:
         }
     elif sync_type == "watchlist":
         if full_history:
-            print(
-                f"Synchronizing watchlist (market={market}, target=全量历史)..."
-            )
+            print(f"Synchronizing watchlist (market={market}, target=全量历史)...")
         else:
-            print(
-                f"Synchronizing watchlist (market={market}, days={history_days})..."
-            )
+            print(f"Synchronizing watchlist (market={market}, days={history_days})...")
         result = sync_watchlist_data(
             market=market,
             history_days=history_days,
@@ -185,9 +180,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
             _print_snapshot_summary(snapshot)
     elif sync_type == "check":
         check_codes = [
-            c.strip()
-            for c in getattr(args, "codes", "").split(",")
-            if c.strip()
+            c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()
         ]
         if not check_codes:
             print(f"Checking data quality (market={market})...", flush=True)
@@ -208,9 +201,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
         metadata = {"command": "sync", "type": sync_type, "market": market}
     elif sync_type == "repair":
         repair_codes = [
-            c.strip()
-            for c in getattr(args, "codes", "").split(",")
-            if c.strip()
+            c.strip() for c in getattr(args, "codes", "").split(",") if c.strip()
         ]
         data_kinds = [
             k.strip()
@@ -256,12 +247,83 @@ def cmd_sync(args: argparse.Namespace) -> None:
         _print_snapshot_summary(result)
         report_name = f"factor_snapshot_{market}"
         metadata = {"command": "sync", "type": sync_type, "market": market}
+    elif sync_type == "update":
+        code = getattr(args, "code", "")
+        scope = getattr(args, "scope", "symbol")
+        skip_snapshot = bool(getattr(args, "skip_snapshot", False))
+        limit = getattr(args, "limit", 0) or 0
+        from data_engine.sync_update import (
+            update_symbol_incremental,
+            update_symbols_batch,
+        )
+
+        if code:
+            print(
+                f"Incrementally updating symbol {code} (market={market})...",
+                flush=True,
+            )
+            result = update_symbol_incremental(
+                code,
+                market=market,
+                trigger_snapshot=not skip_snapshot,
+            )
+            print(f"  Status: {result.get('status')}")
+            print(f"  Latest date: {result.get('latest_date')}")
+            print(
+                f"  Ingested: {result.get('validated_rows', 0)} rows "
+                f"(rejected: {result.get('rejected_rows', 0)})"
+            )
+            report_name = f"sync_update_{result['code']}_{market}"
+            metadata = {
+                "command": "sync",
+                "type": sync_type,
+                "market": market,
+                "code": result["code"],
+            }
+        else:
+            if scope == "watchlist":
+                targets = cfg_get("watchlist", [])
+            elif scope == "portfolio":
+                targets = [
+                    c.strip()
+                    for c in getattr(args, "codes", "").split(",")
+                    if c.strip()
+                ]
+            else:
+                from data_engine.pool import get_stock_pool
+
+                pool = get_stock_pool(market)
+                targets = [r["code"] for r in pool if r.get("code")]
+
+            print(
+                f"Incrementally updating {len(targets)} symbols "
+                f"(scope={scope}, market={market}, limit={limit})...",
+                flush=True,
+            )
+            result = update_symbols_batch(
+                targets,
+                market=market,
+                limit=limit,
+                trigger_snapshot=not skip_snapshot,
+            )
+            print(
+                f"  Summary: updated={result.get('updated_symbols')}, "
+                f"up-to-date={result.get('already_up_to_date')}, "
+                f"failed={result.get('failed_symbols')}, "
+                f"rows_ingested={result.get('total_ingested_rows')}"
+            )
+            report_name = f"sync_update_{scope}_{market}"
+            metadata = {
+                "command": "sync",
+                "type": sync_type,
+                "market": market,
+                "scope": scope,
+            }
     else:
         print(f"Unknown sync type: {sync_type}")
         return
 
     _save_report(report_name, fmt, output_dir, data=result, metadata=metadata)
-
 
 
 def _print_symbol_sync_summary(result: dict) -> None:
@@ -286,7 +348,6 @@ def _print_symbol_sync_summary(result: dict) -> None:
         for err in result["errors"]:
             print(f"    - {err}")
     print(f"  Ready: {'yes' if result.get('ready') else 'no'}")
-
 
 
 def _print_scope_sync_summary(result: dict, label: str) -> None:
@@ -330,9 +391,7 @@ def _print_scope_sync_summary(result: dict, label: str) -> None:
             top_incomplete = sorted(
                 completeness, key=lambda x: x["missing_days"], reverse=True
             )[:5]
-            print(
-                f"    数据完整性: {len(completeness)} 只股票缺失交易日"
-            )
+            print(f"    数据完整性: {len(completeness)} 只股票缺失交易日")
             for item in top_incomplete:
                 print(
                     f"      {item['code']}: "
@@ -343,14 +402,12 @@ def _print_scope_sync_summary(result: dict, label: str) -> None:
             print("    数据完整性: 全部完成")
 
 
-
 def _format_elapsed(seconds: float) -> str:
     """Format elapsed seconds as Xm Ys."""
     m, s = divmod(int(seconds), 60)
     if m:
         return f"{m}分{s}秒"
     return f"{s}秒"
-
 
 
 def _print_snapshot_summary(result: dict) -> None:
@@ -369,7 +426,6 @@ def _print_snapshot_summary(result: dict) -> None:
         f"跳过北交所={result.get('skipped_bj', 0)}, "
         f"无数据跳过={result.get('skipped_empty', 0)}"
     )
-
 
 
 def _print_quality_summary(result: dict) -> None:
@@ -391,10 +447,7 @@ def _print_quality_summary(result: dict) -> None:
             continue
         severity = symbol["severity"]
         issues = ", ".join(symbol.get("issues", []))
-        print(
-            f"    [{severity}] {symbol['code']}: {issues}"
-        )
-
+        print(f"    [{severity}] {symbol['code']}: {issues}")
 
 
 def _print_repair_summary(result: dict) -> None:
@@ -424,10 +477,7 @@ def _print_repair_summary(result: dict) -> None:
             )
         else:
             errors = "; ".join(detail.get("errors", []))
-            print(
-                f"    [failed] {detail['code']}: {errors or 'still degraded'}"
-            )
-
+            print(f"    [failed] {detail['code']}: {errors or 'still degraded'}")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -517,11 +567,7 @@ def cmd_status(args: argparse.Namespace) -> None:
         print(f"  Count: {pool_count}")
         print(f"  Needs refresh: {needs_refresh}")
         if pool:
-            dates = sorted(
-                r.get("updated_at", "")
-                for r in pool
-                if r.get("updated_at")
-            )
+            dates = sorted(r.get("updated_at", "") for r in pool if r.get("updated_at"))
             if dates:
                 print(f"  Last updated: {dates[-1]}")
                 print(f"  Oldest entry: {dates[0]}")
@@ -548,7 +594,6 @@ def cmd_status(args: argparse.Namespace) -> None:
             print(f"    error={row['last_error']}")
 
 
-
 def _normalized_watchlist(market: str) -> list[str]:
     """Return normalized watchlist codes for a market."""
     return [
@@ -556,7 +601,6 @@ def _normalized_watchlist(market: str) -> list[str]:
         for code in cfg_get("watchlist", [])
         if str(code).strip()
     ]
-
 
 
 def _scan_universe_codes(market: str, limit: int) -> List[str]:
@@ -570,7 +614,6 @@ def _scan_universe_codes(market: str, limit: int) -> List[str]:
         for item in pool[:limit]
         if str(item.get("code", "")).strip()
     ]
-
 
 
 def _collect_symbol_scope_rows(
@@ -592,7 +635,6 @@ def _collect_symbol_scope_rows(
     return rows
 
 
-
 def _scope_pool_rows(
     codes: List[str],
     market: str,
@@ -608,7 +650,6 @@ def _scope_pool_rows(
         if str(item.get("code", "")).strip()
     }
     return [pool_by_code[code] for code in codes if code in pool_by_code]
-
 
 
 def _print_market_metadata_summary(pool_rows: List[dict], label: str) -> None:
@@ -648,7 +689,6 @@ def _print_market_metadata_summary(pool_rows: List[dict], label: str) -> None:
     )
 
 
-
 def _status_freshness(row: dict) -> str:
     """Classify a sync-state row as fresh, stale, or missing."""
     ttl_map = {
@@ -666,7 +706,6 @@ def _status_freshness(row: dict) -> str:
         return "unknown"
     ttl = ttl_map.get(str(row.get("data_kind", "")), 3600)
     return "fresh" if (time.time() - timestamp) <= ttl else "stale"
-
 
 
 def _print_status_summary(rows: List[dict], label: str, requested: int) -> None:
@@ -704,6 +743,3 @@ def _print_status_summary(rows: List[dict], label: str, requested: int) -> None:
     )
     if problem_codes:
         print("  Top missing/problem symbols: " + ", ".join(problem_codes[:10]))
-
-
-
