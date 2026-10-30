@@ -7,6 +7,7 @@ from config import get as cfg_get
 from report_generator import format_thesis_summary
 from thesis_memory import (
     build_thesis_record,
+    check_active_theses,
     get_thesis_record,
     list_thesis_records,
     save_thesis_record,
@@ -145,6 +146,58 @@ def cmd_thesis(args: argparse.Namespace) -> None:
                 "code": record.get("code", ""),
                 "thesis_id": record.get("thesis_id", ""),
             },
+        )
+        return
+
+    if action == "check":
+        code = (
+            normalize_code_for_market(args.code, market)
+            if getattr(args, "code", "")
+            else ""
+        )
+        auto_close = getattr(args, "auto_close", False)
+        target_m = market or "ALL"
+        print(
+            f"Checking active theses against invalidation criteria "
+            f"(market={target_m})..."
+        )
+        results = check_active_theses(
+            market=market if getattr(args, "market", "") else "",
+            code=code,
+            auto_close=auto_close,
+        )
+        if not results:
+            print("No active thesis records found.")
+            return
+
+        print(f"Active Thesis Health Status ({len(results)}):")
+        for idx, item in enumerate(results, 1):
+            close_info = " [AUTO-CLOSED]" if item.get("auto_closed") else ""
+            c_code = item["code"]
+            c_mkt = item["market"]
+            c_st = item["status"]
+            c_sig = item["signal"]
+            c_entry = item["entry_price"]
+            c_now = item["latest_price"]
+            c_pnl = item["pnl_pct"]
+            c_ma = item["ma20"]
+            print(
+                f"  {idx}. [{c_st}]{close_info} {c_code} ({c_mkt}) | "
+                f"{c_sig} | Entry: {c_entry:.2f} -> Current: {c_now:.2f} "
+                f"({c_pnl:+.2f}%) | MA20: {c_ma:.2f}"
+            )
+            print(f"     Diagnosis: {item['reason']}")
+            rules = item.get("invalidation_conditions", [])
+            if rules:
+                rule_text = ", ".join(rules[:2])
+                print(f"     Invalidation Rules: {rule_text}")
+
+        _save_report(
+            "thesis_check",
+            fmt,
+            output_dir,
+            data={"results": results},
+            metadata={"command": "thesis-check", "market": market},
         )
         return
 

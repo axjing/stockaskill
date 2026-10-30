@@ -192,6 +192,20 @@ def _add_thesis(sub: argparse._SubParsersAction, func: Callable) -> None:
     _common_output_args(p_postmortem)
     p_postmortem.set_defaults(func=func)
 
+    p_check = thesis_sub.add_parser(
+        "check",
+        help="Check active theses against invalidation criteria and price targets",
+    )
+    p_check.add_argument("--market", default="", help="Filter by market")
+    p_check.add_argument("--code", default="", help="Filter by code")
+    p_check.add_argument(
+        "--auto-close",
+        action="store_true",
+        help="Auto-close invalidated theses",
+    )
+    _common_output_args(p_check)
+    p_check.set_defaults(func=func)
+
 
 def _add_theme_scan(sub: argparse._SubParsersAction, func: Callable) -> None:
     p = sub.add_parser("theme-scan", help="Run local-first theme research")

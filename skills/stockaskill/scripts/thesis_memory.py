@@ -185,3 +185,107 @@ def update_thesis_postmortem(
     thesis.attribution = build_postmortem_attribution(thesis.to_dict())
     save_thesis_record(thesis)
     return thesis.to_dict()
+
+
+def check_active_theses(
+    market: str = "",
+    code: str = "",
+    auto_close: bool = False,
+) -> List[Dict[str, Any]]:
+    """Check active theses against latest price and invalidation conditions.
+
+    Evaluates:
+      - Latest price vs entry price (PnL %)
+      - MA20 trend (above/below MA20)
+      - Hard stop-loss (-8% threshold)
+      - Returns structured status list: 'HEALTHY', 'CAUTION', 'INVALIDATED'
+    """
+    from data_engine import get_kline
+    from utils import safe_float
+
+    records = list_thesis_records(market=market, code=code, thesis_status="active")
+    results: List[Dict[str, Any]] = []
+
+    for record in records:
+        thesis_id = str(record.get("thesis_id", "")).strip()
+        c = str(record.get("code", "")).strip()
+        m = str(record.get("market", "A")).strip() or "A"
+
+        diag = record.get("diagnosis_report", {}) or {}
+        entry_price = safe_float(
+            diag.get("technical", {}).get("current")
+            or diag.get("price")
+            or record.get("entry_price", 0.0)
+        )
+
+        kline = []
+        try:
+            kline = get_kline(c, m, days=30, cached_only=True)
+            if not kline:
+                kline = get_kline(c, m, days=30, cached_only=False)
+        except Exception:
+            kline = []
+
+        latest_price = entry_price
+        ma20 = entry_price
+        if kline:
+            latest_price = safe_float(kline[0].get("close", 0.0))
+            closes = [
+                safe_float(r.get("close", 0.0))
+                for r in kline
+                if safe_float(r.get("close", 0.0)) > 0
+            ]
+            if closes:
+                ma20 = sum(closes[:20]) / min(len(closes), 20)
+                if entry_price <= 0:
+                    entry_price = closes[-1]
+
+        pnl_pct = 0.0
+        if entry_price > 0 and latest_price > 0:
+            pnl_pct = round((latest_price - entry_price) / entry_price * 100, 2)
+
+        if pnl_pct <= -8.0 or (ma20 > 0 and latest_price < ma20 * 0.97):
+            status = "INVALIDATED"
+            reason = f"触发失效: 收益率={pnl_pct:+.2f}%, 跌破MA20({ma20:.2f})"
+        elif pnl_pct <= -4.0 or (ma20 > 0 and latest_price < ma20):
+            status = "CAUTION"
+            reason = f"需防守: 收益率={pnl_pct:+.2f}%, 贴近MA20({ma20:.2f})"
+        else:
+            status = "HEALTHY"
+            reason = f"运行正常: 收益率={pnl_pct:+.2f}%, 站稳均线"
+
+        auto_closed = False
+        if auto_close and status == "INVALIDATED":
+            try:
+                update_thesis_postmortem(
+                    outcome="loss" if pnl_pct < 0 else "neutral",
+                    notes=f"Auto-closed by invalidation check: {reason}",
+                    thesis_id=thesis_id,
+                    thesis_status="closed",
+                )
+                auto_closed = True
+            except Exception:
+                pass
+
+        results.append(
+            {
+                "thesis_id": thesis_id,
+                "code": c,
+                "market": m,
+                "signal": record.get("signal", "HOLD"),
+                "entry_price": entry_price,
+                "latest_price": latest_price,
+                "pnl_pct": pnl_pct,
+                "ma20": round(ma20, 2),
+                "status": status,
+                "reason": reason,
+                "auto_closed": auto_closed,
+                "invalidation_conditions": list(
+                    record.get("invalidation_conditions", []) or []
+                ),
+                "created_at": record.get("created_at", ""),
+            }
+        )
+
+    return results
+

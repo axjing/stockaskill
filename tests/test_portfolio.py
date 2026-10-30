@@ -337,3 +337,26 @@ class TestRebalancer:
         portfolio = Portfolio(name="Test", positions=pos)
         trades = rb.rebalance(portfolio, {"A": 0.3})
         assert isinstance(trades, list)
+    def test_portfolio_trade_ticket(self):
+        pos = [
+            Position(
+                code="601318",
+                name="PingAn",
+                market="A",
+                weight=0.5,
+                shares=1000,
+                cost=50.0,
+                current_price=50.0,
+            )
+        ]
+        portfolio = Portfolio(name="Test", capital=100000, positions=pos)
+        ticket = portfolio.trade_ticket()
+        assert len(ticket) == 1
+        assert ticket[0]["code"] == "601318"
+        assert ticket[0]["shares"] == 1000
+        assert ticket[0]["amount"] == 50000.0
+        assert ticket[0]["est_fee"] == 15.0
+        summary = portfolio.summary()
+        assert "Trade Execution Orders" in summary
+        assert "PingAn" in summary
+

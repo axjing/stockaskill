@@ -1,15 +1,12 @@
 ---
 name: stockaskill
 description: >-
-  Multi-market intelligent stock selection for A-share, HK, US, and
-  ETF-first workflows. Use when Codex needs to analyze individual
-  stocks, run market scans, build portfolios, backtest strategies,
-  diagnose BUY/SELL/HOLD signals, or warm bounded local market data.
-  Triggers on stock codes (600519, AAPL, 0700.HK), ETF codes
-  (510300, 159915), Chinese stock names (贵州茅台), and queries with
-  keywords like 分析, 选股, scan, portfolio, backtest, 因子, 评分, ETF,
-  场内基金, BUY/SELL/HOLD, or 诊断. Do not use for broad mutual-fund
-  platforms or full-universe market-data sync requests.
+  Multi-market intelligent stock selection, portfolio execution orders, and thesis lifecycle tracking for A-share, HK, US, and ETF-first workflows. Use when analyzing individual stocks (600519, AAPL, 0700.HK, 510300), running market factor scans, constructing risk-budgeted portfolios with trade execution tickets, running backtests, monitoring active thesis invalidation conditions, or recording investment postmortems. Local-first and task-scoped.
+license: Apache-2.0
+compatibility: Python >= 3.10; Linux, macOS, Windows
+metadata:
+  category: quantitative-finance
+  version: 1.5.0
 ---
 
 # Smart Stock Selector
@@ -44,7 +41,8 @@ Activate on any of these user intents:
 | Backtest, 回测, validation | Historical backtest |
 | ETF, 场内基金, 510300, 159915 | ETF screening / ETF data sync |
 | Workflow, route, routine, 路线图?| Workflow recommendation / manifest routine |
-| Thesis, postmortem, 复盘, thesis memory | Thesis capture / review / postmortem |
+| Thesis, postmortem, 复盘, thesis memory, 观点巡检, 失效监控 | Thesis capture / check / review / postmortem |
+| Trade ticket, 委托清单, 交易下单 | Portfolio trade ticket generation |
 | Theme, 主题, 产业链?| Theme research |
 | Scorecard, attribution, 评分卡?| Structured evaluation / attribution |
 | Sentiment, sentiment, 情绪 | Market sentiment check |
@@ -97,6 +95,7 @@ Map user intent to CLI parameters:
 | "扫描港股前10" | `scan HK --top 10` |
 | "美股动量排名" | `alpha US --top <N>` |
 | "组合 600519,000858 资金50万" | `portfolio --codes 600519,000858 --capital 500000 --market A` |
+| "检查观点" or "观点失效巡检" | `thesis check --market A` |
 | "回测" (no market specified) | `backtest --market A` (default) |
 | "回测美股" | `backtest --market US` |
 | "ETF筛选" | `scan FUND --top <N>` |
@@ -212,11 +211,13 @@ Full multi-factor ranking with thread-parallel scoring:
 Results include ranked list with scores, signals, F-Score, and BUY summary.
 Explain which factors drove top rankings (momentum + low-vol + quality ~73% combined).
 
-### 6. Portfolio construction
+### 6. Portfolio construction & Trade Execution Orders
 
-Both `portfolio` and `portfolio-enhanced` now follow a sync-then-cached-only flow:
-they first sync missing history/fundamentals for the target symbols, then score
-entirely from local cache. This avoids duplicate API fetches during analysis.
+Both `portfolio` and `portfolio-enhanced` follow a sync-then-cached-only flow:
+they first sync missing history/fundamentals for target symbols, then score
+from local cache. 
+
+Outputs include **Trade Execution Orders (拟委托执行清单)** with A-share 100-share board lot rounding, estimated transaction fees (commission + transfer fee), and cash reserve tracking.
 
 Standard portfolio:
 
@@ -260,12 +261,15 @@ core supported workflow yet.
 
 ### 9. Research memory and theme workflows
 
-Thesis memory:
+Thesis memory & Active Invalidation Monitoring:
 
     uv run python "$SKILL/scripts/run.py" thesis capture <code> --market <A|HK|US>
+    uv run python "$SKILL/scripts/run.py" thesis check --market <A|HK|US> [--code <code>] [--auto-close]
     uv run python "$SKILL/scripts/run.py" thesis list --market <A|HK|US>
     uv run python "$SKILL/scripts/run.py" thesis review --code <code> --market <A|HK|US>
     uv run python "$SKILL/scripts/run.py" thesis postmortem --code <code> --market <A|HK|US> --outcome <win|loss|neutral>
+
+Use `thesis check` regularly to monitor whether active positions have broken MA20 support or hit stop-loss levels. Use `--auto-close` to automatically archive invalidated theses.
 
 Theme research:
 

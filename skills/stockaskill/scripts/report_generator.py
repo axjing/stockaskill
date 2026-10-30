@@ -17,7 +17,6 @@ Usage:
 
 import json
 import os
-import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -160,15 +159,30 @@ def format_portfolio_summary(
     lines.append(f"**Positions:** {len(positions)}")
     lines.append("")
     if positions:
-        lines.append("| Code | Name | Weight | Shares | Price |")
-        lines.append("|------|------|-------:|------:|------:|")
+        lines.append("## Trade Execution Orders (拟委托执行清单)")
+        lines.append("| Code | Name | Wt% | Shares | Price | Est. Amount | Fee |")
+        lines.append("|------|------|----:|-------:|------:|------------:|----:|")
+        total_amount = 0.0
+        total_fees = 0.0
         for p in positions:
             code = p.get("code", "?")
             name = p.get("name", "")
             wt = p.get("weight", 0) * 100
             shares = p.get("shares", 0)
             price = p.get("cost", 0)
-            lines.append(f"| {code} | {name} | {wt:.1f}% | {shares} | {price:.2f} |")
+            amount = round(shares * price, 2)
+            fee = max(5.0, round(amount * 0.0003, 2)) if amount > 0 else 0.0
+            total_amount += amount
+            total_fees += fee
+            lines.append(
+                f"| {code} | {name} | {wt:.1f}% | {shares} | {price:.2f} | "
+                f"{amount:,.1f} | {fee:.1f} |"
+            )
+        cash_res = max(0.0, capital - total_amount - total_fees)
+        lines.append("")
+        lines.append(f"- **Est. Capital Used:** {total_amount:,.1f} ({total_pct:.1f}%)")
+        lines.append(f"- **Est. Transaction Fees:** {total_fees:,.1f}")
+        lines.append(f"- **Cash Reserve:** {cash_res:,.1f}")
     if metrics:
         lines.append("")
         lines.append("## Risk Metrics")

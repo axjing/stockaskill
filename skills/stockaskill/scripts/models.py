@@ -100,18 +100,49 @@ class Portfolio:
     metrics: Dict[str, float] = field(default_factory=dict)
     history: List[Dict[str, Any]] = field(default_factory=list)
 
+    def trade_ticket(self) -> List[Dict[str, Any]]:
+        """Return structured execution order ticket for all positions."""
+        ticket = []
+        for p in self.positions:
+            price = p.current_price or p.cost or 0.0
+            amount = round(p.shares * price, 2)
+            fee = max(5.0, round(amount * 0.0003, 2)) if amount > 0 else 0.0
+            ticket.append(
+                {
+                    "code": p.code,
+                    "name": p.name,
+                    "market": p.market,
+                    "shares": p.shares,
+                    "price": price,
+                    "amount": amount,
+                    "target_weight": p.weight,
+                    "est_fee": fee,
+                }
+            )
+        return ticket
+
     def summary(self) -> str:
         lines = [
             f"Portfolio: {self.name}",
             f"Capital: {self.capital:,.0f}",
             f"Positions: {len(self.positions)}",
         ]
+        ticket = self.trade_ticket()
+        total_spent = sum(item["amount"] for item in ticket)
+        total_fees = sum(item["est_fee"] for item in ticket)
+        cash_reserve = max(0.0, self.capital - total_spent - total_fees)
         total_w = sum(p.weight for p in self.positions)
-        lines.append(f"Allocated: {total_w * 100:.1f}%")
-        for p in self.positions:
+
+        lines.append(
+            f"Allocated: {total_spent:,.0f} ({total_w * 100:.1f}%) | "
+            f"Cash Reserve: {cash_reserve:,.0f} | Est. Fees: {total_fees:,.1f}"
+        )
+        lines.append("Trade Execution Orders (拟委托执行清单):")
+        for t in ticket:
             lines.append(
-                f"  {p.code} {p.name}: {p.weight * 100:.1f}% "
-                f"({p.shares} shares @ {p.cost:.2f})"
+                f"  {t['code']} {t['name']}: {t['target_weight'] * 100:.1f}% "
+                f"({t['shares']} shares @ {t['price']:.2f}, "
+                f"amount={t['amount']:,.1f}, fee={t['est_fee']:.1f})"
             )
         if self.metrics:
             lines.append("Risk Metrics:")
