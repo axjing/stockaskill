@@ -51,7 +51,7 @@ _DEFAULTS: Dict[str, Any] = {
     "daily_api_limit": 500,
     # Storage engine: 'sqlite' (default, stable) or 'duckdb' (high-performance OLAP).
     # All upper-layer interfaces route through get_cache() and switch transparently.
-    "db_engine": "sqlite",
+    "db_engine": "duckdb",
     "duckdb_path": ".cache/quant_cache.duckdb",
     # Precompute daily factor snapshots after each K-line sync; the selection
     # engine reads from factor_daily_snapshot when DuckDB is enabled.

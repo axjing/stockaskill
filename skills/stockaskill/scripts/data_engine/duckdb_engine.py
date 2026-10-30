@@ -133,20 +133,23 @@ _SCHEMA: Dict[str, str] = {
             code VARCHAR PRIMARY KEY, name VARCHAR DEFAULT '',
             fund_type VARCHAR DEFAULT '', nav DOUBLE DEFAULT 0,
             acc_nav DOUBLE DEFAULT 0, scale DOUBLE DEFAULT 0,
-            track_index VARCHAR DEFAULT '', updated_at VARCHAR DEFAULT ''
+            track_index VARCHAR DEFAULT '', updated_at VARCHAR DEFAULT '',
+            market VARCHAR DEFAULT 'FUND'
         )
     """,
     "fund_nav": """
         CREATE TABLE IF NOT EXISTS fund_nav (
             code VARCHAR NOT NULL, date VARCHAR NOT NULL,
             nav DOUBLE DEFAULT 0, acc_nav DOUBLE DEFAULT 0,
+            market VARCHAR DEFAULT 'FUND',
             PRIMARY KEY (code, date)
         )
     """,
     "stock_industry": """
         CREATE TABLE IF NOT EXISTS stock_industry (
             code VARCHAR PRIMARY KEY, sector VARCHAR DEFAULT '',
-            industry VARCHAR DEFAULT '', updated_at VARCHAR DEFAULT ''
+            industry VARCHAR DEFAULT '', updated_at VARCHAR DEFAULT '',
+            market VARCHAR DEFAULT 'A'
         )
     """,
     "market_index": """
@@ -155,6 +158,7 @@ _SCHEMA: Dict[str, str] = {
             open DOUBLE DEFAULT 0, high DOUBLE DEFAULT 0,
             low DOUBLE DEFAULT 0, close DOUBLE DEFAULT 0,
             volume DOUBLE DEFAULT 0, amount DOUBLE DEFAULT 0,
+            market VARCHAR DEFAULT 'A',
             PRIMARY KEY (index_code, date)
         )
     """,
@@ -435,11 +439,11 @@ def get_engine(db_path: Optional[Path | str] = None) -> DuckDBEngine:
     Args:
         db_path: Optional override for the database file path.
     """
-    scripts_root = Path(__file__).resolve().parents[1]
+    skill_root = Path(__file__).resolve().parents[2]
     if db_path is None:
         from config import get as cfg_get
 
-        db_path = scripts_root / cfg_get("duckdb_path", ".cache/quant_cache.duckdb")
+        db_path = skill_root / cfg_get("duckdb_path", ".cache/quant_cache.duckdb")
     abs_path = str(Path(db_path).resolve())
     with _engine_lock:
         engine = _engines.get(abs_path)
