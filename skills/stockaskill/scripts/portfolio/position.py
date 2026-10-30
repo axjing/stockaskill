@@ -97,8 +97,11 @@ def compute_position(
     weight = min(weight, max_weight)
     allocation = capital * weight
     shares = int(allocation / current_price)
-    # Round to board lots (100 for A-shares)
-    shares = (shares // 100) * 100
+    # Round to board lots (100 for A-shares and ETFs, 1 share for US)
+    if str(market).upper() in ("A", "FUND", "HK"):
+        shares = (shares // 100) * 100
+    else:
+        shares = max(0, shares)
 
     return Position(
         code=code,

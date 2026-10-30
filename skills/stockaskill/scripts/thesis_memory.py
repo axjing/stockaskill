@@ -213,7 +213,8 @@ def check_active_theses(
 
         diag = record.get("diagnosis_report", {}) or {}
         entry_price = safe_float(
-            diag.get("technical", {}).get("current")
+            diag.get("technical", {}).get("current_price")
+            or diag.get("technical", {}).get("current")
             or diag.get("price")
             or record.get("entry_price", 0.0)
         )
@@ -244,7 +245,10 @@ def check_active_theses(
         if entry_price > 0 and latest_price > 0:
             pnl_pct = round((latest_price - entry_price) / entry_price * 100, 2)
 
-        if pnl_pct <= -8.0 or (ma20 > 0 and latest_price < ma20 * 0.97):
+        if latest_price <= 0 and entry_price <= 0:
+            status = "NO_DATA"
+            reason = "行情数据缺失，请先运行 sync symbol 同步数据"
+        elif pnl_pct <= -8.0 or (ma20 > 0 and latest_price < ma20 * 0.97):
             status = "INVALIDATED"
             reason = f"触发失效: 收益率={pnl_pct:+.2f}%, 跌破MA20({ma20:.2f})"
         elif pnl_pct <= -4.0 or (ma20 > 0 and latest_price < ma20):

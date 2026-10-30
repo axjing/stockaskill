@@ -62,6 +62,16 @@ class TestPositionSizing:
         assert pos.shares == 0
         assert pos.weight == 0
 
+    def test_compute_position_us_market(self):
+        from portfolio.position import compute_position
+        pos = compute_position(
+            "AAPL", "Apple", "US",
+            capital=10000, score=80,
+            current_price=200.0, method="fixed",
+        )
+        assert pos.code == "AAPL"
+        assert pos.shares == 8
+
 
 class TestAllocator:
     def test_equal_weights(self):
