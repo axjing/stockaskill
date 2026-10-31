@@ -83,6 +83,14 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 
 def cmd_diagnose(args: argparse.Namespace) -> None:
     """Deep diagnosis: strategy + sentiment + risk."""
+    level = getattr(args, "level", "full")
+    if level == "quick":
+        cmd_analyze(args)
+        return
+    elif level == "deep":
+        cmd_deep_diagnose(args)
+        return
+
     code = args.code
     market = getattr(args, "market", "A") or "A"
     output_dir, fmt = _cmd_output(args)

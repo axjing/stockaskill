@@ -51,7 +51,6 @@ def _print_snapshot_summary(summary: dict, refreshed: bool) -> None:
         )
 
 
-
 def _print_refresh_summary(summary: dict) -> None:
     """Print refresh job counters after a full-market snapshot build."""
     print(
@@ -69,7 +68,6 @@ def _print_refresh_summary(summary: dict) -> None:
         f" fundamentals_fetched={summary.get('fundamentals_fetched_count', 0)},"
         f" fundamentals_missing={summary.get('fundamentals_missing_count', 0)}"
     )
-
 
 
 def cmd_scan(args: argparse.Namespace) -> None:
@@ -145,16 +143,33 @@ def cmd_scan(args: argparse.Namespace) -> None:
             print(f"  建议: {actions.get(posture, '观望')}", flush=True)
             print(f"  风险预算: {risk_budget:.0%}", flush=True)
             if not allowed:
-                print(f"  当前不建议新开仓位", flush=True)
+                print("  当前不建议新开仓位", flush=True)
             print(flush=True)
 
-        from advisor.scanner import MarketScanner
-
-        scanner = MarketScanner()
         mode = getattr(args, "mode", "auto")
         refreshed = False
         summary = None
-        if mode == "realtime":
+        if mode == "screen":
+            from advisor.screener_duckdb import DuckDBScreener
+
+            preset = getattr(args, "preset", "momentum_enhanced")
+            screener = DuckDBScreener()
+            screened = screener.screen(market=market, preset=preset, top_n=top_n)
+            results = [
+                {
+                    "code": item["code"],
+                    "name": item.get("name", item["code"]),
+                    "total_score": float(item.get("score", 0.0)),
+                    "f_score": int(item.get("f_score", 0)),
+                    "metrics": item.get("metrics", {}),
+                }
+                for item in screened
+            ]
+            summary = {"mode": "screen", "preset": preset, "count": len(results)}
+        elif mode == "realtime":
+            from advisor.scanner import MarketScanner
+
+            scanner = MarketScanner()
             print(
                 "  Realtime mode is approximate and only evaluates a candidate subset.",
                 flush=True,
@@ -165,6 +180,9 @@ def cmd_scan(args: argparse.Namespace) -> None:
                 max_candidates=getattr(args, "candidates", 0),
             )
         else:
+            from advisor.scanner import MarketScanner
+
+            scanner = MarketScanner()
             status = scanner.get_snapshot_status(market)
             if mode == "auto" and status["status"] != "fresh":
                 reason = "缺失" if status["status"] == "missing" else "过期"
@@ -296,7 +314,6 @@ def cmd_scan(args: argparse.Namespace) -> None:
         _print_api_usage()
 
 
-
 def cmd_refresh_scan(args: argparse.Namespace) -> None:
     """Build a full-market local scan snapshot and print the top results."""
     market = args.market
@@ -359,7 +376,6 @@ def cmd_refresh_scan(args: argparse.Namespace) -> None:
         print(f"Refresh scan failed: {exc}", file=sys.stderr)
 
 
-
 def cmd_alpha(args: argparse.Namespace) -> None:
     """Alpha momentum scan: rank stocks by optimized multi-factor strategy."""
     market = args.market
@@ -388,11 +404,12 @@ def cmd_alpha(args: argparse.Namespace) -> None:
 
     try:
         pool = get_stock_pool(market)
-        max_candidates = getattr(args, "candidates", 0) or cfg_get("scan_max_candidates", 0)
+        cfg_candidates = cfg_get("scan_max_candidates", 0)
+        max_candidates = getattr(args, "candidates", 0) or cfg_candidates
         candidates = pool[:max_candidates]
 
         # Concurrent pre-sync: fetch missing kline + fundamentals in parallel
-        from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         from data_engine import sync_symbol_data
 
@@ -419,7 +436,10 @@ def cmd_alpha(args: argparse.Namespace) -> None:
                 if sync_done % 50 == 0 or sync_done == actual_n:
                     print(f"    Sync progress: {sync_done}/{actual_n}", flush=True)
         if sync_errors:
-            print(f"    Sync errors: {sync_errors}/{actual_n} (will skip in scoring)", flush=True)
+            print(
+                f"    Sync errors: {sync_errors}/{actual_n} (will skip in scoring)",
+                flush=True,
+            )
 
         from strategies.alpha_momentum import AlphaMomentumStrategy
 
@@ -497,6 +517,3 @@ def cmd_alpha(args: argparse.Namespace) -> None:
         )
     except Exception as exc:
         print(f"Alpha scan failed: {exc}", file=sys.stderr)
-
-
-

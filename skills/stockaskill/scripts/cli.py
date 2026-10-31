@@ -239,6 +239,15 @@ def _add_diagnose(sub: argparse._SubParsersAction, func: Callable) -> None:
     p = sub.add_parser("diagnose", help="Deep stock diagnosis")
     p.add_argument("code", help="Stock code")
     p.add_argument("--market", default="A", help="Market (A/HK/US)")
+    p.add_argument(
+        "--level",
+        choices=["quick", "full", "deep"],
+        default="full",
+        help=(
+            "Diagnosis detail level: quick (fundamentals+factors), "
+            "full (strategy+sentiment+risk), deep (multi-scenario thesis)"
+        ),
+    )
     _common_output_args(p)
     p.set_defaults(func=func)
 
@@ -263,11 +272,20 @@ def _add_scan(sub: argparse._SubParsersAction, func: Callable) -> None:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "snapshot", "realtime"],
+        choices=["auto", "snapshot", "realtime", "screen"],
         default="auto",
         help=(
-            "Auto prefers a fresh full-market snapshot and falls back to bounded "
-            "realtime candidate scoring when needed."
+            "Scan mode: auto (prefer snapshot, fallback to candidate realtime), "
+            "snapshot (require local snapshot), realtime (candidate subset), "
+            "screen (vectorized DuckDB screening)"
+        ),
+    )
+    p.add_argument(
+        "--preset",
+        default="momentum_enhanced",
+        help=(
+            "Screening preset when using screen mode "
+            "(momentum_enhanced, low_vol, deep_value)"
         ),
     )
     p.add_argument(

@@ -1083,6 +1083,64 @@ def test_cmd_scan_realtime_uses_candidate_mode(capsys):
     assert "Realtime mode is approximate" in output
 
 
+def test_cmd_scan_screen_mode(capsys):
+    from run import cmd_scan
+
+    args = type(
+        "Args",
+        (),
+        {
+            "market": "A",
+            "top": 2,
+            "mode": "screen",
+            "preset": "momentum_enhanced",
+            "refresh": False,
+            "include_incomplete": False,
+            "candidates": 0,
+            "output_dir": "reports",
+            "format": "none",
+        },
+    )
+    with patch("advisor.screener_duckdb.DuckDBScreener.screen") as mock_screen:
+        mock_screen.return_value = [
+            {
+                "code": "600519",
+                "name": "Moutai",
+                "score": 90.0,
+                "f_score": 9,
+                "metrics": {},
+            },
+            {
+                "code": "000858",
+                "name": "Wuliangye",
+                "score": 85.0,
+                "f_score": 8,
+                "metrics": {},
+            },
+        ]
+        with patch("commands.scan._save_report"):
+            cmd_scan(args)
+
+    output = capsys.readouterr().out
+    assert "600519 Moutai: 90.0" in output
+    assert "000858 Wuliangye: 85.0" in output
+
+
+def test_cmd_diagnose_level_routing():
+    from commands.analyze import cmd_diagnose
+
+    args_quick = type("Args", (), {"code": "600519", "market": "A", "level": "quick"})
+    args_deep = type("Args", (), {"code": "600519", "market": "A", "level": "deep"})
+
+    with patch("commands.analyze.cmd_analyze") as mock_analyze:
+        cmd_diagnose(args_quick)
+        mock_analyze.assert_called_once_with(args_quick)
+
+    with patch("commands.analyze.cmd_deep_diagnose") as mock_deep:
+        cmd_diagnose(args_deep)
+        mock_deep.assert_called_once_with(args_deep)
+
+
 def test_cmd_portfolio_applies_market_risk_budget(capsys):
     from run import cmd_portfolio
 

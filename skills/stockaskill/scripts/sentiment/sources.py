@@ -23,6 +23,7 @@ _cache = get_cache()
 def get_market_breadth() -> Dict[str, Any]:
     """Get market breadth (advance/decline ratio).
 
+    Local-first: reads from DuckDB daily_price, falling back to upstream API.
     Returns:
         Dict with advancers, decliners, ratio, sentiment_score.
     """
@@ -30,6 +31,42 @@ def get_market_breadth() -> Dict[str, Any]:
     cached = _cache.kv_get("market_breadth")
     if cached:
         return cached
+
+    # Local-first: compute directly from DuckDB daily_price
+    try:
+        with _cache._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT date,
+                       COUNT(CASE WHEN close > open THEN 1 END) as advancers,
+                       COUNT(CASE WHEN close < open THEN 1 END) as decliners,
+                       COUNT(*) as total
+                FROM daily_price
+                WHERE market='A'
+                GROUP BY date
+                HAVING COUNT(*) >= 100
+                ORDER BY date DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            if row and row[3] and row[3] >= 100:
+                advancers = int(row[1] or 0)
+                decliners = int(row[2] or 0)
+                total = int(row[3])
+                flat = total - advancers - decliners
+                ratio = advancers / max(total, 1)
+                result = {
+                    "advancers": advancers,
+                    "decliners": decliners,
+                    "flat": flat,
+                    "ratio": round(ratio, 3),
+                    "sentiment_score": round(ratio, 3),
+                    "date": str(row[0]),
+                }
+                _cache.kv_set("market_breadth", result, ttl=3600)
+                return result
+    except Exception:
+        pass
 
     try:
         import akshare as ak
@@ -120,6 +157,10 @@ def get_guba_sentiment(code: str) -> Dict[str, Any]:
     if len(digits) != 6 or not digits.startswith(("0", "3", "6", "9")):
         return {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
 
+    cached = _cache.kv_get(f"guba:{digits}")
+    if cached:
+        return cached
+
     try:
         import akshare as ak
         from utils import exchange_suffix
@@ -138,11 +179,13 @@ def get_guba_sentiment(code: str) -> Dict[str, Any]:
             scores = [analyze_sentiment(str(t)) for t in titles if t]
             if scores:
                 avg_score = sum(scores) / len(scores)
-                return {
+                res = {
                     "post_count": len(posts),
                     "hot_score": min(1, len(posts) / 20),
                     "sentiment_score": round(avg_score, 3),
                 }
+                _cache.kv_set(f"guba:{digits}", res, ttl=1800)
+                return res
 
     except Exception:
         pass
@@ -152,22 +195,28 @@ def get_guba_sentiment(code: str) -> Dict[str, Any]:
 
     kline = get_kline(code, "A", days=10)
     if not kline:
-        return {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
+        res = {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
+        _cache.kv_set(f"guba:{digits}", res, ttl=600)
+        return res
 
     closes = [r.get("close", 0) for r in kline]
     closes = [c for c in closes if c > 0]
 
     if len(closes) < 2:
-        return {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
+        res = {"post_count": 0, "hot_score": 0.5, "sentiment_score": 0.5}
+        _cache.kv_set(f"guba:{digits}", res, ttl=600)
+        return res
 
     ret = (closes[0] - closes[-1]) / max(closes[-1], 1e-9)
     sentiment = max(-1, min(1, ret * 5))
 
-    return {
+    res = {
         "post_count": len(kline),
         "hot_score": min(1, abs(ret) * 3),
         "sentiment_score": round(sentiment, 3),
     }
+    _cache.kv_set(f"guba:{digits}", res, ttl=1800)
+    return res
 
 
 def aggregate_market_sentiment() -> float:
