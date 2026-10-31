@@ -14,7 +14,8 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
-from data_engine.duckdb_cache import DuckDBCacheManager
+from cache import DuckDBCacheManager
+
 from data_engine.duckdb_engine import DuckDBEngine
 
 logger = logging.getLogger(__name__)

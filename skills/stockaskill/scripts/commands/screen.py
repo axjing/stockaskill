@@ -16,6 +16,9 @@ def cmd_screen(args: argparse.Namespace) -> None:
     top_n = getattr(args, "top", 10) or 10
     min_mcap = getattr(args, "min_mcap", 0.0) or 0.0
     sector = getattr(args, "sector", None)
+    to_portfolio = bool(getattr(args, "to_portfolio", False))
+    capital = float(getattr(args, "capital", 1000000.0) or 1000000.0)
+    track = bool(getattr(args, "track", False))
 
     print(
         f"Screening {market} market via DuckDB (preset={preset}, top={top_n})...",
@@ -46,6 +49,53 @@ def cmd_screen(args: argparse.Namespace) -> None:
         "count": len(results),
         "candidates": results,
     }
+
+    if to_portfolio and results:
+        print(
+            f"\n--- Constructing Execution Portfolio (Capital: {capital:,.0f}) ---",
+            flush=True,
+        )
+        from portfolio.builder import PortfolioBuilder
+
+        builder = PortfolioBuilder("Screened Portfolio", capital=capital)
+        for item in results:
+            builder.add_candidate(
+                code=item["code"],
+                name=item.get("name", item["code"]),
+                market=market,
+                score=float(item.get("score", 60.0)),
+                current_price=float(item.get("current_price", 0.0)),
+            )
+        portfolio = builder.build(position_method="fixed")
+        print(portfolio.summary())
+
+        tickets = portfolio.trade_ticket()
+        for t in tickets:
+            print(
+                f"    -> BUY {t['code']} {t['name']}: {t['shares']} shares "
+                f"@ {t['price']:.2f} (Amount: {t['amount']:,.0f}, "
+                f"Fee: {t['est_fee']:.1f})"
+            )
+            if track:
+                from tracker import start_tracking
+
+                tr = start_tracking(
+                    t["code"],
+                    market=market,
+                    entry_price=t["price"],
+                    notes=f"Auto-tracked from screen preset {preset}",
+                )
+                t["tracking_id"] = tr.get("tracking_id")
+
+        data["portfolio"] = {
+            "name": portfolio.name,
+            "capital": portfolio.capital,
+            "positions_count": len(portfolio.positions),
+        }
+        data["trade_tickets"] = tickets
+        if track:
+            print(f"\n  Auto-registered {len(tickets)} positions into active tracking.")
+
     _save_report(
         f"screen_{preset}_{market}",
         fmt,

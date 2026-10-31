@@ -125,3 +125,53 @@ class TestTargetPortfolioOptimizer:
         assert res["success"] is True
         assert len(res["allocation"]["holdings"]) == 5
         assert res["performance"]["cagr"] > 0
+
+
+class TestScreenToPortfolioPipeline:
+    """Test the end-to-end screen -> portfolio -> track pipeline command."""
+
+    @patch("commands.screen._save_report")
+    @patch("commands.screen.DuckDBScreener")
+    def test_cmd_screen_to_portfolio(self, mock_screener_cls, mock_save_report):
+        import argparse
+
+        from commands.screen import cmd_screen
+
+        mock_screener = MagicMock()
+        mock_screener.screen.return_value = [
+            {
+                "code": "600519",
+                "name": "贵州茅台",
+                "score": 85.0,
+                "current_price": 20.0,
+                "metrics": {"ret_60d": 15.0},
+            },
+            {
+                "code": "000858",
+                "name": "五粮液",
+                "score": 80.0,
+                "current_price": 15.0,
+                "metrics": {"ret_60d": 10.0},
+            },
+        ]
+        mock_screener_cls.return_value = mock_screener
+
+        args = argparse.Namespace(
+            market="A",
+            preset="momentum_enhanced",
+            top=2,
+            min_mcap=0.0,
+            sector=None,
+            to_portfolio=True,
+            capital=500000.0,
+            track=False,
+            output_dir="reports",
+            format="json",
+        )
+
+        cmd_screen(args)
+        mock_save_report.assert_called_once()
+        saved_data = mock_save_report.call_args[1]["data"]
+        assert "portfolio" in saved_data
+        assert "trade_tickets" in saved_data
+        assert len(saved_data["trade_tickets"]) == 2

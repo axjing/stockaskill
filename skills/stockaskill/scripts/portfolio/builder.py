@@ -21,7 +21,11 @@ class PortfolioBuilder:
         self._candidates: List[Dict[str, Any]] = []
 
     def add_from_strategy(
-        self, code: str, market: str = "A", weight: Optional[float] = None, cached_only: bool = False
+        self,
+        code: str,
+        market: str = "A",
+        weight: Optional[float] = None,
+        cached_only: bool = False,
     ) -> None:
         """Add a stock from strategy analysis.
 
@@ -50,6 +54,27 @@ class PortfolioBuilder:
             {
                 "code": code,
                 "name": name,
+                "market": market,
+                "score": score,
+                "current_price": current_price,
+                "manual_weight": weight,
+            }
+        )
+
+    def add_candidate(
+        self,
+        code: str,
+        name: str = "",
+        market: str = "A",
+        score: float = 60.0,
+        current_price: float = 0.0,
+        weight: Optional[float] = None,
+    ) -> None:
+        """Directly add a candidate stock with precomputed metrics."""
+        self._candidates.append(
+            {
+                "code": code,
+                "name": name or code,
                 "market": market,
                 "score": score,
                 "current_price": current_price,

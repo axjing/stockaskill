@@ -349,6 +349,22 @@ def _add_screen(sub: argparse._SubParsersAction, func: Callable) -> None:
         "--min-mcap", type=float, default=0, help="Minimum market cap filter"
     )
     p.add_argument("--sector", default=None, help="Sector filter")
+    p.add_argument(
+        "--to-portfolio",
+        action="store_true",
+        help="Automatically convert screened candidates into an execution portfolio",
+    )
+    p.add_argument(
+        "--capital",
+        type=float,
+        default=1000000.0,
+        help="Total capital allocated for portfolio execution",
+    )
+    p.add_argument(
+        "--track",
+        action="store_true",
+        help="Automatically register portfolio positions into thesis/risk tracker",
+    )
     _common_output_args(p)
     p.set_defaults(func=func)
 

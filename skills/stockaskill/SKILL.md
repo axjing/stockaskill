@@ -97,6 +97,7 @@ Map user intent to CLI parameters:
 | "选股 动量增强" or "选股 前10" | `screen --market A --preset momentum_enhanced --top 10` |
 | "低波选股" or "防御选股" | `screen --market A --preset low_vol --top 10` |
 | "选出组合 年化8% 最大回撤5%" | `portfolio --optimize --target-cagr 0.08 --max-drawdown 0.05 --top-k 5 --market A` |
+| "选股并生成买单 资金50万" or "选股直接建仓" | `screen --market A --preset momentum_enhanced --top 5 --to-portfolio --capital 500000 --track` |
 | "增量更新 600519" | `sync update 600519 --market A` |
 | "更新交易日历" or "同步交易日" | `sync calendar --market A` |
 | "扫描港股前10" | `scan HK --top 10` |

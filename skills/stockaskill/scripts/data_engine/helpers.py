@@ -447,11 +447,13 @@ def _add_days(date_str: str, days: int) -> str:
 
 
 def _latest_trading_day(
-    market: str = "A", before_or_on: str | None = None
+    market: str = "A",
+    before_or_on: str | None = None,
+    auto_sync: bool = True,
 ) -> str | None:
     """Return the latest open trading day on or before a given date (defaults to today).
 
-    Falls back to None when trade_calendar has no data yet.
+    Auto-heals the trade calendar if missing or lagging behind by > 7 days.
     """
     from cache import get_cache
 
@@ -467,7 +469,32 @@ def _latest_trading_day(
                 (market, before_or_on),
             ).fetchone()
             if row and row[0]:
-                return row[0]
+                res_date = row[0]
+                if auto_sync and market == "A":
+                    try:
+                        dt_ref = datetime.strptime(before_or_on, "%Y-%m-%d")
+                        dt_res = datetime.strptime(res_date, "%Y-%m-%d")
+                        if (dt_ref - dt_res).days > 7:
+                            sync_trade_calendar(market)
+                            row_new = conn.execute(
+                                "SELECT MAX(date) FROM trade_calendar "
+                                "WHERE market=? AND is_open=1 AND date <= ?",
+                                (market, before_or_on),
+                            ).fetchone()
+                            if row_new and row_new[0]:
+                                return row_new[0]
+                    except Exception:
+                        pass
+                return res_date
+            elif auto_sync and market == "A":
+                sync_trade_calendar(market)
+                row_new = conn.execute(
+                    "SELECT MAX(date) FROM trade_calendar "
+                    "WHERE market=? AND is_open=1 AND date <= ?",
+                    (market, before_or_on),
+                ).fetchone()
+                if row_new and row_new[0]:
+                    return row_new[0]
     except Exception:
         pass
     return None
