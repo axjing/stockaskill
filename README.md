@@ -1,11 +1,11 @@
 ﻿# stockaskill
 
-A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股、组合构建、风险控制、买卖时机全流程。数据源为 AKShare, 本地 SQLite 积累式缓存。
+A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股、组合构建、风险控制、买卖时机全流程。数据源为 AKShare, 本地 DuckDB 列式缓存与离线全量数据驱动。
 
 当前项目定位已经明确为:
 
-- 本地优先、按任务补数据的投资分析/量化决策引擎
-- 不是港股/美股/ETF/基金全市场全量同步平台
+- 本地优先、离线全量数据驱动的投资分析与量化决策引擎 (基于 4,244 万行跨市场 26 年历史数据)
+- 具备亚秒级全市场截面选股 (`screen`)、目标约束组合优化求解 (`portfolio --optimize`) 与动态增量保鲜 (`sync update`)
 - `FUND` 路径当前按 ETF-first 语义支持, 不等同于广义公募基金全覆盖
 
 ## 适用框架
@@ -274,7 +274,7 @@ openclaw skills install @axjing/stockaskill --global
 
 本项目的数据获取遵循**缓存优先、增量同步**原则：
 
-- **本地缓存是唯一数据源**：所有读取操作先查本地 quant_cache.db（默认 SQLite），远端 API 仅作为同步手段，不作为查询层。配置 `db_engine: "duckdb"` 可切换为列式存储 DuckDB（同构表结构，接口不变）。
+- **本地缓存是唯一数据源**：所有读取操作先查本地 quant_cache.duckdb（统一使用 DuckDB 高性能列式存储），远端 API 仅作为增量同步手段，不作为直接查询层。原 quant_cache.db 完整留存为离线冷备。
 - **增量补全，不全量重拉**：检查缓存最新日期，只拉取缺失区间（带 3 天重叠以修正节假日/延迟数据）。首次运行全量种子，之后永远只补缺失。
 - **日期范围 API 优先**：使用 `ak.stock_zh_a_hist`(symbol, start_date, end_date) 等支持区间的接口。禁止使用 `ak.stock_zh_a_daily`() 等无视日期、全量下载历史数据的 API 作为主路径。
 - **多源容错 + 熔断**：K 线: baostock → AKShare/EastMoney → efinance (A 股) | AKShare → yfinance (HK/US)。基本面: THS (A 股) / Analysis indicator (HK/US) → Sina → yfinance。连续失败的源自动进入退避状态，避免浪费 API 配额。
@@ -282,7 +282,7 @@ openclaw skills install @axjing/stockaskill --global
 
 违反此策略（如对每只股票每次请求都全量下载历史）是致命 bug，会导致 API 限额耗尽和 RemoteDisconnected 错误。
 
-### SQLite 表结构 (`quant_cache.db`)
+### DuckDB 表结构 (`quant_cache.duckdb`)
 
 | 表 | 内容 | 更新策略 |
 |:---|:-----|:---------|
@@ -530,7 +530,7 @@ python skills/stockaskill/scripts/run.py scorecard diagnose 600519 --market A
 python skills/stockaskill/scripts/run.py cache stats                      # 缓存统计
 python skills/stockaskill/scripts/run.py cache cleanup --days 30          # 清理旧缓存
 python skills/stockaskill/scripts/run.py cache engine                     # 当前存储引擎
-python skills/stockaskill/scripts/run.py cache migrate                    # SQLite -> DuckDB 一次性迁移
+python skills/stockaskill/scripts/run.py cache migrate                    # 历史 SQLite 归档库向 DuckDB 迁移工具
 ```
 
 ### 高阶研究工作流

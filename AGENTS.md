@@ -12,7 +12,7 @@ You are my development assistant agent, primarily assisting me with multimodal a
 - **Primary Languages:** Python, C++
 - **Backend Framework:** FastAPI
 - **Algorithm/Training Frameworks:** PyTorch, TRL, SciPy, scikit-learn, Transformers, Datasets, safetensors
-- **Databases:** SQLite
+- **Databases:** DuckDB (OLAP Columnar Store; quant_cache.db preserved as offline archive)
 - **Vector Databases:** Chroma
 - **Frontend Languages:** JavaScript, TypeScript
 - **Frontend Framework:** React
@@ -24,16 +24,17 @@ You are my development assistant agent, primarily assisting me with multimodal a
 - Default focus on the full lifecycle of multimodal algorithm research, training, evaluation, inference, and deployment.
 - Backend development should prioritize FastAPI with clear, strongly-typed interface design.
 - Frontend development should prioritize React + TypeScript with clean code structure.
-- When working with databases, prioritize scalability, query performance, and data consistency. prioritize the practical suitability of SQLite / PostgreSQL for the specific scenario.
+- When working with databases, prioritize scalability, query performance, and data consistency. prioritize the practical suitability of DuckDB / PostgreSQL / SQLite for the specific scenario.
 - When working with vector retrieval, prioritize the practical suitability of Milvus / pgVector / Chroma for the specific scenario.
 
 ## Project-Specific Product Scope
 
-- This repository is a local-first, task-scoped investment analysis and quant decision engine.
-- Do not treat it as a full-market data warehouse, crawler platform, or background sync service unless the user explicitly changes product direction.
-- Prefer bounded sync for symbol, watchlist, portfolio, scan-universe, and ETF scopes over proposing or implementing full-universe ingestion.
-- Treat current `FUND` support as ETF-first semantics. Do not imply broad mutual-fund platform support unless the code truly adds NAV-centric workflows and the user approves that scope expansion.
-- For HK/US support, prioritize correctness, metadata visibility, and bounded usability over breadth. Soft metadata-quality signals are preferred before hard exclusions.
+- This repository is an offline full-data-driven quant decision and investment analysis engine, powered by DuckDB (42.44M rows across A/HK/US/ETF over 26 years).
+- Core data strategy: Local-first, dynamic incremental sync, full history preserved, and validate before cache.
+- Core quantitative capabilities: Vectorized cross-sectional screening (`screen`), goal-constrained portfolio optimization (`portfolio --optimize`), dynamic incremental sync (`sync update`), risk-budgeted allocation with board lot trade tickets, and thesis lifecycle tracking.
+- Treat current `FUND` support as ETF-first semantics.
+- For HK/US support, prioritize correctness, metadata visibility, and bounded usability over breadth.
+- Storage architecture: DuckDB (`quant_cache.duckdb`) is the sole active storage and analytical engine. The legacy SQLite file (`quant_cache.db`) is preserved strictly as an untouched offline cold archive.
 
 ## Code Requirements
 
@@ -234,7 +235,7 @@ Only erasable Node strip-only syntax is allowed for code under the project roots
 ### Data Strategy: Cache-First + Incremental Sync
 All OHLCV/fundamental data fetches MUST follow this pattern:
 
-1. **Cache is the source of truth** — SQLite quant_cache.db is the primary read path. Remote APIs are sync mechanisms, not query layers.
+1. **Cache is the source of truth** — DuckDB quant_cache.duckdb is the primary read path. Remote APIs are sync mechanisms, not query layers. (quant_cache.db preserved as offline cold archive).
 2. **Incremental by default** — Check sync_watermarks / sync_state for the latest cached date. Compute the missing gap and only fetch that range. Never pull full history unless cache is empty (cold start).
 3. **Date-range-aware APIs** — Use `ak.stock_zh_a_hist`(symbol, start_date, end_date) or equivalent. Never use `ak.stock_zh_a_daily`() or similar full-history-download APIs as the primary data path.
 4. **Overlap on incremental fetch** — When backfilling, start from last_cached_date - 3 trading days to catch weekend/holiday corrections and late data updates.
@@ -328,6 +329,9 @@ uv run mypy skills/stockaskill/scripts tests
 uv run python -m pytest -v
 
 # Run CLI
+uv run python skills/stockaskill/scripts/run.py screen --market A --preset low_vol --top 10
+uv run python skills/stockaskill/scripts/run.py portfolio --optimize --target-cagr 0.08 --max-drawdown 0.05 --top-k 5 --market A
+uv run python skills/stockaskill/scripts/run.py sync update 600519 --market A
 uv run python skills/stockaskill/scripts/run.py diagnose 600519 --market A
 uv run python skills/stockaskill/scripts/run.py deep-diagnose 600519 --market A
 uv run python skills/stockaskill/scripts/run.py workflow list
