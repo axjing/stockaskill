@@ -98,6 +98,7 @@ Map user intent to CLI parameters:
 | "低波选股" or "防御选股" | `screen --market A --preset low_vol --top 10` |
 | "选出组合 年化8% 最大回撤5%" | `portfolio --optimize --target-cagr 0.08 --max-drawdown 0.05 --top-k 5 --market A` |
 | "增量更新 600519" | `sync update 600519 --market A` |
+| "更新交易日历" or "同步交易日" | `sync calendar --market A` |
 | "扫描港股前10" | `scan HK --top 10` |
 | "美股动量排名" | `alpha US --top <N>` |
 | "组合 600519,000858 资金50万" | `portfolio --codes 600519,000858 --capital 500000 --market A` |

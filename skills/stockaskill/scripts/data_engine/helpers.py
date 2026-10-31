@@ -446,20 +446,25 @@ def _add_days(date_str: str, days: int) -> str:
         return _date_str(datetime.now() + timedelta(days=days))
 
 
-
-def _latest_trading_day(market: str = "A") -> str | None:
-    """Return the latest open trading day for a market from trade_calendar.
+def _latest_trading_day(
+    market: str = "A", before_or_on: str | None = None
+) -> str | None:
+    """Return the latest open trading day on or before a given date (defaults to today).
 
     Falls back to None when trade_calendar has no data yet.
     """
     from cache import get_cache
 
+    if before_or_on is None:
+        before_or_on = _date_str(datetime.now())
+
     cache = get_cache()
     try:
         with cache._conn() as conn:
             row = conn.execute(
-                "SELECT MAX(date) FROM trade_calendar WHERE market=? AND is_open=1",
-                (market,),
+                "SELECT MAX(date) FROM trade_calendar "
+                "WHERE market=? AND is_open=1 AND date <= ?",
+                (market, before_or_on),
             ).fetchone()
             if row and row[0]:
                 return row[0]
@@ -467,3 +472,34 @@ def _latest_trading_day(market: str = "A") -> str | None:
         pass
     return None
 
+
+def sync_trade_calendar(market: str = "A") -> int:
+    """Synchronize trade calendar dates into DuckDB cache.
+
+    Currently supports market 'A' via AKShare Sina trade date history.
+    Returns the count of trade calendar records upserted.
+    """
+    if market.upper() != "A":
+        return 0
+
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        import akshare as ak
+        from cache import get_cache
+
+        df = ak.tool_trade_date_hist_sina()
+        if df is not None and not df.empty and "trade_date" in df.columns:
+            records = [
+                {"market": "A", "date": str(v)[:10], "is_open": 1}
+                for v in df["trade_date"]
+                if v
+            ]
+            if records:
+                get_cache().upsert_trade_calendar(records)
+                return len(records)
+    except Exception as e:
+        logger.warning(f"Failed to sync trade calendar for market {market}: {e}")
+    return 0

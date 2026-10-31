@@ -319,6 +319,15 @@ def cmd_sync(args: argparse.Namespace) -> None:
                 "market": market,
                 "scope": scope,
             }
+    elif sync_type == "calendar":
+        print(f"Synchronizing trade calendar (market={market})...", flush=True)
+        from data_engine.helpers import sync_trade_calendar
+
+        count = sync_trade_calendar(market=market)
+        print(f"  Synchronized {count} trading days into DuckDB trade_calendar")
+        report_name = f"sync_calendar_{market}"
+        result = {"market": market, "upserted_trading_days": count}
+        metadata = {"command": "sync", "type": sync_type, "market": market}
     else:
         print(f"Unknown sync type: {sync_type}")
         return

@@ -194,3 +194,26 @@ class TestUpdateSymbolsBatch:
         assert res["updated_symbols"] == 1
         assert res["already_up_to_date"] == 1
         assert res["total_ingested_rows"] == 5
+
+
+class TestTradeCalendarSync:
+    """Tests for trade calendar synchronization."""
+
+    @patch("cache.get_cache")
+    def test_sync_trade_calendar_mock(self, mock_get_cache):
+        from data_engine.helpers import sync_trade_calendar
+
+        with patch("akshare.tool_trade_date_hist_sina") as mock_sina:
+            import pandas as pd
+
+            mock_sina.return_value = pd.DataFrame(
+                {"trade_date": ["2026-10-29", "2026-10-30"]}
+            )
+            count = sync_trade_calendar(market="A")
+            assert count == 2
+            mock_get_cache().upsert_trade_calendar.assert_called_once()
+
+    def test_sync_trade_calendar_unsupported_market(self):
+        from data_engine.helpers import sync_trade_calendar
+
+        assert sync_trade_calendar(market="US") == 0

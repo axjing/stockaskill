@@ -208,14 +208,36 @@ class CacheManager:
             ),
         )
 
-    def get_latest_trade_calendar_date(self, market: str = "A") -> Optional[str]:
+    def get_latest_trade_calendar_date(
+        self, market: str = "A", before_or_on: Optional[str] = None
+    ) -> Optional[str]:
         """Get the latest open trading day from the cached trade calendar."""
+        if before_or_on:
+            return cast(
+                Optional[str],
+                self.engine.fetchval(
+                    "SELECT MAX(date) FROM trade_calendar "
+                    "WHERE market=? AND is_open=1 AND date <= ?",
+                    (market, before_or_on),
+                ),
+            )
         return cast(
             Optional[str],
             self.engine.fetchval(
                 "SELECT MAX(date) FROM trade_calendar WHERE market=? AND is_open=1",
                 (market,),
             ),
+        )
+
+    def upsert_trade_calendar(self, rows: List[Dict[str, Any]]) -> None:
+        """Upsert trading calendar rows."""
+        if not rows:
+            return
+        self.engine.upsert(
+            "trade_calendar",
+            rows,
+            id_columns=["market", "date"],
+            columns=["market", "date", "is_open"],
         )
 
     def get_earliest_date(self, code: str, market: str = "A") -> Optional[str]:

@@ -17,7 +17,6 @@ Factor weights (optimized for higher target return):
 from typing import Any, Dict, List
 
 from strategies.base import Strategy
-from utils import diversify_by_board  # noqa: E402
 
 LOW_VOL_MIN = 0.40
 
@@ -52,7 +51,9 @@ class MomentumEnhancedStrategy(Strategy):
     def weight(self) -> float:
         return 0.20
 
-    def analyze(self, code: str, market: str = "A", cached_only: bool = False) -> Dict[str, Any]:
+    def analyze(
+        self, code: str, market: str = "A", cached_only: bool = False
+    ) -> Dict[str, Any]:
         from factors.composite import CompositeAnalyzer
 
         analyzer = CompositeAnalyzer(code, market)

@@ -412,7 +412,9 @@ def _add_sync(sub: argparse._SubParsersAction, func: Callable) -> None:
         help="Synchronize configured watchlist",
     )
     p_watchlist.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
-    p_watchlist.add_argument("--days", type=int, default=365, help="Target history days")
+    p_watchlist.add_argument(
+        "--days", type=int, default=365, help="Target history days"
+    )
     p_watchlist.add_argument(
         "--skip-fundamentals",
         action="store_true",
@@ -426,9 +428,13 @@ def _add_sync(sub: argparse._SubParsersAction, func: Callable) -> None:
         "portfolio",
         help="Synchronize a portfolio code list",
     )
-    p_portfolio.add_argument("--codes", required=True, help="Comma-separated symbol codes")
+    p_portfolio.add_argument(
+        "--codes", required=True, help="Comma-separated symbol codes"
+    )
     p_portfolio.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
-    p_portfolio.add_argument("--days", type=int, default=365, help="Target history days")
+    p_portfolio.add_argument(
+        "--days", type=int, default=365, help="Target history days"
+    )
     p_portfolio.add_argument(
         "--skip-fundamentals",
         action="store_true",
@@ -572,6 +578,14 @@ def _add_sync(sub: argparse._SubParsersAction, func: Callable) -> None:
     _sync_common(p_update)
     p_update.set_defaults(func=func)
 
+    p_calendar = sync_sub.add_parser(
+        "calendar",
+        help="Synchronize trade calendar dates into DuckDB",
+    )
+    p_calendar.add_argument("--market", default="A", help="Market (A/HK/US)")
+    _sync_common(p_calendar)
+    p_calendar.set_defaults(func=func)
+
 
 def _add_status(sub: argparse._SubParsersAction, func: Callable) -> None:
     p = sub.add_parser("status", help="Show data sync status")
@@ -598,7 +612,9 @@ def _add_status(sub: argparse._SubParsersAction, func: Callable) -> None:
         "portfolio",
         help="Show portfolio sync state",
     )
-    p_portfolio.add_argument("--codes", required=True, help="Comma-separated symbol codes")
+    p_portfolio.add_argument(
+        "--codes", required=True, help="Comma-separated symbol codes"
+    )
     p_portfolio.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
     p_portfolio.set_defaults(func=func)
 
@@ -614,7 +630,9 @@ def _add_status(sub: argparse._SubParsersAction, func: Callable) -> None:
         help="Show scan-universe sync state",
     )
     p_scan.add_argument("--market", default="A", help="Market (A/HK/US/FUND)")
-    p_scan.add_argument("--limit", type=int, default=200, help="Candidate scope size used during sync.")
+    p_scan.add_argument(
+        "--limit", type=int, default=200, help="Candidate scope size used during sync."
+    )
     p_scan.set_defaults(func=func)
 
     p_pool = data_sub.add_parser(
@@ -693,9 +711,7 @@ def _add_cache(sub: argparse._SubParsersAction, func: Callable) -> None:
         "--duckdb-path", default=None, help="Destination DuckDB file path"
     )
     p_migrate.set_defaults(func=func)
-    p_engine = cache_sub.add_parser(
-        "engine", help="Show the active storage engine"
-    )
+    p_engine = cache_sub.add_parser("engine", help="Show the active storage engine")
     p_engine.set_defaults(func=func)
 
 
@@ -719,19 +735,27 @@ def _add_track(sub: argparse._SubParsersAction, func: Callable) -> None:
     p_start.add_argument("code", help="Stock code")
     p_start.add_argument("--market", default="A", help="Market (A/HK/US)")
     p_start.add_argument("--price", type=float, required=True, help="Entry price")
-    p_start.add_argument("--stop-loss", type=float, default=0.15, help="Stop-loss pct (default 15%%)")
-    p_start.add_argument("--take-profit", type=float, default=0.30, help="Take-profit pct (default 30%%)")
+    p_start.add_argument(
+        "--stop-loss", type=float, default=0.15, help="Stop-loss pct (default 15%%)"
+    )
+    p_start.add_argument(
+        "--take-profit", type=float, default=0.30, help="Take-profit pct (default 30%%)"
+    )
     p_start.add_argument("--notes", default="", help="Notes")
     _common_output_args(p_start)
     p_start.set_defaults(func=func)
 
     p_status = track_sub.add_parser("status", help="List tracked positions")
-    p_status.add_argument("--status", default="active", choices=["active", "closed", "all"])
+    p_status.add_argument(
+        "--status", default="active", choices=["active", "closed", "all"]
+    )
     p_status.add_argument("--market", default="A")
     _common_output_args(p_status)
     p_status.set_defaults(func=func)
 
-    p_check = track_sub.add_parser("check", help="Check for stop-loss/take-profit triggers")
+    p_check = track_sub.add_parser(
+        "check", help="Check for stop-loss/take-profit triggers"
+    )
     p_check.add_argument("--market", default="A")
     p_check.add_argument("--days", type=int, default=5, help="Days of kline to check")
     _common_output_args(p_check)

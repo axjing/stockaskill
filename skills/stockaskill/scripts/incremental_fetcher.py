@@ -74,7 +74,10 @@ class IncrementalCacheFetcher(ABC):
         ...
 
     def is_cache_fresh(
-        self, cached: List[Dict[str, Any]], days: int, force_refresh: bool,
+        self,
+        cached: List[Dict[str, Any]],
+        days: int,
+        force_refresh: bool,
         full_history: bool = False,
     ) -> bool:
         """Return True if cache is sufficient and can skip the API call.
@@ -147,9 +150,7 @@ class IncrementalCacheFetcher(ABC):
             target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
         # Allow 14-day padding for cold start to account for weekends/holidays
         # at the beginning of the cold start year.
-        _cold_start_end = _date_str(
-            _safe_parse_date(target_start) + timedelta(days=14)
-        )
+        _cold_start_end = _date_str(_safe_parse_date(target_start) + timedelta(days=14))
 
         if not cached:
             return target_start, today_str
@@ -182,13 +183,6 @@ class IncrementalCacheFetcher(ABC):
         elif needs_early:
             early_dt = _safe_parse_date(local_earliest)
             if early_dt:
-                with cache._conn() as conn:
-                    row = conn.execute(
-                        "SELECT (SELECT COUNT(*) FROM trade_calendar WHERE market=? AND date BETWEEN ? AND ?) as expected, COUNT(*) as actual FROM daily_price WHERE market=? AND code=?",
-                        (self.market, target_start, today_str, self.market, self.code),
-                    ).fetchone()
-                if row and row[0] > 0 and row[1] < row[0]:
-                    return target_start, today_str
                 return target_start, _date_str(early_dt + timedelta(days=3))
             return target_start, today_str
         else:
@@ -307,9 +301,7 @@ class KlineFetcher(IncrementalCacheFetcher):
         if len(target_start) == 8 and target_start.isdigit():
             target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
         # Allow 14-day padding for cold start to account for weekends/holidays.
-        _cold_start_end = _date_str(
-            _safe_parse_date(target_start) + timedelta(days=14)
-        )
+        _cold_start_end = _date_str(_safe_parse_date(target_start) + timedelta(days=14))
         if latest != today_str:
             return False
 
@@ -323,14 +315,26 @@ class KlineFetcher(IncrementalCacheFetcher):
                 """SELECT
                     (SELECT COUNT(*) FROM trade_calendar
                      WHERE market=?
-                       AND date BETWEEN (SELECT MIN(date) FROM daily_price WHERE market=? AND code=?)
-                                  AND (SELECT MAX(date) FROM daily_price WHERE market=? AND code=?)) as expected,
+                       AND date BETWEEN (
+                           SELECT MIN(date) FROM daily_price WHERE market=? AND code=?
+                       )
+                       AND (
+                           SELECT MAX(date) FROM daily_price WHERE market=? AND code=?
+                       )
+                    ) as expected,
                     COUNT(*) as actual
                 FROM daily_price
                 WHERE market=? AND code=?
                 """,
-                (self.market, self.market, self.code, self.market, self.code,
-                 self.market, self.code),
+                (
+                    self.market,
+                    self.market,
+                    self.code,
+                    self.market,
+                    self.code,
+                    self.market,
+                    self.code,
+                ),
             ).fetchone()
 
         if row and row[0] > 0 and row[1] < row[0]:
@@ -379,9 +383,7 @@ class KlineFetcher(IncrementalCacheFetcher):
         if len(target_start) == 8 and target_start.isdigit():
             target_start = f"{target_start[:4]}-{target_start[4:6]}-{target_start[6:8]}"
         # Allow 14-day padding for cold start to account for weekends/holidays.
-        _cold_start_end = _date_str(
-            _safe_parse_date(target_start) + timedelta(days=14)
-        )
+        _cold_start_end = _date_str(_safe_parse_date(target_start) + timedelta(days=14))
 
         if not cached:
             return target_start, today_str
@@ -410,8 +412,13 @@ class KlineFetcher(IncrementalCacheFetcher):
             latest_dt = _safe_parse_date(local_latest)
             if early_dt and latest_dt:
                 with cache._conn() as conn:
+                    query = (
+                        "SELECT (SELECT COUNT(*) FROM trade_calendar "
+                        "WHERE market=? AND date BETWEEN ? AND ?) as expected, "
+                        "COUNT(*) as actual FROM daily_price WHERE market=? AND code=?"
+                    )
                     row = conn.execute(
-                        "SELECT (SELECT COUNT(*) FROM trade_calendar WHERE market=? AND date BETWEEN ? AND ?) as expected, COUNT(*) as actual FROM daily_price WHERE market=? AND code=?",
+                        query,
                         (self.market, target_start, today_str, self.market, self.code),
                     ).fetchone()
                 if row and row[0] > 0 and row[1] < row[0]:
