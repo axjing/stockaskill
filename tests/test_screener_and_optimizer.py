@@ -175,3 +175,43 @@ class TestScreenToPortfolioPipeline:
         assert "portfolio" in saved_data
         assert "trade_tickets" in saved_data
         assert len(saved_data["trade_tickets"]) == 2
+
+    @patch("commands.screen.DuckDBScreener")
+    def test_cmd_screen_json_flag_stdout_is_pure_json(self, mock_screener_cls, capsys):
+        import argparse
+        import json
+
+        from commands.screen import cmd_screen
+
+        mock_screener = MagicMock()
+        mock_screener.screen.return_value = [
+            {
+                "code": "600519",
+                "name": "贵州茅台",
+                "score": 85.0,
+                "current_price": 20.0,
+                "metrics": {"ret_60d": 15.0},
+            }
+        ]
+        mock_screener_cls.return_value = mock_screener
+
+        args = argparse.Namespace(
+            market="A",
+            preset="momentum_enhanced",
+            top=1,
+            min_mcap=0.0,
+            sector=None,
+            to_portfolio=False,
+            capital=1000000.0,
+            track=False,
+            output_dir="reports",
+            format="both",
+            json=True,
+        )
+
+        cmd_screen(args)
+        out = capsys.readouterr().out.strip()
+        parsed = json.loads(out)
+        assert parsed["market"] == "A"
+        assert parsed["count"] == 1
+        assert parsed["candidates"][0]["code"] == "600519"

@@ -66,10 +66,11 @@ def _cmd_output(args: argparse.Namespace) -> tuple:
 
     Returns (output_dir, fmt).
     """
-    return (
-        getattr(args, "output_dir", "reports"),
-        getattr(args, "format", "both"),
-    )
+    output_dir = getattr(args, "output_dir", "reports")
+    fmt = getattr(args, "format", "both")
+    if getattr(args, "json", False):
+        fmt = "json"
+    return (output_dir, fmt)
 
 
 def _cmd_error(msg: str, show_traceback: bool = False) -> None:
@@ -93,7 +94,18 @@ def _save_report(
     if fmt == "none":
         return
     if fmt in ("json", "both") and data is not None:
-        save_report(data, name, output_dir=output_dir, metadata=metadata)
+        is_json_direct = fmt == "json"
+        save_report(
+            data,
+            name,
+            output_dir=output_dir,
+            metadata=metadata,
+            verbose=not is_json_direct,
+        )
+        if is_json_direct:
+            import json
+
+            print(json.dumps(data, indent=2, ensure_ascii=False, default=str))
     if fmt in ("md", "both") and md is not None:
         save_markdown(md, name, output_dir=output_dir)
 

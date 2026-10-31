@@ -19,11 +19,15 @@ def cmd_screen(args: argparse.Namespace) -> None:
     to_portfolio = bool(getattr(args, "to_portfolio", False))
     capital = float(getattr(args, "capital", 1000000.0) or 1000000.0)
     track = bool(getattr(args, "track", False))
-
-    print(
-        f"Screening {market} market via DuckDB (preset={preset}, top={top_n})...",
-        flush=True,
+    is_json = bool(
+        getattr(args, "json", False) or getattr(args, "format", "") == "json"
     )
+
+    if not is_json:
+        print(
+            f"Screening {market} market via DuckDB (preset={preset}, top={top_n})...",
+            flush=True,
+        )
     screener = DuckDBScreener()
     results = screener.screen(
         market=market,
@@ -33,14 +37,15 @@ def cmd_screen(args: argparse.Namespace) -> None:
         sector=sector,
     )
 
-    print(f"Found {len(results)} ranked candidates:")
-    for idx, item in enumerate(results, start=1):
-        metrics_parts = [f"{k}={v}" for k, v in item.get("metrics", {}).items()]
-        metrics_str = ", ".join(metrics_parts)
-        print(
-            f"  {idx}. {item['code']} {item.get('name', '')} | "
-            f"Score: {item['score']} | {metrics_str}"
-        )
+    if not is_json:
+        print(f"Found {len(results)} ranked candidates:")
+        for idx, item in enumerate(results, start=1):
+            metrics_parts = [f"{k}={v}" for k, v in item.get("metrics", {}).items()]
+            metrics_str = ", ".join(metrics_parts)
+            print(
+                f"  {idx}. {item['code']} {item.get('name', '')} | "
+                f"Score: {item['score']} | {metrics_str}"
+            )
 
     data: Dict[str, Any] = {
         "market": market,
@@ -51,10 +56,11 @@ def cmd_screen(args: argparse.Namespace) -> None:
     }
 
     if to_portfolio and results:
-        print(
-            f"\n--- Constructing Execution Portfolio (Capital: {capital:,.0f}) ---",
-            flush=True,
-        )
+        if not is_json:
+            print(
+                f"\n--- Constructing Execution Portfolio (Capital: {capital:,.0f}) ---",
+                flush=True,
+            )
         from portfolio.builder import PortfolioBuilder
 
         builder = PortfolioBuilder("Screened Portfolio", capital=capital)
@@ -67,15 +73,17 @@ def cmd_screen(args: argparse.Namespace) -> None:
                 current_price=float(item.get("current_price", 0.0)),
             )
         portfolio = builder.build(position_method="fixed")
-        print(portfolio.summary())
+        if not is_json:
+            print(portfolio.summary())
 
         tickets = portfolio.trade_ticket()
         for t in tickets:
-            print(
-                f"    -> BUY {t['code']} {t['name']}: {t['shares']} shares "
-                f"@ {t['price']:.2f} (Amount: {t['amount']:,.0f}, "
-                f"Fee: {t['est_fee']:.1f})"
-            )
+            if not is_json:
+                print(
+                    f"    -> BUY {t['code']} {t['name']}: {t['shares']} shares "
+                    f"@ {t['price']:.2f} (Amount: {t['amount']:,.0f}, "
+                    f"Fee: {t['est_fee']:.1f})"
+                )
             if track:
                 from tracker import start_tracking
 
@@ -93,7 +101,7 @@ def cmd_screen(args: argparse.Namespace) -> None:
             "positions_count": len(portfolio.positions),
         }
         data["trade_tickets"] = tickets
-        if track:
+        if track and not is_json:
             print(f"\n  Auto-registered {len(tickets)} positions into active tracking.")
 
     _save_report(

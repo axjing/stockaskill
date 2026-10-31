@@ -11,7 +11,7 @@ _FORMAT_CHOICES = ["json", "md", "both", "none"]
 
 
 def _common_output_args(parser: argparse.ArgumentParser) -> None:
-    """Add --output-dir and --format to any sub-parser."""
+    """Add --output-dir, --format, and --json to any sub-parser."""
     parser.add_argument(
         "--output-dir",
         default="reports",
@@ -22,6 +22,11 @@ def _common_output_args(parser: argparse.ArgumentParser) -> None:
         choices=_FORMAT_CHOICES,
         default="both",
         help="Report output format",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Directly output JSON to stdout for Agent tool consumption",
     )
 
 

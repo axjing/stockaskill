@@ -66,21 +66,33 @@ def report_filename(title: str, ext: str, output_dir: str = "") -> str:
     return os.path.join(abs_dir, f"{ts}_{title}.{ext}")
 
 
-def save_json(data: Any, title: str, output_dir: str = "reports") -> str:
+def save_json(
+    data: Any,
+    title: str,
+    output_dir: str = "reports",
+    verbose: bool = True,
+) -> str:
     """Save data as a JSON report file."""
     path = report_filename(title, "json", output_dir)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-    print(f"  JSON report: {path}")
+    if verbose:
+        print(f"  JSON report: {path}")
     return path
 
 
-def save_markdown(text: str, title: str, output_dir: str = "reports") -> str:
+def save_markdown(
+    text: str,
+    title: str,
+    output_dir: str = "reports",
+    verbose: bool = True,
+) -> str:
     """Save text as a Markdown report file."""
     path = report_filename(title, "md", output_dir)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
-    print(f"  Markdown report: {path}")
+    if verbose:
+        print(f"  Markdown report: {path}")
     return path
 
 
@@ -89,6 +101,7 @@ def save_report(
     report_type: str,
     output_dir: str = "reports",
     metadata: Optional[Dict[str, Any]] = None,
+    verbose: bool = True,
 ) -> Dict[str, str]:
     """Save a structured report (JSON) with optional metadata wrapper."""
     wrapped: Dict[str, Any] = {
@@ -100,7 +113,7 @@ def save_report(
         wrapped["metadata"] = metadata
     wrapped["data"] = data
 
-    json_path = save_json(wrapped, report_type, output_dir)
+    json_path = save_json(wrapped, report_type, output_dir, verbose=verbose)
     return {"json_path": json_path, "md_path": ""}
 
 

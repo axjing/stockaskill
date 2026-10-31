@@ -1,7 +1,6 @@
 """CLI command handlers for analyze functionality."""
 
 import argparse
-import json
 import sys
 
 from data_engine import get_fundamentals, get_kline
@@ -82,7 +81,6 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     )
 
 
-
 def cmd_diagnose(args: argparse.Namespace) -> None:
     """Deep diagnosis: strategy + sentiment + risk."""
     code = args.code
@@ -95,8 +93,6 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
 
         diag = StockDiagnosis(code, market)
         report = diag.full_report()
-        if fmt in ("json", "both"):
-            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
 
         md = format_diagnosis_summary(report)
         _save_report(
@@ -109,7 +105,6 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
         )
     except Exception as exc:
         print(f"Diagnosis failed: {exc}", file=sys.stderr)
-
 
 
 def cmd_deep_diagnose(args: argparse.Namespace) -> None:
@@ -156,6 +151,3 @@ def cmd_deep_diagnose(args: argparse.Namespace) -> None:
         )
     except Exception as exc:
         print(f"Deep diagnosis failed: {exc}", file=sys.stderr)
-
-
-

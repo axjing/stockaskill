@@ -112,6 +112,17 @@ When the user doesn't specify a value, use the CLI default:
 `--top 20` for scan, `--top 10` for alpha, `--capital 1000000` for portfolio,
 `--market A` for single-stock commands.
 
+## Agent output contract (--json)
+
+For programmatic LLM / AgentSkill tool execution, pass `--json` to any command.
+The command will suppress human-oriented ASCII decorations and output pure, schema-structured JSON directly to `stdout`.
+This allows one-shot structured parsing without secondary file reads.
+
+Examples:
+- `screen --market A --preset low_vol --top 5 --json`
+- `portfolio --optimize --target-cagr 0.08 --max-drawdown 0.05 --top-k 5 --market A --json`
+- `diagnose 600519 --market A --json`
+
 ## Local cache and data strategy
 
 All market data is stored in a local DuckDB cache database at <skill-root>/.cache/quant_cache.duckdb
