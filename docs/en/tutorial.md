@@ -32,11 +32,53 @@ In conventional quantitative research and algorithmic investing, analysts and AI
 **stockaskill** addresses these bottlenecks with a modern quantitative engineering architecture:
 
 ```mermaid
-flowchart LR
-    A["Local DuckDB<br/>42.44M Offline Base"] --> B["Incremental Sync<br/>(Backfill Watermark Gap)"]
-    B --> C["Vectorized Screening<br/>(0.5s Full-Market Scoring)"]
-    C --> D["Goal-Constrained Optimizer<br/>(SLSQP + 100-Share Lots)"]
-    D --> E["Thesis Tracking<br/>(Dynamic Trailing Stops)"]
+flowchart TD
+    subgraph DataLayer["1. Local-First Data Layer (DuckDB 42.44M)"]
+        DuckDB[("quant_cache.duckdb<br/>42.44M Rows / 26 Years<br/>A / HK / US / ETF")]
+        SyncUpdate["Dynamic Incremental Sync<br/>Watermark Gap Backfill"]
+        CalendarHeal["Autonomous Calendar<br/>& Quality Auto-Healing"]
+        SyncUpdate --> DuckDB
+        CalendarHeal --> DuckDB
+    end
+
+    subgraph AlphaLayer["2. Vectorized Alpha & Screening Engine"]
+        Screen["Vectorized Screener (screen)<br/>0.5s Full-Market Scoring"]
+        MultiFactor["7+1 Multi-Factor Model<br/>Value / Quality / Growth / Momentum / Low-Vol"]
+        Diagnosis["Unified Diagnosis Facade<br/>quick / full / deep Analysis"]
+        DuckDB ==> Screen
+        DuckDB ==> Diagnosis
+        MultiFactor -.-> Screen
+    end
+
+    subgraph ExecLayer["3. Goal-Constrained Portfolio & Order Sizing"]
+        Optimizer["SLSQP Portfolio Optimizer (portfolio --optimize)<br/>Target CAGR & Max Drawdown Dual Constraints"]
+        RiskBudget["Macro Regime Risk Budget<br/>Bull: 100% | Neutral: 60% | Defensive: 25%"]
+        BoardLot["100-Share Board Lot Sizing<br/>Actionable Trade Tickets & Cash Buffer"]
+        Screen ==> Optimizer
+        RiskBudget -.-> Optimizer
+        Optimizer ==> BoardLot
+    end
+
+    subgraph LoopLayer["4. Thesis Lifecycle & AI Agent Interface"]
+        Thesis["Thesis Lifecycle Tracking<br/>Capture -> Active -> Postmortem"]
+        RiskAlert["Dynamic Trailing Risk Alerts<br/>Stop-Loss & Take-Profit Patrol"]
+        AgentStream["Zero-Disk JSON Stream<br/>--json to stdout (AgentSkills.io)"]
+        BoardLot ==> Thesis
+        Thesis --> RiskAlert
+        BoardLot -.-> AgentStream
+        Screen -.-> AgentStream
+        Diagnosis -.-> AgentStream
+    end
+
+    classDef dataBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
+    classDef alphaBox fill:#1e1b4b,stroke:#a5b4fc,stroke-width:1.5px,color:#f8fafc;
+    classDef execBox fill:#064e3b,stroke:#34d399,stroke-width:1.5px,color:#f8fafc;
+    classDef loopBox fill:#3b1e08,stroke:#fbbf24,stroke-width:1.5px,color:#f8fafc;
+
+    class DuckDB,SyncUpdate,CalendarHeal dataBox;
+    class Screen,MultiFactor,Diagnosis alphaBox;
+    class Optimizer,RiskBudget,BoardLot execBox;
+    class Thesis,RiskAlert,AgentStream loopBox;
 ```
 
 - **Local-First Source of Truth**: Powered by an offline 42.44M-row DuckDB columnar engine spanning 26 years across A-share, HK, US, and ETF markets, delivering 0 network latency.

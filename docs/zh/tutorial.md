@@ -32,11 +32,53 @@
 **stockaskill** 针对上述问题构建了现代量化工程体系：
 
 ```mermaid
-flowchart LR
-    A["本地 DuckDB<br/>42.44M 离线底座"] --> B["动态增量保鲜<br/>(按需补齐缺失窗口)"]
-    B --> C["向量化截面选股<br/>(0.5 秒全市场打分)"]
-    C --> D["目标约束组合优化<br/>(SLSQP + 100股整手)"]
-    D --> E["Thesis 论据闭环<br/>(动态止盈止损追踪)"]
+flowchart TD
+    subgraph DataLayer["1. 本地优先离线全量底座 (DuckDB 4,244万行)"]
+        DuckDB[("quant_cache.duckdb<br/>4,244 万行 / 26 年历史周期<br/>A 股 / 港股 / 美股 / ETF")]
+        SyncUpdate["动态增量保鲜 (sync update)<br/>水位线缺口探测 + 3天安全重叠"]
+        CalendarHeal["交易日历与数据自愈<br/>7天落后自动静默对齐"]
+        SyncUpdate --> DuckDB
+        CalendarHeal --> DuckDB
+    end
+
+    subgraph AlphaLayer["2. 亚秒级多因子截面选股与诊断"]
+        Screen["向量化截面选股 (screen)<br/>0.5 秒全市场打分排序"]
+        MultiFactor["7+1 多因子体系<br/>估值 / 质量 / 成长 / 动量 / 低波 / 市值 / 分析师"]
+        Diagnosis["统一多级诊断门面 (diagnose)<br/>quick / full / deep 多维体检"]
+        DuckDB ==> Screen
+        DuckDB ==> Diagnosis
+        MultiFactor -.-> Screen
+    end
+
+    subgraph ExecLayer["3. 目标约束组合优化与整手生成"]
+        Optimizer["现代组合优化求解 (portfolio --optimize)<br/>Target CAGR & Max Drawdown 双重刚性约束"]
+        RiskBudget["宏观市场状态风险预算<br/>牛市 100% | 中性 60% | 防御 25%"]
+        BoardLot["A 股 100 股整手分配器<br/>真实可执行交易票据 + 闲置资金缓冲"]
+        Screen ==> Optimizer
+        RiskBudget -.-> Optimizer
+        Optimizer ==> BoardLot
+    end
+
+    subgraph LoopLayer["4. 投资论据跟踪与智能体协同"]
+        Thesis["Thesis 论据全生命周期<br/>入场建仓 -> 持仓巡检 -> 平仓复盘"]
+        RiskAlert["动态止盈止损巡检预警<br/>追踪止损线实时触发"]
+        AgentStream["零磁盘流式 JSON 数据流<br/>--json 标准输出 (AgentSkills.io 规范)"]
+        BoardLot ==> Thesis
+        Thesis --> RiskAlert
+        BoardLot -.-> AgentStream
+        Screen -.-> AgentStream
+        Diagnosis -.-> AgentStream
+    end
+
+    classDef dataBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
+    classDef alphaBox fill:#1e1b4b,stroke:#a5b4fc,stroke-width:1.5px,color:#f8fafc;
+    classDef execBox fill:#064e3b,stroke:#34d399,stroke-width:1.5px,color:#f8fafc;
+    classDef loopBox fill:#3b1e08,stroke:#fbbf24,stroke-width:1.5px,color:#f8fafc;
+
+    class DuckDB,SyncUpdate,CalendarHeal dataBox;
+    class Screen,MultiFactor,Diagnosis alphaBox;
+    class Optimizer,RiskBudget,BoardLot execBox;
+    class Thesis,RiskAlert,AgentStream loopBox;
 ```
 
 - **本地优先（Local-First）**：内置跨 26 年历史周期的 4,244 万行 DuckDB 列式底座，查询与因子计算 0 网络时延。
