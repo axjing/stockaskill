@@ -1,4 +1,9 @@
-﻿# Quant Data Cache-First + Incremental Sync: Best Practice Specification
+# Quant Data Cache-First + Incremental Sync: Best Practice Specification
+
+> [!NOTE]
+> **Architecture Update**: The system has fully evolved to **DuckDB** (`quant_cache.duckdb`, 42.44M rows) as the primary active columnar engine, with `quant_cache.db` preserved as an offline cold archive.
+> - **Modern Chinese Guide**: Please refer to [DuckDB 本地优先数据策略 (zh/data-strategy.md)](./zh/data-strategy.md)
+> - **Modern English Guide**: Please refer to [DuckDB Local-First Data Strategy (en/data-strategy.md)](./en/data-strategy.md)
 
 ## 1. Architecture Overview
 
