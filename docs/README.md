@@ -1,6 +1,6 @@
 # stockaskill Documentation | 文档中心
 
-[English](./en/README.md) | [简体中文](./zh/README.md)
+[English Docs](./en/README.md) | [简体中文文档](./zh/README.md) | [Project README (English)](../README.md) | [项目主页 (简体中文)](../README_ZH.md)
 
 ---
 
