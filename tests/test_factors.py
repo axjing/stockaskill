@@ -127,6 +127,12 @@ class TestGrowthFactor:
         assert accel == 0.5
         accel = gf._growth_acceleration([{"close": 10}] * 30)
         assert accel == 0.5
+        # Test boundary condition of exactly 60 bars (must not raise IndexError)
+        accel_60 = gf._growth_acceleration([{"close": 10}] * 60)
+        assert accel_60 == 0.5
+        # 61 bars has index 60 accessible
+        accel_61 = gf._growth_acceleration([{"close": 10}] * 61)
+        assert isinstance(accel_61, float)
 
 
 class TestMomentumFactor:

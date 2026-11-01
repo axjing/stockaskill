@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from data_engine.sync_update import (
     compute_incremental_fetch_window,
     get_market_watermark,
+    get_scope_watermark,
     get_symbol_watermark,
     update_symbol_incremental,
     update_symbols_batch,
@@ -126,6 +127,14 @@ class TestWatermarks:
         assert watermark == "2026-07-17"
         mock_cache.get_latest_daily_price_date.assert_called_with(market="A")
 
+    @patch("data_engine.sync_update.get_symbol_watermark")
+    def test_scope_watermark(self, mock_sym_watermark):
+        mock_sym_watermark.side_effect = lambda c, m: (
+            "2026-10-30" if c == "600519" else "2026-10-25"
+        )
+        wm = get_scope_watermark(["600519", "000858"], market="A")
+        assert wm == "2026-10-30"
+
 
 class TestUpdateSymbolIncremental:
     """Tests for update_symbol_incremental flow."""
@@ -194,6 +203,29 @@ class TestUpdateSymbolsBatch:
         assert res["updated_symbols"] == 1
         assert res["already_up_to_date"] == 1
         assert res["total_ingested_rows"] == 5
+
+    @patch("data_engine.sync_update.update_symbol_incremental")
+    @patch("data_engine.helpers._upsert_scope_sync_state")
+    @patch("data_engine.sync_update.get_scope_watermark")
+    def test_batch_execution_with_scope(self, mock_wm, mock_scope_sync, mock_update):
+        mock_update.return_value = {
+            "status": "up_to_date",
+            "validated_rows": 0,
+            "rejected_rows": 0,
+        }
+        mock_wm.return_value = "2026-10-30"
+
+        res = update_symbols_batch(
+            ["600519"],
+            market="A",
+            trigger_snapshot=False,
+            scope_type="watchlist",
+            scope_key="A",
+        )
+        assert res["total_symbols"] == 1
+        mock_scope_sync.assert_called_once_with(
+            "watchlist", "A", "A", "summary", status="ok", covered_date="2026-10-30"
+        )
 
 
 class TestTradeCalendarSync:

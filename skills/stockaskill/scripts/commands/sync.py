@@ -305,6 +305,8 @@ def cmd_sync(args: argparse.Namespace) -> None:
                 market=market,
                 limit=limit,
                 trigger_snapshot=not skip_snapshot,
+                scope_type=scope,
+                scope_key=market,
             )
             print(
                 f"  Summary: updated={result.get('updated_symbols')}, "

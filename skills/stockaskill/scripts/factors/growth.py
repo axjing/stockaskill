@@ -67,11 +67,11 @@ class GrowthFactor(Factor):
         between price momentum and fundamental acceleration is moderate;
         treat this as a secondary signal.
         """
-        if len(kline) < 60:
+        if len(kline) < 61:
             return 0.5
         closes = [row.get("close", 0) for row in kline[:120]]
         closes = [c for c in closes if c > 0]
-        if len(closes) < 60:
+        if len(closes) < 61:
             return 0.5
         ret_6m = (closes[0] - closes[60]) / max(closes[60], 1e-9)
         ret_3m = (closes[0] - closes[30]) / max(closes[30], 1e-9)

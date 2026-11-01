@@ -60,6 +60,16 @@ def get_market_watermark(market: str = "A") -> Optional[str]:
     return cache.get_latest_daily_price_date(market=market)
 
 
+def get_scope_watermark(codes: Sequence[str], market: str = "A") -> Optional[str]:
+    """Retrieve the latest cached trading date across a collection of symbols."""
+    dates = []
+    for code in codes:
+        d = get_symbol_watermark(code, market)
+        if d:
+            dates.append(d)
+    return max(dates) if dates else None
+
+
 def compute_incremental_fetch_window(
     latest_cached_date: Optional[str],
     market: str = "A",
@@ -125,6 +135,18 @@ def update_symbol_incremental(
     )
 
     if start_date is None:
+        try:
+            from data_engine.helpers import _upsert_symbol_sync_state
+
+            _upsert_symbol_sync_state(
+                canonical_code,
+                market,
+                "history",
+                status="ok" if latest_date else "partial",
+                covered_date=latest_date or "",
+            )
+        except Exception as exc:
+            logger.debug("Failed to record sync state: %s", exc)
         return {
             "code": canonical_code,
             "market": market,
@@ -163,12 +185,24 @@ def update_symbol_incremental(
         cache.upsert_daily_price(valid_rows)
 
     new_latest = get_symbol_watermark(canonical_code, market)
+    try:
+        from data_engine.helpers import _upsert_symbol_sync_state
+
+        _upsert_symbol_sync_state(
+            canonical_code,
+            market,
+            "history",
+            status="ok" if new_latest else "partial",
+            covered_date=new_latest or "",
+        )
+    except Exception as exc:
+        logger.debug("Failed to record sync state: %s", exc)
 
     if trigger_snapshot and valid_rows and market != "FUND":
         try:
             from data_engine.daily_snapshot import build_factor_daily_snapshot
 
-            build_factor_daily_snapshot(market=market, limit=1)
+            build_factor_daily_snapshot(market=market, codes=[canonical_code], limit=1)
         except Exception as exc:
             logger.warning("Snapshot refresh failed after update: %s", exc)
 
@@ -195,6 +229,8 @@ def update_symbols_batch(
     padding_days: int = 3,
     limit: int = 0,
     trigger_snapshot: bool = True,
+    scope_type: str = "",
+    scope_key: str = "",
 ) -> Dict[str, Any]:
     """Incrementally update a batch of symbols with checkpointing.
 
@@ -238,9 +274,25 @@ def update_symbols_batch(
         try:
             from data_engine.daily_snapshot import build_factor_daily_snapshot
 
-            build_factor_daily_snapshot(market=market, limit=limit)
+            build_factor_daily_snapshot(market=market, codes=target_codes)
         except Exception as exc:
             logger.warning("Batch snapshot rebuild failed: %s", exc)
+
+    if scope_type:
+        try:
+            from data_engine.helpers import _upsert_scope_sync_state
+
+            covered_date = get_scope_watermark(target_codes, market) or ""
+            _upsert_scope_sync_state(
+                scope_type,
+                scope_key or market,
+                market,
+                "summary",
+                status="ok" if failed_count == 0 else "partial",
+                covered_date=covered_date,
+            )
+        except Exception as exc:
+            logger.debug("Failed to record scope sync state: %s", exc)
 
     return {
         "market": market,

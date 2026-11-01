@@ -473,7 +473,7 @@ def run_data_quality_repair(
                 if market == "FUND":
                     get_fund_nav(code, repair_days, force_refresh=True)
                 else:
-                    get_kline(code, market, days=repair_days, force_refresh=False)
+                    get_kline(code, market, days=repair_days, force_refresh=True)
                 calls += 1
             except Exception as exc:  # noqa: BLE001 - keep going per symbol
                 errors.append(f"history: {exc}")
