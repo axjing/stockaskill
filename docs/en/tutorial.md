@@ -32,53 +32,61 @@ In conventional quantitative research and algorithmic investing, analysts and AI
 **stockaskill** addresses these bottlenecks with a modern quantitative engineering architecture:
 
 ```mermaid
-flowchart TD
-    subgraph DataLayer["1. Local-First Data Layer (DuckDB 42.44M)"]
-        DuckDB[("quant_cache.duckdb<br/>42.44M Rows / 26 Years<br/>A / HK / US / ETF")]
-        SyncUpdate["Dynamic Incremental Sync<br/>Watermark Gap Backfill"]
-        CalendarHeal["Autonomous Calendar<br/>& Quality Auto-Healing"]
-        SyncUpdate --> DuckDB
-        CalendarHeal --> DuckDB
+flowchart LR
+    subgraph S1["01 · DATA FOUNDATION"]
+        direction TB
+        D1[("DuckDB OLAP Engine<br/>42.44M Rows · 26-Year Base<br/>A / HK / US / ETF")]
+        D2["Dynamic Incremental Sync<br/>sync update<br/>Watermark Gap Backfill"]
+        D3["Trade Calendar Healing<br/>Quality Circuit Breakers"]
+        D2 --> D1
+        D3 --> D1
     end
 
-    subgraph AlphaLayer["2. Vectorized Alpha & Screening Engine"]
-        Screen["Vectorized Screener (screen)<br/>0.5s Full-Market Scoring"]
-        MultiFactor["7+1 Multi-Factor Model<br/>Value / Quality / Growth / Momentum / Low-Vol"]
-        Diagnosis["Unified Diagnosis Facade<br/>quick / full / deep Analysis"]
-        DuckDB ==> Screen
-        DuckDB ==> Diagnosis
-        MultiFactor -.-> Screen
+    subgraph S2["02 · ALPHA SCREENING"]
+        direction TB
+        A1["Vectorized Screener<br/>screen · 0.5s Full-Market<br/>Columnar SIMD Scanning"]
+        A2["7+1 Multi-Factor Model<br/>Value · Quality · Growth<br/>Momentum · Low-Vol · Size"]
+        A3["Multi-Level Diagnosis<br/>diagnose<br/>quick / full / deep"]
+        A2 -.-> A1
+        A1 -.-> A3
     end
 
-    subgraph ExecLayer["3. Goal-Constrained Portfolio & Order Sizing"]
-        Optimizer["SLSQP Portfolio Optimizer (portfolio --optimize)<br/>Target CAGR & Max Drawdown Dual Constraints"]
-        RiskBudget["Macro Regime Risk Budget<br/>Bull: 100% | Neutral: 60% | Defensive: 25%"]
-        BoardLot["100-Share Board Lot Sizing<br/>Actionable Trade Tickets & Cash Buffer"]
-        Screen ==> Optimizer
-        RiskBudget -.-> Optimizer
-        Optimizer ==> BoardLot
+    subgraph S3["03 · PORTFOLIO & EXECUTION"]
+        direction TB
+        P1["SLSQP Convex Optimizer<br/>portfolio --optimize<br/>Dual Target CAGR & MaxDD"]
+        P2["Macro Risk Budgeting<br/>Bull: 100% · Neutral: 60%<br/>Defensive: 25%"]
+        P3["100-Share Board Lot Sizing<br/>Trade Execution Tickets<br/>Cash Buffer Guard"]
+        P2 -.-> P1
+        P1 --> P3
     end
 
-    subgraph LoopLayer["4. Thesis Lifecycle & AI Agent Interface"]
-        Thesis["Thesis Lifecycle Tracking<br/>Capture -> Active -> Postmortem"]
-        RiskAlert["Dynamic Trailing Risk Alerts<br/>Stop-Loss & Take-Profit Patrol"]
-        AgentStream["Zero-Disk JSON Stream<br/>--json to stdout (AgentSkills.io)"]
-        BoardLot ==> Thesis
-        Thesis --> RiskAlert
-        BoardLot -.-> AgentStream
-        Screen -.-> AgentStream
-        Diagnosis -.-> AgentStream
+    subgraph S4["04 · THESIS & AGENT LOOP"]
+        direction TB
+        T1["Thesis Lifecycle Tracker<br/>thesis capture<br/>Active -> Review -> Exit"]
+        T2["Dynamic Risk Patrol<br/>risk-alert<br/>Trailing Stop-Loss Patrol"]
+        T3["Agent Zero-Disk Stream<br/>--json to stdout<br/>AgentSkills.io Protocol"]
+        T1 --> T2
+        T1 -.-> T3
     end
 
-    classDef dataBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
-    classDef alphaBox fill:#1e1b4b,stroke:#a5b4fc,stroke-width:1.5px,color:#f8fafc;
-    classDef execBox fill:#064e3b,stroke:#34d399,stroke-width:1.5px,color:#f8fafc;
-    classDef loopBox fill:#3b1e08,stroke:#fbbf24,stroke-width:1.5px,color:#f8fafc;
+    D1 ===>|"0-Latency OLAP"| A1
+    A1 ===>|"Top-K Candidates"| P1
+    P3 ===>|"Execution Orders"| T1
 
-    class DuckDB,SyncUpdate,CalendarHeal dataBox;
-    class Screen,MultiFactor,Diagnosis alphaBox;
-    class Optimizer,RiskBudget,BoardLot execBox;
-    class Thesis,RiskAlert,AgentStream loopBox;
+    classDef dataNode fill:#0b192c,stroke:#008dda,stroke-width:2px,color:#e0f2fe;
+    classDef alphaNode fill:#1a103c,stroke:#7952b3,stroke-width:2px,color:#ede9fe;
+    classDef execNode fill:#06281e,stroke:#00b894,stroke-width:2px,color:#d1fae5;
+    classDef loopNode fill:#281605,stroke:#e17055,stroke-width:2px,color:#fef3c7;
+
+    class D1,D2,D3 dataNode;
+    class A1,A2,A3 alphaNode;
+    class P1,P2,P3 execNode;
+    class T1,T2,T3 loopNode;
+
+    style S1 fill:#060d17,stroke:#008dda,stroke-width:1.5px,color:#93c5fd;
+    style S2 fill:#0f0923,stroke:#7952b3,stroke-width:1.5px,color:#c4b5fd;
+    style S3 fill:#03140f,stroke:#00b894,stroke-width:1.5px,color:#6ee7b7;
+    style S4 fill:#140b03,stroke:#e17055,stroke-width:1.5px,color:#fde68a;
 ```
 
 - **Local-First Source of Truth**: Powered by an offline 42.44M-row DuckDB columnar engine spanning 26 years across A-share, HK, US, and ETF markets, delivering 0 network latency.

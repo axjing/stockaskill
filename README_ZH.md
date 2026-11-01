@@ -17,53 +17,61 @@
 ## 核心定量能力一览
 
 ```mermaid
-flowchart TD
-    subgraph DataLayer["1. 本地优先离线全量底座 (DuckDB 4,244万行)"]
-        DuckDB[("quant_cache.duckdb<br/>4,244 万行 / 26 年历史周期<br/>A 股 / 港股 / 美股 / ETF")]
-        SyncUpdate["动态增量保鲜 (sync update)<br/>水位线缺口探测 + 3天安全重叠"]
-        CalendarHeal["交易日历与数据自愈<br/>7天落后自动静默对齐"]
-        SyncUpdate --> DuckDB
-        CalendarHeal --> DuckDB
+flowchart LR
+    subgraph S1["01 · 本地数据底座"]
+        direction TB
+        D1[("DuckDB OLAP 列式引擎<br/>4,244 万行 · 26 年跨市场<br/>A 股 / 港股 / 美股 / ETF")]
+        D2["动态增量保鲜<br/>sync update<br/>水位线缺口探测 + 3天安全重叠"]
+        D3["交易日历与数据自愈<br/>7天落后静默对齐 + 熔断修复"]
+        D2 --> D1
+        D3 --> D1
     end
 
-    subgraph AlphaLayer["2. 亚秒级多因子截面选股与诊断"]
-        Screen["向量化截面选股 (screen)<br/>0.5 秒全市场打分排序"]
-        MultiFactor["7+1 多因子体系<br/>估值 / 质量 / 成长 / 动量 / 低波 / 市值 / 分析师"]
-        Diagnosis["统一多级诊断门面 (diagnose)<br/>quick / full / deep 多维体检"]
-        DuckDB ==> Screen
-        DuckDB ==> Diagnosis
-        MultiFactor -.-> Screen
+    subgraph S2["02 · 截面选股与诊断"]
+        direction TB
+        A1["向量化截面选股<br/>screen · 0.5s 全市场<br/>DuckDB 列式 SIMD 打分"]
+        A2["7+1 多因子体系<br/>估值 · 质量 · 成长<br/>动量 · 低波 · 市值 · 分析师"]
+        A3["统一多级诊断门面<br/>diagnose<br/>quick / full / deep 多维体检"]
+        A2 -.-> A1
+        A1 -.-> A3
     end
 
-    subgraph ExecLayer["3. 目标约束组合优化与整手生成"]
-        Optimizer["现代组合优化求解 (portfolio --optimize)<br/>Target CAGR & Max Drawdown 双重刚性约束"]
-        RiskBudget["宏观市场状态风险预算<br/>牛市 100% | 中性 60% | 防御 25%"]
-        BoardLot["A 股 100 股整手分配器<br/>真实可执行交易票据 + 闲置资金缓冲"]
-        Screen ==> Optimizer
-        RiskBudget -.-> Optimizer
-        Optimizer ==> BoardLot
+    subgraph S3["03 · 组合优化与执行"]
+        direction TB
+        P1["SLSQP 现代组合优化<br/>portfolio --optimize<br/>Target CAGR 与 MaxDD 双刚性约束"]
+        P2["宏观市场状态风险预算<br/>牛市 100% · 中性 60%<br/>防御 25%"]
+        P3["100 股整手分配器<br/>真实交易买卖票单<br/>+ 闲置资金缓冲保护"]
+        P2 -.-> P1
+        P1 --> P3
     end
 
-    subgraph LoopLayer["4. 投资论据跟踪与智能体协同"]
-        Thesis["Thesis 论据全生命周期<br/>入场建仓 -> 持仓巡检 -> 平仓复盘"]
-        RiskAlert["动态止盈止损巡检预警<br/>追踪止损线实时触发"]
-        AgentStream["零磁盘流式 JSON 数据流<br/>--json 标准输出 (AgentSkills.io 规范)"]
-        BoardLot ==> Thesis
-        Thesis --> RiskAlert
-        BoardLot -.-> AgentStream
-        Screen -.-> AgentStream
-        Diagnosis -.-> AgentStream
+    subgraph S4["04 · 论据跟踪与智能体闭环"]
+        direction TB
+        T1["Thesis 论据全生命周期<br/>thesis capture<br/>入场建仓 -> 持仓巡检 -> 平仓复盘"]
+        T2["动态追踪风控预警<br/>risk-alert<br/>移动止损与止盈雷达"]
+        T3["零磁盘流式数据流<br/>--json 标准输出<br/>AgentSkills.io 规范"]
+        T1 --> T2
+        T1 -.-> T3
     end
 
-    classDef dataBox fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
-    classDef alphaBox fill:#1e1b4b,stroke:#a5b4fc,stroke-width:1.5px,color:#f8fafc;
-    classDef execBox fill:#064e3b,stroke:#34d399,stroke-width:1.5px,color:#f8fafc;
-    classDef loopBox fill:#3b1e08,stroke:#fbbf24,stroke-width:1.5px,color:#f8fafc;
+    D1 ===>|"0网络时延检索"| A1
+    A1 ===>|"Top-K 优质候选池"| P1
+    P3 ===>|"整手执行订单"| T1
 
-    class DuckDB,SyncUpdate,CalendarHeal dataBox;
-    class Screen,MultiFactor,Diagnosis alphaBox;
-    class Optimizer,RiskBudget,BoardLot execBox;
-    class Thesis,RiskAlert,AgentStream loopBox;
+    classDef dataNode fill:#0b192c,stroke:#008dda,stroke-width:2px,color:#e0f2fe;
+    classDef alphaNode fill:#1a103c,stroke:#7952b3,stroke-width:2px,color:#ede9fe;
+    classDef execNode fill:#06281e,stroke:#00b894,stroke-width:2px,color:#d1fae5;
+    classDef loopNode fill:#281605,stroke:#e17055,stroke-width:2px,color:#fef3c7;
+
+    class D1,D2,D3 dataNode;
+    class A1,A2,A3 alphaNode;
+    class P1,P2,P3 execNode;
+    class T1,T2,T3 loopNode;
+
+    style S1 fill:#060d17,stroke:#008dda,stroke-width:1.5px,color:#93c5fd;
+    style S2 fill:#0f0923,stroke:#7952b3,stroke-width:1.5px,color:#c4b5fd;
+    style S3 fill:#03140f,stroke:#00b894,stroke-width:1.5px,color:#6ee7b7;
+    style S4 fill:#140b03,stroke:#e17055,stroke-width:1.5px,color:#fde68a;
 ```
 
 1. **真正本地优先（Local-First）**：绝不无节制调用远程 API。分析、选股、因子计算、回测 100% 优先在本地 DuckDB 列式引擎执行，实现 **0 网络时延** 与毫秒级反馈。
