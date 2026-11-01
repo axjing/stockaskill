@@ -1,5 +1,7 @@
 # stockaskill System Overview & Architecture Manual
 
+[Docs Portal](../README.md) | [Hands-On Tutorial](tutorial.md) | [CLI Reference](cli-reference.md) | [Data Strategy](data-strategy.md) | [简体中文版](../zh/README.md)
+
 > **Version**: 2.1.0  
 > **Core Engine**: DuckDB OLAP Columnar Store (42.44 Million rows across 26 years)  
 > **Python Runtime**: Python 3.10+  

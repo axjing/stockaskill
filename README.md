@@ -1,617 +1,238 @@
-﻿# stockaskill
+# stockaskill
 
-A 股中长期投资分析 Skill — 基于多因子量化模型, 覆盖选股、组合构建、风险控制、买卖时机全流程。数据源为 AKShare, 本地 DuckDB 列式缓存与离线全量数据驱动。
+[English](README_EN.md) | [简体中文](README.md) | [文档中心 / Docs](docs/README.md) | [实战教程 / Tutorial](docs/zh/tutorial.md)
 
-当前项目定位已经明确为:
+---
 
-- 本地优先、离线全量数据驱动的投资分析与量化决策引擎 (基于 4,244 万行跨市场 26 年历史数据)
-- 具备亚秒级全市场截面选股 (`screen`)、目标约束组合优化求解 (`portfolio --optimize`) 与动态增量保鲜 (`sync update`)
-- `FUND` 路径当前按 ETF-first 语义支持, 不等同于广义公募基金全覆盖
+**stockaskill** 是一个**离线全量数据驱动、本地优先的量化投资决策与分析引擎**，专为中长期量化选股、组合优化、风险预算控制与买卖时机决策打造。
 
-## 适用框架
+底层搭载高性能列式存储引擎 **DuckDB**（内置跨 A 股 / 港股 / 美股 / ETF 26 年历史周期的 **4,244 万行** 高质量日线行情与基本面数据），具备亚秒级全市场截面选股、目标约束组合优化求解、动态增量保鲜、A 股 100 股整手交易单生成与投资论据全生命周期跟踪能力。
 
-兼容以下智能体框架, 均使用标准 `SKILL.md` 格式:
+> [!NOTE]
+> - **存储架构**：DuckDB (`quant_cache.duckdb`) 为当前唯一活跃存储与分析引擎；历史 SQLite 文件 (`quant_cache.db`) 严格保留为只读离线冷备归档。
+> - **基金覆盖**：当前 `FUND` 路径按 **ETF-first** 语义提供高精度支持，不等同于广义公募基金全覆盖。
+
+---
+
+## 核心定量能力一览
+
+```mermaid
+flowchart LR
+    A["本地 DuckDB 42.44M<br/>(26 年跨市场历史底座)"] --> B["动态增量保鲜<br/>(sync update 水位线填补)"]
+    B --> C["向量化截面选股<br/>(screen 0.5 秒全市场打分)"]
+    C --> D["目标约束组合优化<br/>(SLSQP 求解 + 100 股整手)"]
+    D --> E["Thesis 论据闭环<br/>(动态止盈止损巡检)"]
+```
+
+1. **真正本地优先（Local-First）**：绝不无节制调用远程 API。分析、选股、因子计算、回测 100% 优先在本地 DuckDB 列式引擎执行，实现 **0 网络时延** 与毫秒级反馈。
+2. **动态增量同步（Incremental Sync）**：从不盲目全量拉取。通过 `sync update` 自动比对最新水位线，仅拉取缺失日期窗口（含 3 天安全重叠区），避免触发 API 限额。
+3. **亚秒级向量化多因子选股（`screen`）**：基于 DuckDB OLAP 窗口函数与列式向量化计算，从 5,400+ 只股票的全历史截面中筛选优质标的仅需 **0.2 ~ 0.5 秒**。
+4. **目标约束现代组合优化（`portfolio --optimize`）**：基于 SLSQP 凸优化求解器，在目标年化（Target CAGR）与最大回撤（Max Drawdown）双重刚性约束下求解最佳夏普权重，并自动按 A 股 100 股整手（Board Lot）生成交易票单。
+5. **单标的多级诊断门面（`diagnose`）**：统一整合 `quick`（快速因子速查）、`full`（7 大因子雷达与财务健康）、`deep`（估值分位与同业对比长报告）三级诊断。
+6. **投资论据追踪与动态风控（`thesis` / `risk-alert`）**：建立 `建仓论据 -> 持仓巡检 -> 动态止损预警 -> 平仓复盘归因` 的完整决策闭环。
+7. **智能体原生协同（Agent-First）**：所有 CLI 命令支持 `--json` 输出标准化数据流至标准输出（stdout），零磁盘中间文件，完美兼容 [AgentSkills.io](https://agentskills.io/home) 规范。
+
+---
+
+## 官方文档中心
+
+本项目在 `docs/` 目录提供了详尽的中英文双语工程与实战文档：
+
+| 语言 | 文档链接 | 核心内容 |
+|:---|:---|:---|
+| 🇨🇳 中文 | [实战操作教程](docs/zh/tutorial.md) | 从环境安装、增量保鲜、截面选股到整手组合优化的保姆级实战步骤 |
+| 🇨🇳 中文 | [功能全景手册与架构设计](docs/zh/README.md) | 系统定位、底层设计、7+1 多因子体系与业务闭环 |
+| 🇨🇳 中文 | [CLI 命令行完整字典](docs/zh/cli-reference.md) | 20+ 个核心命令的完整参数、标志位与 Agent 工具调用示例 |
+| 🇨🇳 中文 | [DuckDB 本地优先数据策略](docs/zh/data-strategy.md) | 4,244 万行数据物理表结构、水位线同步、多源熔断降级规范 |
+| 🇬🇧 English | [Hands-On Practical Tutorial](docs/en/tutorial.md) | Step-by-step quant workflow guide from setup to board lot execution |
+| 🇬🇧 English | [System Overview & Architecture](docs/en/README.md) | Complete system architecture, quant models, and optimization solver |
+| 🇬🇧 English | [CLI Reference & Agent Tools](docs/en/cli-reference.md) | Exhaustive CLI flags, `--json` streaming protocols, and options |
+| 🇬🇧 English | [DuckDB Local-First Data Strategy](docs/en/data-strategy.md) | Columnar schemas, sync state watermarks, and multi-source fallbacks |
+
+---
+
+## 适用框架与智能体集成
+
+兼容以下主流智能体与代码助手框架，均使用标准 `SKILL.md` 格式：
 
 | 框架 | 技能路径 | 加载方式 | 调用方式 |
 |------|---------|---------|---------|
-| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` 或 `~/.config/opencode/skills/stockaskill/` | 按需加载 (skill 工具) | 自动匹配用户意图 / `skill stockaskill` |
+| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` 或 `~/.config/opencode/skills/stockaskill/` | 按需加载 (skill 工具) | 自动匹配意图 / `skill stockaskill` |
 | [claudecode](https://docs.anthropic.com/en/docs/claude-code/overview) | `.claude/skills/stockaskill/` 或 `~/.claude/skills/stockaskill/` | 按需加载 (描述匹配) | 自动触发 / `/stockaskill` |
-| [codex](https://developers.openai.com/codex) | `.agents/skills/stockaskill/` (项目) 或 `~/.agents/skills/stockaskill/` (全局) | 按需加载 (描述匹配) | 自动触发 / `$stockaskill` / `/skills` |
-| [openclaw](https://docs.openclaw.ai) | `<workspace>/skills/stockaskill/` 或 `~/.openclaw/skills/stockaskill/` 或 `.agents/skills/stockaskill/` | 会话启动时加载 (支持 gating 过滤) | 自动注入 / `/stockaskill` |
-| Cursor | `.cursor/rules/stockaskill.mdc` | 按规则匹配 | 自动匹配文件上下文 |
-| Windsurf | `.windsurf/rules/` | 会话启动时加载 | 自动注入 |
-| 其他 | 参照对应框架的 skill 放置说明 | — | — |
+| [codex](https://developers.openai.com/codex) | `.agents/skills/stockaskill/` 或 `~/.agents/skills/stockaskill/` | 按需加载 (描述匹配) | 自动触发 / `$stockaskill` |
+| [openclaw](https://docs.openclaw.ai) | `<workspace>/skills/stockaskill/` 或 `~/.openclaw/skills/stockaskill/` | 会话启动加载 | 自动注入 / `/stockaskill` |
+| Cursor | `.cursor/rules/stockaskill.mdc` | 规则匹配 | 自动匹配文件上下文 |
+| Windsurf | `.windsurf/rules/` | 会话启动加载 | 自动注入 |
 
-> 所有框架共享同一份 `SKILL.md`, 只需将 `stockaskill/` 目录复制到对应路径即可。
+---
 
-## 快速开始
+## 快速上手
 
-### 环境准备
+### 1. 环境准备
 
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install akshare efinance baostock pandas numpy scipy
-```
-
-要求 Python `>=3.10`。
-
-如果仓库里的 `.venv/` 是另一台机器生成的 Windows 风格环境
-(`.venv/Scripts/` 而不是 `.venv/bin/`), 不要直接复用; 请在当前系统重建本地 venv。
-
-### 安装
-
-#### 一键安装 (推荐)
-
-使用 [Agent Skills CLI](https://github.com/vercel-labs/skills) 自动检测已安装的框架并安装到对应路径:
+要求 **Python >= 3.10**。推荐使用 `uv`：
 
 ```bash
-# 全局安装 (当前用户所有项目可用)
-npx skills add axjing/stockaskill --skill stockaskill -g
+# 克隆代码仓库
+git clone https://github.com/axjing/stockaskill.git
+cd stockaskill
 
-# 或项目级安装 (仅当前项目)
-npx skills add axjing/stockaskill --skill stockaskill
+# 创建并激活 Python 3.10 虚拟环境
+uv venv --python 3.10
+# Windows: .venv\Scripts\activate
+# Unix: source .venv/bin/activate
 
-# 仅安装到指定框架
-npx skills add axjing/stockaskill --skill stockaskill -a claude-code -a opencode -a codex -g
+# 安装依赖
+uv pip install -e .
 ```
 
-`npx skills add` 自动识别以下框架:
-
-| 框架 | 目标路径 |
-|------|---------|
-| opencode | `~/.config/opencode/skills/stockaskill/` |
-| claudecode | `~/.claude/skills/stockaskill/` |
-| codex | `~/.agents/skills/stockaskill/` |
-| openclaw | `~/.openclaw/skills/stockaskill/` |
-| Cursor | `.cursor/rules/stockaskill.mdc` |
-| 全部 (ClawHub) | 发布后支持 `openclaw skills install @axjing/stockaskill` |
-
-> 详细命令选项: `npx skills add --help` 或查看 [Agent Skills CLI 文档](https://github.com/vercel-labs/skills)。
-
-#### 手动安装 (按框架)
-
-以下为各框架的手动安装方法, 适用于无法使用 `npx skills add` 的环境。
-
-##### opencode
+### 2. 检查存储引擎与数据底座
 
 ```bash
-# 全局安装 (所有项目可用)
-mkdir -p ~/.config/opencode/skills
-cp -r stockaskill ~/.config/opencode/skills/stockaskill
+# 确认当前底层引擎为 DuckDB
+uv run python skills/stockaskill/scripts/run.py cache engine
 
-# 或项目级安装
-mkdir -p .opencode/skills
-cp -r stockaskill .opencode/skills/stockaskill
+# 查看本地数据总量与分布 (42.44M 行数据)
+uv run python skills/stockaskill/scripts/run.py cache stats
 ```
 
-opencode 也兼容 `.claude/skills/` 路径, 可直接复用 claudecode 配置。
+---
 
-##### claudecode
+## 核心命令精选
+
+### 1. 亚秒级多因子截面选股 (`screen`)
+
+0.5 秒内完成全市场 5,400+ 只股票的截面排序，支持多种成熟策略预设：
 
 ```bash
-# 全局安装
-mkdir -p ~/.claude/skills
-cp -r stockaskill ~/.claude/skills/stockaskill
+# 低波动稳健防御型选股 (筛选前 10 只)
+uv run python skills/stockaskill/scripts/run.py screen --market A --preset low_vol --top 10
 
-# 或项目级安装
-mkdir -p .claude/skills
-cp -r stockaskill .claude/skills/stockaskill
+# 动量增强型主升浪龙头选股
+uv run python skills/stockaskill/scripts/run.py screen --market A --preset momentum_enhanced --top 5
+
+# 深度价值反转选股 (低估值 + 高财务质量)
+uv run python skills/stockaskill/scripts/run.py screen --market A --preset deep_value --top 10
+
+# 自定义多因子权重选股
+uv run python skills/stockaskill/scripts/run.py screen --market A \
+  --value-weight 0.2 --quality-weight 0.3 --momentum-weight 0.3 --growth-weight 0.2 --top 8
 ```
 
-claudecode 会自动发现 `.claude/skills/*/SKILL.md` 中的技能。
+### 2. 目标约束现代组合优化与整手下单 (`portfolio --optimize`)
 
-##### codex (OpenAI Codex CLI)
+在目标年化与最大回撤硬性约束下求解最佳夏普权重，并自动转换为 A 股 100 股整手（Board Lot）交易单：
 
 ```bash
-# 项目安装 (推荐, 按路径发现)
-mkdir -p .agents/skills
-cp -r stockaskill .agents/skills/stockaskill
-
-# 或全局安装
-mkdir -p ~/.agents/skills
-cp -r stockaskill ~/.agents/skills/stockaskill
+# 目标年化 12%，最大回撤 6%，可用资金 50 万元，对 5 只标的进行求解
+uv run python skills/stockaskill/scripts/run.py portfolio \
+  --codes 600519,000858,601318,600036,002475 \
+  --market A \
+  --optimize \
+  --target-cagr 0.12 \
+  --max-drawdown 0.06 \
+  --capital 500000
 ```
 
-codex 从当前目录向上扫描 `.agents/skills/` 直至仓库根目录。也可在 `~/.codex/config.toml` 中配置技能路径:
+输出内容包含：
+- 宏观状态风险预算与总权益仓位上限（牛市 100% / 中性 60% / 防御 25%）
+- SLSQP 数学最优化理论权重
+- 实际可执行的 100 股整手买入单、占用资金与预留闲置现金（Cash buffer）
 
-```toml
-[[skills.config]]
-path = "/path/to/stockaskill"
-enabled = true
-```
-
-##### openclaw
+### 3. 单标的多级深度诊断 (`diagnose`)
 
 ```bash
-# 工作区安装 (推荐)
-cp -r stockaskill ./skills/stockaskill
+# 快速诊断 (耗时约 0.1s，展示核心因子与简评)
+uv run python skills/stockaskill/scripts/run.py diagnose 600519 --market A --level quick
 
-# 或个人全局安装
-cp -r stockaskill ~/.openclaw/skills/stockaskill
+# 完整诊断 (默认级别，包含 7 大因子雷达与财务健康度)
+uv run python skills/stockaskill/scripts/run.py diagnose 600519 --market A --level full
 
-# 或用 ClawHub 发布后安装
-# clawhub install stockaskill
+# 深度长报告诊断 (包含估值历史分位数、同业对标与风险警示)
+uv run python skills/stockaskill/scripts/run.py diagnose 600519 --market A --level deep
 ```
 
-也可通过 `~/.openclaw/openclaw.json` 的 `skills.load.extraDirs` 添加自定义搜索路径:
-
-```json5
-{
-  skills: {
-    load: {
-      extraDirs: ["/path/to/stockaskill"]
-    }
-  }
-}
-```
-
-##### Cursor
+### 4. 动态增量保鲜与数据质量 (`sync` / `status`)
 
 ```bash
-mkdir -p .cursor/rules
-# 将 SKILL.md 复制为 Cursor 规则
-cp stockaskill/SKILL.md .cursor/rules/stockaskill.mdc
+# 查看单只股票或自选股数据保鲜状态 (本地 0 网络请求)
+uv run python skills/stockaskill/scripts/run.py status data symbol 600519 --market A
+uv run python skills/stockaskill/scripts/run.py status data watchlist --market A
+
+# 增量更新单个标的 (仅拉取最新缺失区间)
+uv run python skills/stockaskill/scripts/run.py sync update 600519 --market A
+
+# 增量更新整个自选股监控池
+uv run python skills/stockaskill/scripts/run.py sync update --scope watchlist --market A
+
+# 数据质量巡检与分层修复
+uv run python skills/stockaskill/scripts/run.py sync check --market A --codes 600519,000858
+uv run python skills/stockaskill/scripts/run.py sync repair --market A --codes 600519
 ```
 
-##### Windsurf
+### 5. 投资论据跟踪与动态风控 (`thesis` / `risk-alert`)
 
 ```bash
-mkdir -p .windsurf/rules
-cp stockaskill/SKILL.md .windsurf/rules/stockaskill.md
+# 记录建仓论据与入场价格
+uv run python skills/stockaskill/scripts/run.py thesis capture 600519 --market A \
+  --notes "低波动蓝筹配置，股息率 > 3.5%" --catalyst "业绩稳健增长"
+
+# 每日持仓异动与动态止盈止损巡检预警
+uv run python skills/stockaskill/scripts/run.py risk-alert --market A
+
+# 平仓出场复盘与盈亏归因
+uv run python skills/stockaskill/scripts/run.py thesis postmortem --code 600519 --market A \
+  --outcome win --return-pct 15.2 --notes "达到目标盈利位止盈平仓"
 ```
 
-#### 通过 ClawHub 发布后安装
+---
 
-当 stockaskill 发布到 [ClawHub](https://clawhub.ai) 后, 可使用 OpenClaw 原生命令安装:
+## 7+1 多因子策略体系
+
+| 因子 | 默认权重 | 核心指标与逻辑 | 参考策略 |
+|:---|:---:|:---|:---|
+| **估值因子** | 20% | PE / PB / 股息率复合估值分位 | 华泰证券 EP+BP 因子 |
+| **质量因子** | 25% | ROE / 毛利率 / 资产负债率 / FCF 自由现金流 | 长江证券雪球因子 |
+| **成长因子** | 17% | 营收与归母净利润同比复合增速 | 中信建投超预期因子 |
+| **动量因子** | 17% | 6 个月动量（剔除近 1 个月短期反转）+ 均线多头排列 | A 股动量增强因子 |
+| **低波因子** | 11% | 12 个月日收益率波动率负向打分 | 国泰君安低波动异象因子 |
+| **市值因子** | 9% | `log(总市值)` 规模溢价打分 | A 股小市值溢价模型 |
+| **分析师因子** | 辅助 | 机构盈利预期修正与评级上调 | 聪明钱与机构共识因子 |
+
+---
+
+## 智能体（AI Agent）调用规范
+
+针对 LLM Tool Calling 场景，所有命令支持 `--json` 输出：
+- **纯净数据**：stdout 只输出紧凑、合法的 JSON 字符串，无终端彩色控制字符污染。
+- **零磁盘 I/O**：Agent 通过标准输出直接解析结构化对象，无需写入或读取临时文件。
 
 ```bash
-# 安装到当前工作区
-openclaw skills install @axjing/stockaskill
-
-# 或全局安装 (所有项目可用)
-openclaw skills install @axjing/stockaskill --global
+# 智能体调用范例
+uv run python skills/stockaskill/scripts/run.py screen --market A --preset low_vol --top 5 --json
+uv run python skills/stockaskill/scripts/run.py diagnose 600519 --market A --level quick --json
 ```
 
-### 首次运行
+---
 
-首次使用时本地尚无数据, 系统会自动执行以下操作:
+## 自动化测试与工程质量
 
-1. 创建 `.cache/quant_cache.db` (SQLite 数据库)
-2. 按市场获取股票池/基金池元数据
-3. 按当前任务范围分批拉取缺失的 K 线、财务数据、基金净值、指数数据
-
-系统遵循“本地优先”原则:
-
-- 已缓存且仍然新鲜的数据不会重复调用 API
-- `analyze` / `diagnose` 会先补齐单标的所需历史与基本面
-- `scan` / `alpha` 会先补齐候选池的必要数据, 再做本地评分
-- `backtest` 只会对缺失历史做有上限的预热, 不会每次都全市场全历史重拉
-
-最近几批优化后, 本地缓存还新增了以下可见能力:
-
-- 显式有界同步: `sync symbol/watchlist/portfolio/scan-universe/etf`
-- 数据质量检查与分层修复: `sync check` / `sync repair` (含 backoff 退避与 `data_quality_log` 审计)
-- 每日因子快照: `sync snapshot` (scan-universe 同步完成后按 `factor_snapshot_enabled` 自动构建)
-- 显式数据诊断: `status data ...`
-- HK/US 元数据质量信号: `metadata_source` / `metadata_status` / `metadata_completeness`
-- HK/US 低质量元数据在 realtime scan 中会被轻量降权, 但不会被粗暴硬过滤
-
-首次完整积累多市场历史数据仍会受到上游数据源限速和本地 API 配额保护影响, 但不影响日常使用; 未缓存部分才会触发增量抓取。
-
-### 后续使用
-
-个股分析、市场扫描、基金筛选、组合构建、回测都优先从本地读取。
-缓存命中不足时, 系统只补当前任务必需的数据, 然后立即继续分析。
-
-最近新增的高阶入口也遵循同样原则:
-
-- `deep-diagnose`: 输出长报告版个股诊断, 适合复盘和归档
-- `workflow list/run`: 将内置 routine manifest 解析成可执行分析步骤
-- `thesis capture/list/review/postmortem`: 形成“建仓假设 -> 跟踪 -> 复盘”闭环
-- `theme-scan`: 围绕主题做本地优先候选研究
-- `scorecard thesis/theme/diagnose`: 对诊断、主题、thesis 产物给出结构化评分卡
-
-## 核心功能
-
-### 1. 多因子选股
-
-7+1 维度评分系统, 自动过滤 ST/退市/次新, 输出评分排名。
-
-| 因子 | 权重 | 说明 | 参考策略 |
-|------|:----:|------|---------|
-| 估值因子 | 20% | PE/PB/股息率复合估值 | 华泰证券 EP+BP 因子 |
-| 质量因子 | 25% | ROE/毛利率/负债率/FCF 质量 | 长江证券雪球因子 |
-| 成长因子 | 17% | 营收/净利润同比增长 | 中信建投超预期因子 |
-| 动量因子 | 17% | 6月动量(剔除近1月反转) | A 股动量因子 |
-| 低波因子 | 11% | 12月日波动率 | 国泰君安低波因子 |
-| 市值因子 | 9% | log(总市值)负向打分 | A 股小市值溢价 |
-
-增强版 (Core-Satellite) 权重: 动量 35% / 低波 18% / 质量 20% / 估值 17% / 成长 10%。
-
-### 2. 组合构建
-
-均值-方差优化, 施加以下约束:
-
-- 单只股票权重上限: 20%
-- 持仓数量: 6-30 只
-- 目标最大回撤: 20% (稳健型)
-- 再平衡频率: 30 天
-- 止损线: 15%
-
-支持三种风险偏好:
-
-- **保守型**: 高评分 (>=70), 20 只股票, 预期回撤 <=10%
-- **稳健型** (默认): 评分 >=60, 15 只, 预期回撤 <=15%
-- **进取型**: 评分 >=50, 10 只, 预期回撤 <=25%
-
-### 3. 买卖时机
-
-基于三层信号判断:
-
-- **估值位置**: PE 历史百分位 (低估/合理/高估)
-- **均线趋势**: MA5/MA20/MA60 多头/空头/震荡
-- **因子趋势**: 多因子综合得分
-
-输出: 买入/持有/减仓/卖出 + 核心逻辑 + 止损/止盈参考
-
-### 4. 行业轮动
-
-计算各行业多因子平均得分, 输出超配/标配/低配建议, 辅助行业配置决策。
-
-### 5. 回测验证
-
-逐日模拟组合表现, 包含:
-
-- 止损线检查 (个股止损)
-- 定期再平衡
-- 输出: 总收益/年化收益/最大回撤/夏普比率/卡玛比率/胜率/净值曲线
-
-## 数据架构
-
-### 数据策略：缓存优先 + 增量同步 (Cache-First + Incremental Sync)
-
-本项目的数据获取遵循**缓存优先、增量同步**原则：
-
-- **本地缓存是唯一数据源**：所有读取操作先查本地 quant_cache.duckdb（统一使用 DuckDB 高性能列式存储），远端 API 仅作为增量同步手段，不作为直接查询层。原 quant_cache.db 完整留存为离线冷备。
-- **增量补全，不全量重拉**：检查缓存最新日期，只拉取缺失区间（带 3 天重叠以修正节假日/延迟数据）。首次运行全量种子，之后永远只补缺失。
-- **日期范围 API 优先**：使用 `ak.stock_zh_a_hist`(symbol, start_date, end_date) 等支持区间的接口。禁止使用 `ak.stock_zh_a_daily`() 等无视日期、全量下载历史数据的 API 作为主路径。
-- **多源容错 + 熔断**：K 线: baostock → AKShare/EastMoney → efinance (A 股) | AKShare → yfinance (HK/US)。基本面: THS (A 股) / Analysis indicator (HK/US) → Sina → yfinance。连续失败的源自动进入退避状态，避免浪费 API 配额。
-- **UPSERT 写入**：最新数据覆盖旧数据，ON CONFLICT DO UPDATE 保证一致性。
-
-违反此策略（如对每只股票每次请求都全量下载历史）是致命 bug，会导致 API 限额耗尽和 RemoteDisconnected 错误。
-
-### DuckDB 表结构 (`quant_cache.duckdb`)
-
-| 表 | 内容 | 更新策略 |
-|:---|:-----|:---------|
-| `stock_pool` | 全市场股票池 (A / HK / US / FUND) + 元数据质量字段 | 按市场独立 TTL 更新 |
-| `daily_price` | 个股日 K 线 (前复权), 含 quality_flags | 按需增量, 只有缺失区间才拉取 |
-| `factor_snapshot` | 基本面快照 (PE/PB/ROE/增速) | 按 TTL 过期更新 |
-| `computed_factors` | 计算因子值 | 本地计算, 无需 API |
-| `sentiment` | 情绪分析结果 | 按需增量 |
-| `sync_state` | scope 级同步状态 / 覆盖日期 / 错误信息 | `sync` / `status data` 使用 |
-| `cache_meta` | 缓存元信息 (防重复) | 自动维护 |
-| `api_usage` | API 调用计数 (限速) | 自动记录 |
-| `financial_report` | 报告期财务 (DuckDB 引擎下从 factor_snapshot 迁移填充) | 随基本面同步 |
-| `factor_daily_snapshot` | 每日预计算因子快照 (DuckDB 引擎, 选股可用) | scan-universe 同步后按 `factor_snapshot_enabled` 构建 |
-| `data_quality_log` | 数据质量检查 / 修复审计流水 (check_run + 严重度 + 状态) | `sync check` / `sync repair` 记录 |
-| `data_quality_backoff` | 修复失败退避记录 (consecutive_failures + backoff_until) | 修复失败自动写入, 成功清除 |
-
-### API 调用策略
-
-- 个股分析: 0-2 次 API (数据已缓存则 0 次)
-- 全市场选股: 候选数据齐备时 0 次, 冷缓存时按候选集补齐
-- 组合优化: 数据齐备时 0 次, 否则按持仓标的增量补齐
-- 回测: 仅对缺失历史执行有上限的批量预热
-- 失败退避: 2^n 秒, 最多 3 次重试
-- 日配额上限: 默认 `500` 次, 可由 `daily_api_limit` 配置调整; 超出后返回本地缓存结果
-
-## 当前支持边界
-
-- A 股: 支持最深, 也是当前最稳定的市场
-- HK / US: 支持有界候选池、watchlist、portfolio、scan-universe 工作流
-- ETF: 一等支持对象, 当前通过 `FUND` / `etf` 路径使用
-- 广义公募基金: 暂不作为核心路线, 不建议按“全市场基金平台”理解当前项目
-
-对 Python API 而言, 新代码应优先使用 `get_etf_pool()` / `get_etf_nav()`。
-`get_fund_pool()` / `get_fund_nav()` 目前只是 ETF-oriented FUND 路径的兼容名字。
-
-## 元数据质量说明
-
-HK/US 池子会缓存以下额外字段:
-
-- `metadata_source`: 元数据来源
-- `metadata_status`: 归一化状态, 如 `active` / `delisted` / `suspended`
-- `metadata_completeness`: 0-1 之间的完整度分数
-
-这些信号目前用于两类目的:
-
-- `status data` 中显示 market-level 元数据健康摘要
-- realtime `scan` 中对 HK/US 低质量元数据做轻量降权
-
-它们当前是软信号, 不是硬过滤条件。
-
-## 配置参数
-
-直接在 `skills/stockaskill/scripts/config.py` 中修改 `_DEFAULTS` 字典。
-
-新增的关键配置项:
-
-| 配置键 | 默认值 | 说明 |
-|:-------|:-------|:-----|
-| `db_engine` | `"sqlite"` | 存储引擎, 可切为 `"duckdb"` 列存 |
-| `duckdb_path` | `.cache/quant_cache.duckdb` | DuckDB 文件路径 |
-| `factor_snapshot_enabled` | `True` | scan-universe 同步完成后是否自动构建每日因子快照 |
-| `data_quality_check_enabled` | `True` | 是否启用数据质量检查流程 |
-| `data_quality` | 见 `config.py` | 检查 / 修复阈值 (min_history_days, 告警间隔, backoff_hours, quota 等) |
-
-## 与框架集成
-
-### opencode
-
-将 `stockaskill/` 放入技能路径后, opencode 自动发现 SKILL.md 并根据用户自然语言路由到对应功能。
-
-**验证加载**:
-```bash
-opencode -e 'skill list'
-# 或在会话中询问 "可用的技能有哪些?"
-```
-
-**权限配置** (可选, 在 `opencode.json` 中):
-```json
-{
-  "permission": {
-    "skill": {
-      "stockaskill": "allow"
-    }
-  }
-}
-```
-
-**使用方式**:
-- 直接输入分析需求 (如 "分析 600519", "扫描 A 股 top 20")
-- 或在对话中加载技能: `skill stockaskill`
-
-### claudecode
-
-**验证加载**:
-```bash
-# 在 claudecode 会话中运行
-/skills
-# 应看到 stockaskill 出现在技能列表中
-```
-
-**使用方式**:
-- 自动触发: 当你的问题匹配 SKILL.md 中的 `description` 时, claudecode 自动加载并执行
-- 手动调用: 在会话中输入 `/stockaskill` 直接调用技能
-- claudecode 仅加载技能的名称和描述到上下文, 完整指令按需注入
-
-**禁用自动调用** (可选):
-在 SKILL.md 前部添加 `disable-model-invocation: true` 可阻止自动触发, 仅允许 `/stockaskill` 手动调用。
-
-### codex (OpenAI Codex CLI)
-
-**验证加载**:
-```bash
-# codex 会话中查看可用技能
-/skills
-# 或列出所有技能
-ls .agents/skills/
-```
-
-**使用方式**:
-- 自动触发: 任务描述匹配技能 `description` 时自动加载
-- 显式调用: 在提示中使用 `$stockaskill` 或 `/skills` 选择技能
-- 项目指令: 在仓库根目录创建 `CODEX.md` 或 `AGENTS.md` 编写持久化项目指引
-- 全局指令: `~/.codex/AGENTS.md` 用于个人默认设置
-- 建议在项目指令中明确写入“本地优先、按任务补数据、避免全市场全量同步”这一产品边界
-
-**禁用技能** (在 `~/.codex/config.toml` 中):
-```toml
-[[skills.config]]
-path = "/path/to/stockaskill/SKILL.md"
-enabled = false
-```
-
-### openclaw
-
-**验证加载**:
-```bash
-# 新会话启动时自动加载
-# 或检查技能状态
-openclaw skills list
-```
-
-**使用方式**:
-- 会话启动时自动注入到 agent 上下文
-- 手动调用: `/stockaskill`
-- 通过 `~/.openclaw/openclaw.json` 中的 `skills.entries` 控制启用/禁用
-
-**配置示例** (`~/.openclaw/openclaw.json`):
-```json5
-{
-  skills: {
-    entries: {
-      stockaskill: { enabled: true }
-    }
-  }
-}
-```
-
-**Gating 条件** (可选, 在 SKILL.md frontmatter 中):
-```yaml
-metadata:
-  openclaw: '{"requires":{"bins":["python"]}}'
-```
-
-只有满足 gating 条件时, openclaw 才加载该技能。
-
-### Cursor / Windsurf
-
-**Cursor**:
-```bash
-# 将 SKILL.md 复制为 Cursor 规则
-cp stockaskill/SKILL.md .cursor/rules/stockaskill.mdc
-# 在规则文件头添加 paths 过滤:
-# ---
-# description: A-share stock analysis
-# paths: "**/*.py"
-# ---
-```
-
-**Windsurf**:
-```bash
-cp stockaskill/SKILL.md .windsurf/rules/stockaskill.md
-```
-
-### 直接使用 Python 脚本
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent / "stockaskill" / "scripts"))
-
-from advisor.diagnosis import StockDiagnosis
-from factors.composite import CompositeAnalyzer
-from strategies.aggregator import StrategyAggregator
-from portfolio.builder import PortfolioBuilder
-from data_engine import get_stock_pool, get_kline
-
-# 1. 获取股票池
-pool = get_stock_pool(market="A")
-
-# 2. 个股深度分析 - 返回完整诊断报告
-diagnosis = StockDiagnosis("600519", "A").full_report()
-
-# 3. 量化策略综合评分
-strategies = StrategyAggregator("600519", "A").analyze_all()
-
-# 4. 多因子分析 + F-Score
-factors = CompositeAnalyzer("600519", "A").analyze()
-
-# 5. 构建组合
-builder = PortfolioBuilder("我的组合", capital=1000000)
-builder.add_from_strategy("600519", "A")
-builder.add_from_strategy("000858", "A")
-portfolio = builder.build()
-print(portfolio.summary())
-```
-
-### 直接使用命令行
+本项目执行严格的质量把控规范：
+- **代码规范**：遵循 Google Python Style Guide，`ruff check` 与 `ruff format` 强制代码一致性。
+- **自动化测试**：内置 **392 项** 全量自动化测试用例，覆盖引擎、因子、优化器、数据同步与边缘异常，CI 全绿通过。
 
 ```bash
-cd path/to/stockaskill
-python skills/stockaskill/scripts/run.py diagnose 600519 --market A       # 深度诊断
-python skills/stockaskill/scripts/run.py deep-diagnose 600519 --market A  # 长报告诊断
-python skills/stockaskill/scripts/run.py scan A --top 20                  # 默认 auto: 优先快照, 缺失时回退有界 realtime
-python skills/stockaskill/scripts/run.py scan A --mode snapshot --top 20  # 仅读取全市场快照
-python skills/stockaskill/scripts/run.py scan A --mode realtime --top 20  # 有界候选实时扫描
-python skills/stockaskill/scripts/run.py alpha A --top 10                 # Alpha动量扫描
-python skills/stockaskill/scripts/run.py analyze 600519 --market A        # 个股分析
-python skills/stockaskill/scripts/run.py market-regime --market A         # 市场状态 / 风险姿态
-python skills/stockaskill/scripts/run.py portfolio --codes 600519,000858  # 组合构建
-python skills/stockaskill/scripts/run.py backtest                         # 回测验证
-python skills/stockaskill/scripts/run.py fetch pool                       # 刷新数据池
-python skills/stockaskill/scripts/run.py sync scan-universe --market A --full-history --limit 3000  # 全量有界同步
-python skills/stockaskill/scripts/run.py sync symbol 600519 --market A    # 单标的有界同步
-python skills/stockaskill/scripts/run.py sync etf --codes 510300,159915   # ETF有界同步
-python skills/stockaskill/scripts/run.py sync check --market A --codes 600519  # 数据质量检查
-python skills/stockaskill/scripts/run.py sync repair --market A --codes 600519 --data-kinds fundamentals  # 分层修复
-python skills/stockaskill/scripts/run.py sync snapshot --market A --limit 200  # 每日因子快照
-python skills/stockaskill/scripts/run.py status data watchlist --market US # 数据状态诊断
-python skills/stockaskill/scripts/run.py workflow list                    # 查看内置工作流
-python skills/stockaskill/scripts/run.py workflow run market-regime-daily --market A
-python skills/stockaskill/scripts/run.py thesis capture 600519 --market A # 保存 thesis
-python skills/stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome win
-python skills/stockaskill/scripts/run.py theme-scan AI 算力 --market A    # 主题研究
-python skills/stockaskill/scripts/run.py scorecard diagnose 600519 --market A
-python skills/stockaskill/scripts/run.py cache stats                      # 缓存统计
-python skills/stockaskill/scripts/run.py cache cleanup --days 30          # 清理旧缓存
-python skills/stockaskill/scripts/run.py cache engine                     # 当前存储引擎
-python skills/stockaskill/scripts/run.py cache migrate                    # 历史 SQLite 归档库向 DuckDB 迁移工具
+# 运行代码规范检查
+uv run ruff check skills/stockaskill/scripts tests
+uv run ruff format --check skills/stockaskill/scripts tests
+
+# 运行全量 392 项自动化测试
+uv run python -m pytest tests/
 ```
 
-### 高阶研究工作流
+---
 
-这些入口是本轮新增的结构化研究能力, 仍然保持“本地优先、按任务补数据”的约束:
+## 免责声明
 
-```bash
-# 1. 路由到推荐工作流
-python skills/stockaskill/scripts/run.py route "复盘当前市场并筛选可跟踪主题"
-
-# 2. 查看 / 解析内置 workflow manifest
-python skills/stockaskill/scripts/run.py workflow list
-python skills/stockaskill/scripts/run.py workflow run portfolio-review-weekly --market A --codes 600519,000858
-
-# 3. 长报告诊断
-python skills/stockaskill/scripts/run.py deep-diagnose 600519 --market A --format both
-
-# 4. Thesis memory / postmortem
-python skills/stockaskill/scripts/run.py thesis capture 600519 --market A --notes "等待估值回到合理区间"
-python skills/stockaskill/scripts/run.py thesis list --market A
-python skills/stockaskill/scripts/run.py thesis review --code 600519 --market A
-python skills/stockaskill/scripts/run.py thesis postmortem --code 600519 --market A --outcome loss --return-pct -8
-
-# 5. Theme research / scorecard
-python skills/stockaskill/scripts/run.py theme-scan AI 算力 --market A --top 5
-python skills/stockaskill/scripts/run.py scorecard theme AI 算力 --market A --top 5
-python skills/stockaskill/scripts/run.py scorecard thesis --code 600519 --market A
-```
-
-说明:
-
-- `workflow run` 只解析 manifest 并生成步骤, 不直接执行 shell
-- `thesis postmortem` 会为已保存 thesis 补充 attribution
-- `scorecard` 当前是启发式、可解释的结构化评估, 不是黑盒打分
-
-### 有界同步与诊断
-
-项目已经不再建议“先全量拉完再分析”的使用方式。推荐直接按任务范围同步:
-
-```bash
-python skills/stockaskill/scripts/run.py sync symbol 600519 --market A
-python skills/stockaskill/scripts/run.py sync watchlist --market HK
-python skills/stockaskill/scripts/run.py sync portfolio --codes AAPL,MSFT --market US
-python skills/stockaskill/scripts/run.py sync scan-universe --market A --limit 200
-python skills/stockaskill/scripts/run.py sync etf --codes 510300,159915
-```
-
-`scan` 现在默认使用 `--mode auto`:
-
-- 本地快照新鲜时直接读快照
-- 快照缺失或过期时自动回退到 bounded realtime candidate scan
-- 只有显式 `refresh-scan` 或 `scan --refresh --mode snapshot` 才会先构建全市场快照
-
-查看数据状态与元数据健康度:
-
-```bash
-python skills/stockaskill/scripts/run.py status data symbol 600519 --market A
-python skills/stockaskill/scripts/run.py status data watchlist --market US
-python skills/stockaskill/scripts/run.py status data portfolio --codes 0700,9988 --market HK
-python skills/stockaskill/scripts/run.py status data etf --codes 510300,159915
-python skills/stockaskill/scripts/run.py status data scan-universe --market A --limit 200
-```
-
-## 数据来源
-
-所有数据通过 [AKShare](https://akshare.akfamily.xyz) 获取, 中间数据源为东方财富、新浪财经等公开财经平台。AKShare 是免费开源库, 无需注册或 Token。
-
-## 参考策略
-
-因子参数参考了以下 A 股市场验证有效的量化研究成果:
-
-- 华泰证券: 因子周期与因子选股体系 (2010-2024)
-- 长江证券: 雪球因子与高质量选股 (2012-2024)
-- 中信建投: 超预期因子与财报选股 (2013-2024)
-- 国泰君安: 低波动异象与低波因子 (2009-2024)
-- 沪深 A 股: 小市值溢价与动量反转效应 (2000-2024)
-- 沪深港通: 北向资金跟踪与聪明钱效应 (2016-2024)
-
-## 风险提示
-
-- 本工具的输出仅作为投资参考, 不构成投资建议
-- 所有数据来源为第三方公开平台, 数据延迟约为 0-15 分钟
-- 历史回测结果不代表未来收益
-- 投资有风险, 入市需谨慎
+1. 本项目输出的所有量化分析结果、多因子评分与组合建议仅供学术研究与工程实践参考，**不构成任何投资建议**。
+2. 历史回测表现不代表未来实际收益，市场有风险，投资需谨慎。

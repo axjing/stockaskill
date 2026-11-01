@@ -17,10 +17,12 @@ docs/
 ├── README.md                      # This navigation portal / 本导航中心
 ├── zh/                            # 简体中文文档
 │   ├── README.md                  # 核心功能全景手册与架构设计
+│   ├── tutorial.md                # 从入门到实战：全流程量化决策教程
 │   ├── data-strategy.md           # DuckDB 本地优先与增量同步数据策略
 │   └── cli-reference.md           # 命令行参数详解与智能体工具字典
 └── en/                            # English Documentation
     ├── README.md                  # System Overview & Architecture Manual
+    ├── tutorial.md                # Hands-On Tutorial: From Getting Started to Quant Pipelines
     ├── data-strategy.md           # DuckDB Local-First & Incremental Sync Strategy
     └── cli-reference.md           # CLI Command Reference & Agent Tool Guide
 ```
@@ -30,19 +32,23 @@ docs/
 ## Quick Navigation / 快速直达
 
 ### 🇨🇳 简体中文文档
-1. [功能全景手册与系统架构 (zh/README.md)](./zh/README.md)
+1. [从入门到实战：全流程量化决策教程 (zh/tutorial.md)](./zh/tutorial.md)
+   - 包含环境准备、增量数据保鲜、单股多级诊断、0.5 秒截面选股、目标约束组合优化、100 股整手下单与 AI 智能体集成的保姆级实战演练。
+2. [功能全景手册与系统架构 (zh/README.md)](./zh/README.md)
    - 系统定位、核心定量能力、7+1 多因子策略体系、目标约束组合优化、投资论据全生命周期跟踪。
-2. [DuckDB 本地优先数据策略 (zh/data-strategy.md)](./zh/data-strategy.md)
+3. [DuckDB 本地优先数据策略 (zh/data-strategy.md)](./zh/data-strategy.md)
    - 4,244 万行 DuckDB OLAP 引擎架构、表结构与物理存储设计、增量水位线同步、多源熔断降级。
-3. [CLI 命令与智能体工具参考 (zh/cli-reference.md)](./zh/cli-reference.md)
+4. [CLI 命令与智能体工具参考 (zh/cli-reference.md)](./zh/cli-reference.md)
    - 包含 `--json` 标准流式工具调用、选股-优化-跟踪一键闭环流水线、单股多级诊断门面等全量命令说明。
 
 ### 🇬🇧 English Documentation
-1. [System Overview & Architecture (en/README.md)](./en/README.md)
+1. [Hands-On Tutorial: Quant Decision Pipelines (en/tutorial.md)](./en/tutorial.md)
+   - Step-by-step practical guide covering setup, incremental sync, multi-level diagnosis, 0.5s screening, goal-constrained portfolio optimization, board lot execution tickets, and AI Agent workflows.
+2. [System Overview & Architecture (en/README.md)](./en/README.md)
    - System positioning, core quantitative capabilities, multi-factor models, goal-constrained portfolio optimization, thesis lifecycle management.
-2. [DuckDB Local-First Data Strategy (en/data-strategy.md)](./en/data-strategy.md)
+3. [DuckDB Local-First Data Strategy (en/data-strategy.md)](./en/data-strategy.md)
    - 42.44M-row DuckDB OLAP columnar architecture, physical schema, dynamic incremental watermark sync, and multi-source resilience.
-3. [CLI Reference & Agent Tools (en/cli-reference.md)](./en/cli-reference.md)
+4. [CLI Reference & Agent Tools (en/cli-reference.md)](./en/cli-reference.md)
    - Complete command options, `--json` streaming tool calling specifications, closed-loop pipelines, and single-stock diagnosis facade.
 
 ---

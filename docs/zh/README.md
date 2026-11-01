@@ -1,5 +1,7 @@
 # stockaskill 核心功能全景手册与架构指南
 
+[返回文档导航](../README.md) | [实战教程](tutorial.md) | [CLI 参数参考](cli-reference.md) | [数据策略规范](data-strategy.md) | [English Version](../en/README.md)
+
 > **版本**: 2.1.0  
 > **核心引擎**: DuckDB OLAP Columnar Engine (4,244 万行数据，跨 26 年历史周期)  
 > **语言支持**: Python 3.10+  
