@@ -1,5 +1,7 @@
 # stockaskill
 
+[![arXiv](https://img.shields.io/badge/arXiv-2611.09528-b31b1b.svg)](https://arxiv.org/abs/2611.09528)
+
 [English](README.md) | [简体中文](README_ZH.md) | [文档中心 / Docs](docs/README.md) | [实战教程 / Tutorial](docs/zh/tutorial.md)
 
 ---
@@ -278,6 +280,24 @@ uv run ruff format --check skills/stockaskill/scripts tests
 
 # 运行全量 392 项自动化测试
 uv run python -m pytest tests/
+```
+
+---
+
+## 论文与引用 (Citation)
+
+如果您在学术研究或工程实践中参考了 StockASkill，请引用我们的论文：
+
+- **论文链接**: [arXiv:2611.09528](https://arxiv.org/abs/2611.09528) (`StockASkill: A Local-First AgentSkill for Intelligent Stock Selection`)
+
+```bibtex
+@article{an2026stockaskill,
+  title={StockASkill: A Local-First AgentSkill for Intelligent Stock Selection},
+  author={An, Xiangjing and Jiao, Zhibin and Chen, Aiting},
+  journal={arXiv preprint arXiv:2611.09528},
+  year={2026},
+  url={https://arxiv.org/abs/2611.09528}
+}
 ```
 
 ---

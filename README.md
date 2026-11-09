@@ -1,5 +1,7 @@
 # stockaskill
 
+[![arXiv](https://img.shields.io/badge/arXiv-2611.09528-b31b1b.svg)](https://arxiv.org/abs/2611.09528)
+
 [English](README.md) | [简体中文](README_ZH.md) | [Documentation Portal](docs/README.md) | [Hands-On Tutorial](docs/en/tutorial.md)
 
 ---
@@ -278,6 +280,24 @@ uv run ruff format --check skills/stockaskill/scripts tests
 
 # Run all 392 automated test cases
 uv run python -m pytest tests/
+```
+
+---
+
+## Citation
+
+If you use StockASkill in your research or project, please cite:
+
+- **Paper Link**: [arXiv:2611.09528](https://arxiv.org/abs/2611.09528) (`StockASkill: A Local-First AgentSkill for Intelligent Stock Selection`)
+
+```bibtex
+@article{an2026stockaskill,
+  title={StockASkill: A Local-First AgentSkill for Intelligent Stock Selection},
+  author={An, Xiangjing and Jiao, Zhibin and Chen, Aiting},
+  journal={arXiv preprint arXiv:2611.09528},
+  year={2026},
+  url={https://arxiv.org/abs/2611.09528}
+}
 ```
 
 ---
