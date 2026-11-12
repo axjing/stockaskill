@@ -121,9 +121,7 @@ class AlphaMomentumBacktest:
 
     # -- Loading helpers -----------------------------------------------------
 
-    def _load_eligible_codes(
-        self, conn: Any
-    ) -> Tuple[List[str], set[str]]:
+    def _load_eligible_codes(self, conn: Any) -> Tuple[List[str], set[str]]:
         """Get codes with sufficient data history and identify ST stocks.
 
         Includes delisted stocks that have enough historical bars to avoid
@@ -215,6 +213,44 @@ class AlphaMomentumBacktest:
                         "eps": eps,
                         "bvps": float(row[18] or 0),
                     }
+        # Fallback if historical PIT snapshots are not backfilled yet
+        if not fc:
+            cur_fallback = conn.execute(
+                f"SELECT code, date, market_cap, pe_ttm, pe_static, pb, ps_ttm, "
+                f"pcf_ttm, dividend_yield, roe, roa, gross_margin, net_margin, "
+                f"revenue_growth, profit_growth, debt_ratio, current_ratio, eps, bvps "
+                f"FROM factor_snapshot "
+                f"WHERE market=? AND code IN ({placeholders}) "
+                f"ORDER BY code, date ASC",
+                (self.market, *codes),
+            )
+            for row in cur_fallback.fetchall():
+                code = row[0]
+                if code not in seen:
+                    seen.add(code)
+                    eps = float(row[17] or 0)
+                    if eps > 0:
+                        fc[code] = {
+                            "code": code,
+                            "date": row[1],
+                            "market_cap": float(row[2] or 0),
+                            "pe_ttm": float(row[3] or 0),
+                            "pe_static": float(row[4] or 0),
+                            "pb": float(row[5] or 0),
+                            "ps_ttm": float(row[6] or 0),
+                            "pcf_ttm": float(row[7] or 0),
+                            "dividend_yield": float(row[8] or 0),
+                            "roe": float(row[9] or 0),
+                            "roa": float(row[10] or 0),
+                            "gross_margin": float(row[11] or 0),
+                            "net_margin": float(row[12] or 0),
+                            "revenue_growth": float(row[13] or 0),
+                            "profit_growth": float(row[14] or 0),
+                            "debt_ratio": float(row[15] or 0),
+                            "current_ratio": float(row[16] or 0),
+                            "eps": eps,
+                            "bvps": float(row[18] or 0),
+                        }
         return fc
 
     def _load_dates(self, conn: Any) -> List[str]:
@@ -288,7 +324,7 @@ class AlphaMomentumBacktest:
             "SELECT d.code, d.date, d.close "
             "FROM daily_price d "
             "WHERE d.market=? AND d.date >= ? AND d.date <= ? "
-            "ORDER BY d.code, d.date DESC",
+            "ORDER BY d.code, d.date ASC",
             (self.market, start, end),
         )
 
@@ -367,9 +403,10 @@ class AlphaMomentumBacktest:
         min_bars = cfg_get("alpha_momentum.min_kline_bars", 120)
         scored: List[Tuple[str, float]] = []
         for code in codes:
-            kslice = [x for x in wsd[code] if x["date"] <= reb_date]
-            if len(kslice) < min_bars:
+            bars = [x for x in wsd[code] if x["date"] <= reb_date]
+            if len(bars) < min_bars:
                 continue
+            kslice = bars[::-1]  # Factors require newest-first (descending date)
             fund = fc.get(code, {})
             try:
                 s = self.mf.compute(fund, kslice, self.market)

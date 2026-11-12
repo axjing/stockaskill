@@ -65,15 +65,18 @@ def _vol_metrics(closes: List[float]) -> Dict[str, float]:
     window = closes[:_VOL_LOOKBACK_BARS]
     if len(window) < 2:
         return {"vol_12m": 0.0, "max_drop_12m": 0.0}
-    arr = np.array(window, dtype=float)
-    returns = np.diff(arr) / arr[:-1]
+    # closes is newest-first; reverse to chronological order
+    chrono = np.array(window[::-1], dtype=float)
+    returns = np.diff(chrono) / chrono[:-1]
     returns = returns[~np.isnan(returns)]
     returns = returns[~np.isinf(returns)]
     if len(returns) < 2:
         return {"vol_12m": 0.0, "max_drop_12m": 0.0}
+    min_ret = float(np.min(returns)) if len(returns) > 0 else 0.0
+    max_drop = abs(min_ret) if min_ret < 0.0 else 0.0
     return {
         "vol_12m": round(float(np.std(returns)), 6),
-        "max_drop_12m": round(float(abs(np.min(returns))), 6),
+        "max_drop_12m": round(float(max_drop), 6),
     }
 
 

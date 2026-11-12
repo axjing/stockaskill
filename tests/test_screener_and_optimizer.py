@@ -130,9 +130,12 @@ class TestTargetPortfolioOptimizer:
 class TestScreenToPortfolioPipeline:
     """Test the end-to-end screen -> portfolio -> track pipeline command."""
 
+    @patch("portfolio.builder.get_kline", return_value=[])
     @patch("commands.screen._save_report")
     @patch("commands.screen.DuckDBScreener")
-    def test_cmd_screen_to_portfolio(self, mock_screener_cls, mock_save_report):
+    def test_cmd_screen_to_portfolio(
+        self, mock_screener_cls, mock_save_report, mock_get_kline
+    ):
         import argparse
 
         from commands.screen import cmd_screen

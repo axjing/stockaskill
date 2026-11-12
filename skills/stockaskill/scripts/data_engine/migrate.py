@@ -122,6 +122,26 @@ def _copy_table(
     return total
 
 
+def _estimate_publish_date(report_date: str) -> str:
+    """Estimate conservative statutory disclosure date for a report period."""
+    if not report_date or len(report_date) < 10:
+        return report_date
+    try:
+        year = int(report_date[:4])
+        md = report_date[5:10]
+        if md in ("03-31", "03-30"):
+            return f"{year}-04-30"
+        elif md in ("06-30", "06-29"):
+            return f"{year}-08-31"
+        elif md in ("09-30", "09-29"):
+            return f"{year}-10-31"
+        elif md in ("12-31", "12-30"):
+            return f"{year + 1}-04-30"
+    except (ValueError, TypeError):
+        pass
+    return report_date
+
+
 def _migrate_financial_report(
     src: sqlite3.Connection,
     engine: DuckDBEngine,
@@ -146,7 +166,7 @@ def _migrate_financial_report(
                 "market": r["market"],
                 "code": r["code"],
                 "report_date": r["date"],
-                "publish_date": r["date"],
+                "publish_date": _estimate_publish_date(r["date"]),
             }
             row.update({k: r[k] for k in _FINANCIAL_COLUMNS})
             params.append(

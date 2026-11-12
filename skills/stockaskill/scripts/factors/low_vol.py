@@ -32,14 +32,16 @@ class LowVolFactor(Factor):
         if len(closes) < 240:
             return 0.5
 
-        returns = np.diff(np.array(closes)) / np.array(closes[:-1])
+        # kline is newest-first; reverse to chronological order for return diffs
+        chrono = np.array(closes[::-1], dtype=float)
+        returns = np.diff(chrono) / chrono[:-1]
         returns = returns[~np.isnan(returns)]
         returns = returns[~np.isinf(returns)]
 
         if len(returns) < 10:
             return 0.5
 
-        vol = np.std(returns)
+        vol = float(np.std(returns))
 
         vol_min, vol_max = self._range("vol", market)
         drop_min, drop_max = self._range("max_drop", market)
@@ -51,8 +53,9 @@ class LowVolFactor(Factor):
             max(0, min(1, 1 - (vol - vol_min) / vol_range)) if vol_range > 0 else 0.5
         )
 
-        # Max daily drop penalty
-        max_drop = abs(np.min(returns)) if len(returns) > 0 else 0
+        # Max daily drop penalty (worst single-day loss)
+        min_ret = float(np.min(returns)) if len(returns) > 0 else 0.0
+        max_drop = abs(min_ret) if min_ret < 0.0 else 0.0
         drop_penalty = (
             max(0, min(1, 1 - (max_drop - drop_min) / drop_range))
             if drop_range > 0

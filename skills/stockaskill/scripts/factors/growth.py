@@ -61,11 +61,8 @@ class GrowthFactor(Factor):
     ) -> float:
         """Proxy growth acceleration from price momentum trend.
 
-        NOTE: This uses price returns (3-month vs 6-month) as a proxy
-        for fundamental growth acceleration since quarterly fundamental
-        data is too sparse for reliable YoY acceleration. Correlation
-        between price momentum and fundamental acceleration is moderate;
-        treat this as a secondary signal.
+        Compares recent 30-day return against prior 30-day return
+        to measure second-order rate of change (acceleration).
         """
         if len(kline) < 61:
             return 0.5
@@ -73,9 +70,9 @@ class GrowthFactor(Factor):
         closes = [c for c in closes if c > 0]
         if len(closes) < 61:
             return 0.5
-        ret_6m = (closes[0] - closes[60]) / max(closes[60], 1e-9)
-        ret_3m = (closes[0] - closes[30]) / max(closes[30], 1e-9)
-        accel = ret_3m - ret_6m
+        ret_recent = (closes[0] - closes[30]) / max(closes[30], 1e-9)
+        ret_prior = (closes[30] - closes[60]) / max(closes[60], 1e-9)
+        accel = ret_recent - ret_prior
         accel_span = accel_max - accel_min
         if accel_span > 0:
             return max(0, min(1, (accel - accel_min) / accel_span))

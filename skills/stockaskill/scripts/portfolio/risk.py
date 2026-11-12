@@ -68,13 +68,15 @@ class RiskMetrics:
             return 0.0
         excess = self.returns - self.period_rf
         mean_excess = np.mean(excess)
-        downside = self.returns[self.returns < 0]
-        if len(downside) == 0:
-            return float(mean_excess * np.sqrt(self.frequency) / 1e-9)
-        down_std = np.std(downside, ddof=1)
-        if down_std == 0:
-            return 0.0
-        return float(mean_excess / down_std * np.sqrt(self.frequency))
+        downside_diff = np.minimum(0.0, excess)
+        down_dev = float(np.sqrt(np.mean(downside_diff**2)))
+        if down_dev == 0:
+            return (
+                float(mean_excess * np.sqrt(self.frequency) / 1e-9)
+                if mean_excess > 0
+                else 0.0
+            )
+        return float(mean_excess / down_dev * np.sqrt(self.frequency))
 
     def volatility(self) -> float:
         """Annualized volatility."""

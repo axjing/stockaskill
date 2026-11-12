@@ -4,6 +4,7 @@ Provides sub-second multi-factor screening across millions of historical
 price rows for A, HK, and US equities.
 """
 
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from cache import get_cache
@@ -15,6 +16,23 @@ class DuckDBScreener:
     def __init__(self) -> None:
         self.cache = get_cache()
         self.engine = getattr(self.cache, "engine", None)
+
+    def _get_cutoff_date(self, market: str, lookback_days: int) -> str:
+        """Compute lookback cutoff date relative to latest available price date."""
+        try:
+            if hasattr(self.engine, "fetchone"):
+                row = self.engine.fetchone(
+                    "SELECT MAX(date) FROM daily_price WHERE market = ?", (market,)
+                )
+                latest = row[0] if row and isinstance(row[0], str) else None
+                if latest:
+                    base_dt = datetime.strptime(str(latest)[:10], "%Y-%m-%d")
+                    return (base_dt - timedelta(days=lookback_days)).strftime(
+                        "%Y-%m-%d"
+                    )
+        except Exception:
+            pass
+        return (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
 
     def screen(
         self,
@@ -48,15 +66,27 @@ class DuckDBScreener:
 
         if preset in ("low_vol", "low_volatility"):
             return self._screen_low_vol(
-                market=market, top_n=top_n, min_mcap=min_mcap, sector=sector
+                market=market,
+                top_n=top_n,
+                min_mcap=min_mcap,
+                sector=sector,
+                lookback_days=lookback_days,
             )
         elif preset in ("deep_value", "value"):
             return self._screen_value(
-                market=market, top_n=top_n, min_mcap=min_mcap, sector=sector
+                market=market,
+                top_n=top_n,
+                min_mcap=min_mcap,
+                sector=sector,
+                lookback_days=lookback_days,
             )
         else:
             return self._screen_momentum(
-                market=market, top_n=top_n, min_mcap=min_mcap, sector=sector
+                market=market,
+                top_n=top_n,
+                min_mcap=min_mcap,
+                sector=sector,
+                lookback_days=lookback_days,
             )
 
     def _screen_momentum(
@@ -65,12 +95,14 @@ class DuckDBScreener:
         top_n: int,
         min_mcap: float,
         sector: Optional[str],
+        lookback_days: int = 365,
     ) -> List[Dict[str, Any]]:
         """Screen for high-momentum leaders with trend confirmation."""
         sector_filter = "AND sp.sector = ?" if sector else ""
         mcap_filter = "AND sp.total_market_cap >= ?" if min_mcap > 0 else ""
 
-        params: List[Any] = [market]
+        cutoff = self._get_cutoff_date(market, max(lookback_days + 180, 540))
+        params: List[Any] = [market, cutoff]
         if sector:
             params.append(sector)
         if min_mcap > 0:
@@ -97,7 +129,7 @@ class DuckDBScreener:
                     PARTITION BY dp.code ORDER BY dp.date DESC
                 ) as rn
             FROM daily_price dp
-            WHERE dp.market = ? AND dp.date >= '2025-01-01'
+            WHERE dp.market = ? AND dp.date >= ?
         ),
         latest_ranks AS (
             SELECT
@@ -164,12 +196,14 @@ class DuckDBScreener:
         top_n: int,
         min_mcap: float,
         sector: Optional[str],
+        lookback_days: int = 365,
     ) -> List[Dict[str, Any]]:
         """Screen for low-volatility defensive stocks."""
         sector_filter = "AND sp.sector = ?" if sector else ""
         mcap_filter = "AND sp.total_market_cap >= ?" if min_mcap > 0 else ""
 
-        params: List[Any] = [market]
+        cutoff = self._get_cutoff_date(market, max(lookback_days, 365))
+        params: List[Any] = [market, cutoff]
         if sector:
             params.append(sector)
         if min_mcap > 0:
@@ -190,7 +224,7 @@ class DuckDBScreener:
                     PARTITION BY code ORDER BY date DESC
                 ) as rn
             FROM daily_price
-            WHERE market = ? AND date >= '2025-06-01'
+            WHERE market = ? AND date >= ?
         ),
         vol_calc AS (
             SELECT
@@ -251,12 +285,14 @@ class DuckDBScreener:
         top_n: int,
         min_mcap: float,
         sector: Optional[str],
+        lookback_days: int = 365,
     ) -> List[Dict[str, Any]]:
         """Screen for high quality value stocks with reasonable PE/PB."""
         sector_filter = "AND sp.sector = ?" if sector else ""
         mcap_filter = "AND sp.total_market_cap >= ?" if min_mcap > 0 else ""
 
-        params: List[Any] = [market]
+        cutoff = self._get_cutoff_date(market, max(lookback_days, 180))
+        params: List[Any] = [market, cutoff]
         if sector:
             params.append(sector)
         if min_mcap > 0:
@@ -274,7 +310,7 @@ class DuckDBScreener:
                     PARTITION BY code ORDER BY date DESC
                 ) as rn
             FROM daily_price
-            WHERE market = ? AND date >= '2025-01-01'
+            WHERE market = ? AND date >= ?
         ),
         latest_f AS (
             SELECT
