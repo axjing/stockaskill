@@ -16,65 +16,9 @@
 
 ---
 
-## 核心定量能力一览
+## 核心量化架构与系统能力
 
-```mermaid
-flowchart LR
-    subgraph S1["01 · 本地数据底座"]
-        direction TB
-        D1[("DuckDB OLAP 列式引擎<br/>4,244 万行 · 26 年跨市场<br/>A 股 / 港股 / 美股 / ETF")]
-        D2["动态增量保鲜<br/>sync update<br/>水位线缺口探测 + 3天安全重叠"]
-        D3["交易日历与数据自愈<br/>7天落后静默对齐 + 熔断修复"]
-        D2 --> D1
-        D3 --> D1
-    end
-
-    subgraph S2["02 · 截面选股与诊断"]
-        direction TB
-        A1["向量化截面选股<br/>screen · 0.5s 全市场<br/>DuckDB 列式 SIMD 打分"]
-        A2["7+1 多因子体系<br/>估值 · 质量 · 成长<br/>动量 · 低波 · 市值 · 分析师"]
-        A3["统一多级诊断门面<br/>diagnose<br/>quick / full / deep 多维体检"]
-        A2 -.-> A1
-        A1 -.-> A3
-    end
-
-    subgraph S3["03 · 组合优化与执行"]
-        direction TB
-        P1["SLSQP 现代组合优化<br/>portfolio --optimize<br/>Target CAGR 与 MaxDD 双刚性约束"]
-        P2["宏观市场状态风险预算<br/>牛市 100% · 中性 60%<br/>防御 25%"]
-        P3["100 股整手分配器<br/>真实交易买卖票单<br/>+ 闲置资金缓冲保护"]
-        P2 -.-> P1
-        P1 --> P3
-    end
-
-    subgraph S4["04 · 论据跟踪与智能体闭环"]
-        direction TB
-        T1["Thesis 论据全生命周期<br/>thesis capture<br/>入场建仓 -> 持仓巡检 -> 平仓复盘"]
-        T2["动态追踪风控预警<br/>risk-alert<br/>移动止损与止盈雷达"]
-        T3["零磁盘流式数据流<br/>--json 标准输出<br/>AgentSkills.io 规范"]
-        T1 --> T2
-        T1 -.-> T3
-    end
-
-    D1 ===>|"0网络时延检索"| A1
-    A1 ===>|"Top-K 优质候选池"| P1
-    P3 ===>|"整手执行订单"| T1
-
-    classDef dataNode fill:#0b192c,stroke:#008dda,stroke-width:2px,color:#e0f2fe;
-    classDef alphaNode fill:#1a103c,stroke:#7952b3,stroke-width:2px,color:#ede9fe;
-    classDef execNode fill:#06281e,stroke:#00b894,stroke-width:2px,color:#d1fae5;
-    classDef loopNode fill:#281605,stroke:#e17055,stroke-width:2px,color:#fef3c7;
-
-    class D1,D2,D3 dataNode;
-    class A1,A2,A3 alphaNode;
-    class P1,P2,P3 execNode;
-    class T1,T2,T3 loopNode;
-
-    style S1 fill:#060d17,stroke:#008dda,stroke-width:1.5px,color:#93c5fd;
-    style S2 fill:#0f0923,stroke:#7952b3,stroke-width:1.5px,color:#c4b5fd;
-    style S3 fill:#03140f,stroke:#00b894,stroke-width:1.5px,color:#6ee7b7;
-    style S4 fill:#140b03,stroke:#e17055,stroke-width:1.5px,color:#fde68a;
-```
+![StockASkill 智能体量化协处理器系统架构图](docs/images/architecture.png)
 
 1. **真正本地优先（Local-First）**：绝不无节制调用远程 API。分析、选股、因子计算、回测 100% 优先在本地 DuckDB 列式引擎执行，实现 **0 网络时延** 与毫秒级反馈。
 2. **动态增量同步（Incremental Sync）**：从不盲目全量拉取。通过 `sync update` 自动比对最新水位线，仅拉取缺失日期窗口（含 3 天安全重叠区），避免触发 API 限额。
@@ -105,40 +49,63 @@ flowchart LR
 
 ## 适用框架与智能体集成
 
-兼容以下主流智能体与代码助手框架，均使用标准 `SKILL.md` 格式：
+通过标准开放命令一键安装至任意主流 AI 编码助手：
+
+```bash
+# 全局安装到所有已检测到的 AI Agent（推荐）
+npx skills add axjing/stockaskill -g
+
+# 或指定安装到特定 Agent（如 claude-code, cursor, windsurf）
+npx skills add axjing/stockaskill --agent claude-code cursor
+```
+
+兼容以下主流智能体与代码助手框架，均使用标准 `SKILL.md` 规范：
 
 | 框架 | 技能路径 | 加载方式 | 调用方式 |
 |------|---------|---------|---------|
-| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` 或 `~/.config/opencode/skills/stockaskill/` | 按需加载 (skill 工具) | 自动匹配意图 / `skill stockaskill` |
 | [claudecode](https://docs.anthropic.com/en/docs/claude-code/overview) | `.claude/skills/stockaskill/` 或 `~/.claude/skills/stockaskill/` | 按需加载 (描述匹配) | 自动触发 / `/stockaskill` |
+| Cursor | `.cursor/skills/stockaskill/` 或 `.cursor/rules/` | 规则与技能匹配 | 自动匹配文件上下文 |
+| Windsurf | `.windsurf/skills/stockaskill/` 或 `.windsurf/rules/` | 会话启动加载 | 自动注入 |
 | [codex](https://developers.openai.com/codex) | `.agents/skills/stockaskill/` 或 `~/.agents/skills/stockaskill/` | 按需加载 (描述匹配) | 自动触发 / `$stockaskill` |
+| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` 或 `~/.config/opencode/skills/stockaskill/` | 按需加载 (skill 工具) | 自动匹配意图 / `skill stockaskill` |
 | [openclaw](https://docs.openclaw.ai) | `<workspace>/skills/stockaskill/` 或 `~/.openclaw/skills/stockaskill/` | 会话启动加载 | 自动注入 / `/stockaskill` |
-| Cursor | `.cursor/rules/stockaskill.mdc` | 规则匹配 | 自动匹配文件上下文 |
-| Windsurf | `.windsurf/rules/` | 会话启动加载 | 自动注入 |
 
 ---
 
 ## 快速上手
 
-### 1. 环境准备
+### 方式 A：AI 智能体一键安装（推荐）
 
-要求 **Python >= 3.10**。推荐使用 `uv`：
+通过 [open skills CLI](https://skills.sh) 将 stockaskill 直接挂载至智能体：
 
 ```bash
-# 克隆代码仓库
+# 1. 一键全局安装技能至各 Agent 工具
+npx skills add axjing/stockaskill -g
+
+# 2. 准备 Python 运行时环境 (要求 Python >= 3.10)
+# 大多数智能体在首次触发调用时会自动利用 uv 安装依赖：
+uv pip install akshare efinance baostock duckdb pandas numpy scipy
+```
+
+### 方式 B：本地源码与独立 CLI 开发
+
+适用于本地命令行独立使用、离线回测或量化引擎二次开发：
+
+```bash
+# 1. 克隆代码仓库
 git clone https://github.com/axjing/stockaskill.git
 cd stockaskill
 
-# 创建并激活 Python 3.10 虚拟环境
+# 2. 创建并激活 Python 3.10 虚拟环境
 uv venv --python 3.10
 # Windows: .venv\Scripts\activate
 # Unix: source .venv/bin/activate
 
-# 安装依赖
+# 3. 安装依赖（可编辑模式）
 uv pip install -e .
 ```
 
-### 2. 检查存储引擎与数据底座
+### 检查存储引擎与数据底座
 
 ```bash
 # 确认当前底层引擎为 DuckDB

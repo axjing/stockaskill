@@ -97,9 +97,23 @@ flowchart LR
 
 ## 2. 环境准备与极速安装
 
-### 2.1 基础环境
+本项目要求 **Python >= 3.10**。根据您的使用场景选择安装方式：
 
-本项目要求 **Python >= 3.10**。推荐使用现代包管理工具 `uv` 或原生 `venv`。
+### 2.1 方式 A：AI 智能体一键安装（推荐）
+
+如果您使用 Claude Code、Cursor、Windsurf、Cline 等主流 AI 编码助手，推荐直接通过 [open skills CLI](https://skills.sh) 安装：
+
+```bash
+# 全局安装到所有检测到的 AI 智能体
+npx skills add axjing/stockaskill -g
+
+# 准备 Python 基础运行时依赖 (建议使用 uv)
+uv pip install akshare efinance baostock duckdb pandas numpy scipy
+```
+
+### 2.2 方式 B：本地源码克隆（独立 CLI 与开发者模式）
+
+适用于直接在终端运行 CLI 命令、执行本地回测或进行二次开发：
 
 ```bash
 # 1. 克隆代码仓库
@@ -113,11 +127,11 @@ uv venv --python 3.10
 # Linux / macOS
 source .venv/bin/activate
 
-# 3. 安装依赖
+# 3. 安装依赖（可编辑模式）
 uv pip install -e .
 ```
 
-### 2.2 验证引擎与缓存状态
+### 2.3 验证引擎与缓存状态
 
 安装完成后，首先检查底层 DuckDB 引擎健康度与历史数据覆盖：
 

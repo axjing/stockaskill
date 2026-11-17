@@ -16,65 +16,9 @@ Powered by the high-performance columnar engine **DuckDB** (holding **42.44 mill
 
 ---
 
-## Core Quantitative Capabilities
+## Core Quantitative Architecture & Capabilities
 
-```mermaid
-flowchart LR
-    subgraph S1["01 · DATA FOUNDATION"]
-        direction TB
-        D1[("DuckDB OLAP Engine<br/>42.44M Rows · 26-Year Base<br/>A / HK / US / ETF")]
-        D2["Dynamic Incremental Sync<br/>sync update<br/>Watermark Gap Backfill"]
-        D3["Trade Calendar Healing<br/>Quality Circuit Breakers"]
-        D2 --> D1
-        D3 --> D1
-    end
-
-    subgraph S2["02 · ALPHA SCREENING"]
-        direction TB
-        A1["Vectorized Screener<br/>screen · 0.5s Full-Market<br/>Columnar SIMD Scanning"]
-        A2["7+1 Multi-Factor Model<br/>Value · Quality · Growth<br/>Momentum · Low-Vol · Size"]
-        A3["Multi-Level Diagnosis<br/>diagnose<br/>quick / full / deep"]
-        A2 -.-> A1
-        A1 -.-> A3
-    end
-
-    subgraph S3["03 · PORTFOLIO & EXECUTION"]
-        direction TB
-        P1["SLSQP Convex Optimizer<br/>portfolio --optimize<br/>Dual Target CAGR & MaxDD"]
-        P2["Macro Risk Budgeting<br/>Bull: 100% · Neutral: 60%<br/>Defensive: 25%"]
-        P3["100-Share Board Lot Sizing<br/>Trade Execution Tickets<br/>Cash Buffer Guard"]
-        P2 -.-> P1
-        P1 --> P3
-    end
-
-    subgraph S4["04 · THESIS & AGENT LOOP"]
-        direction TB
-        T1["Thesis Lifecycle Tracker<br/>thesis capture<br/>Active -> Review -> Exit"]
-        T2["Dynamic Risk Patrol<br/>risk-alert<br/>Trailing Stop-Loss Patrol"]
-        T3["Agent Zero-Disk Stream<br/>--json to stdout<br/>AgentSkills.io Protocol"]
-        T1 --> T2
-        T1 -.-> T3
-    end
-
-    D1 ===>|"0-Latency OLAP"| A1
-    A1 ===>|"Top-K Candidates"| P1
-    P3 ===>|"Execution Orders"| T1
-
-    classDef dataNode fill:#0b192c,stroke:#008dda,stroke-width:2px,color:#e0f2fe;
-    classDef alphaNode fill:#1a103c,stroke:#7952b3,stroke-width:2px,color:#ede9fe;
-    classDef execNode fill:#06281e,stroke:#00b894,stroke-width:2px,color:#d1fae5;
-    classDef loopNode fill:#281605,stroke:#e17055,stroke-width:2px,color:#fef3c7;
-
-    class D1,D2,D3 dataNode;
-    class A1,A2,A3 alphaNode;
-    class P1,P2,P3 execNode;
-    class T1,T2,T3 loopNode;
-
-    style S1 fill:#060d17,stroke:#008dda,stroke-width:1.5px,color:#93c5fd;
-    style S2 fill:#0f0923,stroke:#7952b3,stroke-width:1.5px,color:#c4b5fd;
-    style S3 fill:#03140f,stroke:#00b894,stroke-width:1.5px,color:#6ee7b7;
-    style S4 fill:#140b03,stroke:#e17055,stroke-width:1.5px,color:#fde68a;
-```
+![StockASkill Architecture as an Autonomous AgentSkill](docs/images/architecture.png)
 
 1. **Strictly Local-First**: Remote APIs are exclusively synchronization mechanisms, never query layers. All screening, factor scoring, and portfolio optimization run 100% locally in DuckDB with **0 network latency**.
 2. **Dynamic Incremental Synchronization (`sync update`)**: Never downloads full market history blindly; inspects local watermarks and retrieves missing date windows (with a 3-day safety overlap) to prevent API rate-limit exhaustion.
@@ -105,40 +49,63 @@ Comprehensive bilingual documentation is available under `docs/`:
 
 ## Supported Agent Frameworks
 
+Install directly into your AI coding assistant with one command:
+
+```bash
+# Global install for all detected AI agents (recommended)
+npx skills add axjing/stockaskill -g
+
+# Or install for a specific agent (e.g. claude-code, cursor, windsurf)
+npx skills add axjing/stockaskill --agent claude-code cursor
+```
+
 Compatible with all major AI Agent and code assistant frameworks using standard `SKILL.md`:
 
 | Framework | Skill Path | Loading Mechanism | Invocation |
 |-----------|------------|-------------------|------------|
-| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` or `~/.config/opencode/skills/stockaskill/` | On-demand (skill tool) | Intent match / `skill stockaskill` |
 | [claudecode](https://docs.anthropic.com/en/docs/claude-code/overview) | `.claude/skills/stockaskill/` or `~/.claude/skills/stockaskill/` | On-demand (description match) | Auto-trigger / `/stockaskill` |
+| Cursor | `.cursor/skills/stockaskill/` or `.cursor/rules/` | Rule & skill matching | Context-aware match |
+| Windsurf | `.windsurf/skills/stockaskill/` or `.windsurf/rules/` | Session startup | Auto-injected |
 | [codex](https://developers.openai.com/codex) | `.agents/skills/stockaskill/` or `~/.agents/skills/stockaskill/` | On-demand (description match) | Auto-trigger / `$stockaskill` |
+| [opencode](https://opencode.ai) | `.opencode/skills/stockaskill/` or `~/.config/opencode/skills/stockaskill/` | On-demand (skill tool) | Intent match / `skill stockaskill` |
 | [openclaw](https://docs.openclaw.ai) | `<workspace>/skills/stockaskill/` or `~/.openclaw/skills/stockaskill/` | Session startup | Auto-injected / `/stockaskill` |
-| Cursor | `.cursor/rules/stockaskill.mdc` | Rule matching | Context-aware match |
-| Windsurf | `.windsurf/rules/` | Session startup | Auto-injected |
 
 ---
 
 ## Quickstart
 
-### 1. Environment Setup
+### Option A: One-Click Install for AI Agents (Recommended)
 
-Requires **Python >= 3.10**. We strongly recommend `uv`:
+Add stockaskill to your agent environment via the [open skills CLI](https://skills.sh):
 
 ```bash
-# Clone the repository
+# 1. Add skill to all detected agents globally
+npx skills add axjing/stockaskill -g
+
+# 2. Ensure Python runtime environment is available (Python >= 3.10)
+# Most agents will auto-provision dependencies on first run using uv:
+uv pip install akshare efinance baostock duckdb pandas numpy scipy
+```
+
+### Option B: Local CLI & Development Setup
+
+For standalone CLI usage, backtesting, or engine development:
+
+```bash
+# 1. Clone the repository
 git clone https://github.com/axjing/stockaskill.git
 cd stockaskill
 
-# Create and activate Python 3.10 virtual environment
+# 2. Create and activate Python 3.10 virtual environment
 uv venv --python 3.10
 # Windows: .venv\Scripts\activate
 # Unix: source .venv/bin/activate
 
-# Install dependencies in editable mode
+# 3. Install dependencies in editable mode
 uv pip install -e .
 ```
 
-### 2. Verify Engine & Dataset
+### Verify Engine & Dataset
 
 ```bash
 # Verify active storage engine (confirm DuckDB)

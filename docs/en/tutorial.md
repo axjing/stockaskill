@@ -97,9 +97,23 @@ flowchart LR
 
 ## 2. Environment Setup & Quick Installation
 
-### 2.1 Prerequisites
+This project requires **Python >= 3.10**. Choose your installation method based on your workflow:
 
-This project requires **Python >= 3.10**. We strongly recommend using `uv` or Python's native `venv`.
+### 2.1 Option A: One-Click Installation for AI Agents (Recommended)
+
+If you use Claude Code, Cursor, Windsurf, Cline, or another AI coding assistant, install via the [open skills CLI](https://skills.sh):
+
+```bash
+# Install globally for all detected AI agents
+npx skills add axjing/stockaskill -g
+
+# Install runtime dependencies with uv
+uv pip install akshare efinance baostock duckdb pandas numpy scipy
+```
+
+### 2.2 Option B: Local Source Clone (CLI & Developer Setup)
+
+For standalone CLI use, local backtesting, or core quant engine development:
 
 ```bash
 # 1. Clone the repository
@@ -117,7 +131,7 @@ source .venv/bin/activate
 uv pip install -e .
 ```
 
-### 2.2 Verify Storage Engine & Cache State
+### 2.3 Verify Storage Engine & Cache State
 
 Once installed, confirm that DuckDB is active and inspect the offline dataset:
 
